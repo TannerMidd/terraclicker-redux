@@ -319,25 +319,24 @@ button {
 
 .dock-nav {
   display: flex;
+  align-items: stretch;
   padding: 8px 8px 0;
   border-bottom: 1px solid var(--line-soft);
   flex-shrink: 0;
   min-width: 0;
 }
 .dock-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   flex: 1 1 auto;
   min-width: 0;
   gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: none;
 }
-.dock-tabs::-webkit-scrollbar { display: none; }
 .dock-tabs:empty { display: none; }
 .dock-tab {
   flex: 1 0 auto;
-  min-width: 44px;
-  padding: 9px 4px 11px;
+  min-width: 0;
+  padding: 8px 3px 9px;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -355,6 +354,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  align-self: stretch;
   gap: 5px;
   margin-left: 5px;
   padding-inline: 9px;
@@ -1717,7 +1717,6 @@ button {
   .toast .t-art { width: 58px; height: 46px; }
   .shop-item { grid-template-columns: 38px minmax(0, 1fr); }
   .shop-item .b-icon { width: 38px; height: 38px; }
-  .dock-tab { flex-basis: 66px; }
   .operations-ledger { grid-template-columns: repeat(3, minmax(82px, 1fr)); overflow-x: auto; }
   .zoom-rail { height: 30vh; top: 34%; left: 8px; }
   /* On phones the caption lives in the clear sky under the masthead,
@@ -1728,6 +1727,10 @@ button {
   .fh-panic { width: 54px; }
   .fh-legend { bottom: 96px; font-size: 11px; white-space: normal; text-align: center; width: 90vw; }
   .fh-top { top: 12px; }
+}
+
+@media (max-width: 360px) {
+  .dock-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
