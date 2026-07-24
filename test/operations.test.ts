@@ -57,6 +57,7 @@ function completedWorld(
     survey: null,
     completionMs: 1_000,
     bottleneck: 'thermal',
+    installations: ['seedProbe', 'geoTap'],
     ...overrides,
   };
 }

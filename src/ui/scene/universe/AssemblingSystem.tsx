@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
   BufferGeometry,
+  Group,
   Line,
   LineBasicMaterial,
   Mesh,
@@ -15,6 +16,7 @@ import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
 import { CURRENT_SYSTEM_ANCHOR, orbitSlot, starClass, starColor } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
+import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 
 const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 const TRANSIT_MS = 1900;
@@ -48,7 +50,8 @@ function MiniWorld({
   slot: number;
   isNewest: boolean;
 }) {
-  const ref = useRef<Mesh>(null);
+  const root = useRef<Group>(null);
+  const mesh = useRef<Mesh>(null);
   const geometry = useMemo(() => createMiniPlanetGeometry(record), [record]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   const born = useRef<number | null>(null);
@@ -56,8 +59,8 @@ function MiniWorld({
   const size = MINI_SIZE[record.size];
 
   useFrame((state) => {
-    const mesh = ref.current;
-    if (!mesh) return;
+    const group = root.current;
+    if (!group) return;
     const t = state.clock.elapsedTime;
     const a = o.phase + t * o.speed;
     const target = new Vector3(
@@ -70,25 +73,31 @@ function MiniWorld({
       const k = Math.min(1, ((t - born.current) * 1000) / TRANSIT_MS);
       const ease = 1 - Math.pow(1 - k, 3);
       // Fly from the hero planet's position out to the system slot, shrinking.
-      mesh.position.set(0, 0, 0).lerp(target, ease);
-      mesh.scale.setScalar(1.0 + (size - 1.0) * ease);
+      group.position.set(0, 0, 0).lerp(target, ease);
+      group.scale.setScalar(1.0 + (size - 1.0) * ease);
     } else {
-      mesh.position.copy(target);
-      mesh.scale.setScalar(size);
+      group.position.copy(target);
+      group.scale.setScalar(size);
     }
-    mesh.rotation.y = t * 0.3;
+    if (mesh.current) mesh.current.rotation.y = t * 0.3;
   });
 
   return (
-    <mesh
-      ref={ref}
-      geometry={geometry}
-      material={MINI_MATERIAL}
-      {...inspectHandlers(
-        record.name,
-        `${TYPE_LABEL[record.type] ?? record.type} · ${record.size} · world ${slot + 1} of ${C.PLANETS_PER_SYSTEM}`,
-      )}
-    />
+    <group ref={root}>
+      <mesh
+        ref={mesh}
+        geometry={geometry}
+        material={MINI_MATERIAL}
+        {...inspectHandlers(
+          record.name,
+          `${TYPE_LABEL[record.type] ?? record.type} · ${record.size} · world ${slot + 1} of ${C.PLANETS_PER_SYSTEM}`,
+        )}
+      >
+        {/* Delivered means inhabited: the lights stay on out here too. */}
+        <SettlementLights record={record} variant="mini" />
+      </mesh>
+      <OrbitalHardware record={record} variant="mini" />
+    </group>
   );
 }
 
@@ -146,6 +155,24 @@ export function AssemblingSystem() {
           isNewest={i === newestIndex && i === inSystem.length - 1}
         />
       ))}
+      {/* Even a half-built system runs a commuter service. */}
+      <SystemShuttles
+        spec={{
+          worldPos: (slot, t, out) => {
+            const o = orbitSlot(slot);
+            const a = o.phase + t * o.speed;
+            out.set(
+              CURRENT_SYSTEM_ANCHOR.x + Math.cos(a) * o.radius,
+              CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * o.radius * 0.22,
+              CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * o.radius * 0.6,
+            );
+          },
+          worldCount: inSystem.length,
+          ships: 1 + Math.min(2, Math.floor(s.lifetime.planetsCompleted / 10)),
+          seed: starSeed,
+          scale: 0.07,
+        }}
+      />
     </group>
   );
 }

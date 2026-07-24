@@ -121,7 +121,13 @@ export function Traffic() {
       const ang = Math.atan2((S2.y - S1.y) * h, (S2.x - S1.x) * w);
       const mirror = Math.cos(ang) < 0;
       route.mat.rotation = mirror ? ang - Math.PI : ang;
-      const vis = Math.min(1, Math.min(k, 1 - k) * 8);
+      // Fade out near the lens: a liner filling the windshield reads as a
+      // scale bug, not commerce — especially parked at a tiny visited world.
+      const near = Math.max(
+        0,
+        Math.min(1, (P.distanceTo(state.camera.position) - 0.6) / 1.4),
+      );
+      const vis = Math.min(1, Math.min(k, 1 - k) * 8) * near;
       route.mat.opacity = vis * 0.95;
       sp.scale.set(mirror ? -route.scale : route.scale, route.scale, 1);
 

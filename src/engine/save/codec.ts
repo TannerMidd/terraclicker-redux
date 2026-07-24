@@ -26,6 +26,7 @@ function cloneOperations(operations: GameState['operations']): GameState['operat
     heritageWorlds: operations.heritageWorlds.map((world) => ({
       ...world,
       quirks: [...world.quirks],
+      installations: [...world.installations],
     })),
   };
 }

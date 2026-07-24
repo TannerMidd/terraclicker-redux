@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newGame, step } from '../src/engine/sim';
 import { serialize, deserialize, toSave } from '../src/engine/save/codec';
+import { C } from '../src/content/constants';
 
 import { initRng } from '../src/engine/rng';
 const OPTS = { utcDay: 3 };
@@ -18,7 +19,7 @@ describe('save migrations', () => {
     const r = deserialize(JSON.stringify(raw));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.state.version).toBe(4);
+    expect(r.state.version).toBe(C.SAVE_VERSION);
     expect(r.state.run.completedPlanets).toHaveLength(7);
     for (const p of r.state.run.completedPlanets) {
       expect(p.seed).toBeGreaterThan(0);
@@ -27,6 +28,7 @@ describe('save migrations', () => {
       expect(p.survey).toBeNull();
       expect(p.completionMs).toBe(0);
       expect(['thermal', 'atmo', 'hydro', 'bio']).toContain(p.bottleneck);
+      expect(p.installations.length).toBeGreaterThan(0);
     }
   });
 
@@ -46,7 +48,7 @@ describe('save migrations', () => {
     const result = deserialize(JSON.stringify(raw));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.version).toBe(4);
+    expect(result.state.version).toBe(C.SAVE_VERSION);
     expect(result.state.planet.startedAtGameMs).toBe(12_345);
     expect(result.state.run.completedPlanets[0]).toMatchObject({
       lifetimeIndex: 1,
@@ -69,7 +71,7 @@ describe('save migrations', () => {
     const result = deserialize(JSON.stringify(raw));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.state.version).toBe(4);
+    expect(result.state.version).toBe(C.SAVE_VERSION);
     expect({
       planets: result.state.rng.planets,
       bubbles: result.state.rng.bubbles,
@@ -87,6 +89,50 @@ describe('save migrations', () => {
       rerolledAtSystem: -1,
       heritageCandidateLifetimeIndex: null,
     });
+  });
+
+  it('v4 -> v5 backfills biography-derived installations; real snapshots pass through', () => {
+    const current = newGame(31, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 4;
+    const run = raw['run'] as Record<string, unknown>;
+    run['planetsCompleted'] = 2;
+    run['completedPlanets'] = [
+      {
+        lifetimeIndex: 1, seed: 41, type: 'ocean', size: 'large', name: 'Legacy Reef',
+        quirks: [], survey: 'dense-aquifers', completionMs: 900, bottleneck: 'bio',
+      },
+      {
+        lifetimeIndex: 2, seed: 55, type: 'desert', size: 'small', name: 'Kept Loadout',
+        quirks: [], survey: null, completionMs: 400, bottleneck: 'hydro',
+        installations: ['bioDome', 'marvin'],
+      },
+    ];
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const [legacy, kept] = result.state.run.completedPlanets;
+    // Derived: seed probe always, the bottleneck's rig, and the survey lab.
+    expect(legacy!.installations).toContain('seedProbe');
+    expect(legacy!.installations).toContain('bioDome');
+    expect(legacy!.installations).toContain('researchLab');
+    // A record that already carries its snapshot is left untouched.
+    expect(kept!.installations).toEqual(['bioDome', 'marvin']);
+  });
+
+  it('delivery snapshots the owned installations onto the record', () => {
+    const s = newGame(19, 0);
+    step(s, 0, [
+      { type: 'devGrant', tu: '100000' },
+      { type: 'buyBuilding', id: 'seedProbe', qty: 10 },
+      { type: 'buyBuilding', id: 'atmoProcessor', qty: 3 },
+    ], OPTS);
+    step(s, 0, [{ type: 'devGrant', tu: '0', gaugeFrac: 0.999 }], OPTS);
+    step(s, 60_000, [], OPTS);
+    const first = s.run.completedPlanets[0]!;
+    expect(first.installations[0]).toBe('seedProbe'); // most-built first
+    expect(first.installations).toContain('atmoProcessor');
   });
 
   it('completed planets accumulate and survive round-trips', () => {

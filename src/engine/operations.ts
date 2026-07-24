@@ -384,6 +384,7 @@ export function prepareOperationsForPrestige(state: GameState, effects: SimEffec
     state.operations.heritageWorlds.push({
       ...completed,
       quirks: [...completed.quirks],
+      installations: [...completed.installations],
       commissionNumber: state.run.number,
       preservedAtGameMs: state.gameTimeMs,
     });

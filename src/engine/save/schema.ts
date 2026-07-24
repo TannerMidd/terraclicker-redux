@@ -67,6 +67,7 @@ const completedPlanetRecord = z.object({
   survey: z.string().nullable(),
   completionMs: z.number().int().min(0),
   bottleneck: aspectId,
+  installations: z.array(z.string()),
 });
 
 export const saveSchema = z.object({
@@ -112,19 +113,7 @@ export const saveSchema = z.object({
     systems: z.number().int().min(0),
     galaxies: z.number().int().min(0),
     tuEarned: dec,
-    completedPlanets: z.array(
-      z.object({
-        lifetimeIndex: z.number().int().min(1),
-        seed: z.number().int(),
-        type: z.enum(['terrestrial', 'ice', 'desert', 'volcanic', 'ocean', 'gasgiant']),
-        size: z.enum(['small', 'medium', 'large', 'huge']),
-        name: z.string(),
-        quirks: z.array(z.string()),
-        survey: z.string().nullable(),
-        completionMs: z.number().int().min(0),
-        bottleneck: z.enum(['thermal', 'atmo', 'hydro', 'bio']),
-      }),
-    ),
+    completedPlanets: z.array(completedPlanetRecord),
   }),
   lifetime: z.object({
     tuEarned: dec,

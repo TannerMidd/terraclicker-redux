@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { deserialize } from '../src/engine/save/codec';
+import { C } from '../src/content/constants';
+import { ASPECT_HARDWARE } from '../src/engine/worldHardware';
 
 const V2_FIXTURE_PATH = fileURLToPath(
   new URL('./fixtures/save-v2-progressed.json', import.meta.url),
@@ -16,7 +18,7 @@ describe('frozen historical saves', () => {
     if (!result.ok) return;
 
     const state = result.state;
-    expect(state.version).toBe(4);
+    expect(state.version).toBe(C.SAVE_VERSION);
     expect(state.seed).toBe(23063);
     expect(state.gameTimeMs).toBe(987654);
     expect(state.tu.toString()).toBe('4200000000000000000');
@@ -39,7 +41,7 @@ describe('frozen historical saves', () => {
       bpEarned: 21,
       catalogue: { cheapStarts: 2 },
     });
-    expect(state.run.completedPlanets).toEqual([
+    expect(state.run.completedPlanets).toMatchObject([
       {
         lifetimeIndex: 6,
         seed: 111,
@@ -74,6 +76,11 @@ describe('frozen historical saves', () => {
         bottleneck: 'atmo',
       },
     ]);
+    // Pre-v5 worlds carry biography-derived hardware after migration.
+    for (const world of state.run.completedPlanets) {
+      expect(world.installations).toContain('seedProbe');
+      expect(world.installations).toContain(ASPECT_HARDWARE[world.bottleneck]);
+    }
     expect(state.planet.startedAtGameMs).toBe(987654);
     expect(state.operations).toMatchObject({
       active: null,

@@ -1,5 +1,6 @@
 import { createOperationsState } from '../operations';
 import { initRng } from '../rng';
+import { deriveLegacyInstallations } from '../worldHardware';
 
 /**
  * Ordered save migrations. Each entry upgrades `from` → `from + 1`.
@@ -117,6 +118,48 @@ export const MIGRATIONS: readonly Migration[] = [
           contracts: typeof rng['contracts'] === 'number' ? rng['contracts'] : initRng(seed).contracts,
         },
         operations: createOperationsState(),
+      };
+    },
+  },
+  {
+    // v4 -> v5: delivered worlds keep their real installation loadout.
+    // Older records predate the snapshot, so they receive the hardware their
+    // biography implies (bottleneck rig, survey lab, one seeded specialty).
+    from: 4,
+    migrate: (raw) => {
+      const ASPECTS = ['thermal', 'atmo', 'hydro', 'bio'] as const;
+      const backfill = (entry: unknown): unknown => {
+        if (typeof entry !== 'object' || entry === null) return entry;
+        const p = entry as Record<string, unknown>;
+        if (Array.isArray(p['installations'])) return p;
+        const bottleneck = ASPECTS.includes(p['bottleneck'] as (typeof ASPECTS)[number])
+          ? (p['bottleneck'] as (typeof ASPECTS)[number])
+          : 'thermal';
+        return {
+          ...p,
+          installations: deriveLegacyInstallations({
+            seed: typeof p['seed'] === 'number' ? (p['seed'] as number) : 1,
+            bottleneck,
+            survey: typeof p['survey'] === 'string' ? (p['survey'] as string) : null,
+          }),
+        };
+      };
+      const run = (raw['run'] ?? {}) as Record<string, unknown>;
+      const operations = (raw['operations'] ?? {}) as Record<string, unknown>;
+      return {
+        ...raw,
+        run: {
+          ...run,
+          completedPlanets: Array.isArray(run['completedPlanets'])
+            ? run['completedPlanets'].map(backfill)
+            : [],
+        },
+        operations: {
+          ...operations,
+          heritageWorlds: Array.isArray(operations['heritageWorlds'])
+            ? operations['heritageWorlds'].map(backfill)
+            : [],
+        },
       };
     },
   },

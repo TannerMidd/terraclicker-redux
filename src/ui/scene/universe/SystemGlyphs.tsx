@@ -8,13 +8,14 @@ import {
   Group,
   MeshBasicMaterial,
   RingGeometry,
+  Sprite,
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { starClass, starColor, systemGlyphPosition } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { focusOn, makeGlowSprite, visitHandlers } from './shared';
+import { focusOn, focusSystemIndex, makeGlowSprite, visitHandlers } from './shared';
 import {
   SPECIALTY_VISUAL,
   specialtyFor,
@@ -23,6 +24,7 @@ import {
   type SystemSpecialty,
 } from './operationsVisual';
 
+const GLINT_MAT = makeGlowSprite(0xffe2ae, 0.85);
 const RING_GEO = new RingGeometry(0.55, 0.585, 48);
 const RING_MAT = new MeshBasicMaterial({
   color: 0x8ca0c8,
@@ -85,12 +87,23 @@ function SystemGlyph({
   const root = useRef<Group>(null);
   const spin = useRef<Group>(null);
   const dispatch = useRef<Group>(null);
+  const glint = useRef<Sprite>(null);
   const born = useRef<number | null>(null);
+  const glintOrbit = useMemo(
+    () => ({ phase: (seed % 628) / 100, speed: 0.24 + ((seed >>> 3) % 10) * 0.014 }),
+    [seed],
+  );
 
   useFrame((state, dt) => {
     if (!universeMotion.reduced) {
       if (spin.current) spin.current.rotation.y += dt * 0.1;
       if (dispatch.current) dispatch.current.rotation.y -= dt * 0.055;
+      // A patrol glint: somebody is still out here, running errands.
+      const g2 = glint.current;
+      if (g2) {
+        const a = glintOrbit.phase + state.clock.elapsedTime * glintOrbit.speed;
+        g2.position.set(Math.cos(a) * 0.72, Math.sin(a * 1.7) * 0.06, Math.sin(a) * 0.72);
+      }
     }
     const g = root.current;
     if (!g) return;
@@ -130,6 +143,9 @@ function SystemGlyph({
       </mesh>
       <sprite scale={[0.9, 0.9, 1]} raycast={() => null}>
         <primitive object={glow} attach="material" />
+      </sprite>
+      <sprite ref={glint} scale={[0.075, 0.075, 1]} raycast={() => null}>
+        <primitive object={GLINT_MAT} attach="material" />
       </sprite>
       <group ref={spin}>
         <mesh geometry={RING_GEO} rotation={[-Math.PI / 2, 0, 0]} raycast={() => null}>
@@ -196,8 +212,10 @@ export function SystemGlyphs() {
     // The freshly-formed system stays hidden while its cinematic plays —
     // FormationFX delivers it to this spot, then it appears.
     if (cine?.kind === 'system' && cine.index === i) continue;
-    // A glyph being visited yields its seat to the full FocusedSystem view.
-    if (focus?.kind === 'system' && focus.index === i) continue;
+    // A glyph being visited (or one of its worlds) yields its seat to the
+    // full FocusedSystem view — otherwise the close-up camera stands inside
+    // the marker ring.
+    if (focus && focus.kind !== 'galaxy' && focusSystemIndex(focus) === i) continue;
     glyphs.push({
       index: i,
       records: s.run.completedPlanets.slice(

@@ -5,6 +5,7 @@ import { ProtoGalaxy } from './universe/ProtoGalaxy';
 import { CosmicWeb } from './universe/CosmicWeb';
 import { FormationFX } from './universe/FormationFX';
 import { FocusedSystem } from './universe/FocusedSystem';
+import { GalaxyTradeLanes } from './universe/LivingLanes';
 
 /**
  * The universe you have built, all of it visible and none of it faked:
@@ -25,6 +26,7 @@ export function Universe() {
       <CosmicWeb />
       <FormationFX />
       <FocusedSystem />
+      <GalaxyTradeLanes />
     </group>
   );
 }

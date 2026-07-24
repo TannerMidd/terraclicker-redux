@@ -39,6 +39,7 @@ import {
   refreshContractBoard,
   rerollContracts,
 } from './operations';
+import { deriveLegacyInstallations, snapshotInstallations } from './worldHardware';
 import {
   ASPECTS,
   type AspectId,
@@ -337,6 +338,10 @@ function completePlanet(
 
   state.run.planetsCompleted += 1;
   state.lifetime.planetsCompleted += 1;
+  // The world keeps the hardware that delivered it, forever. A delivery
+  // with nothing on the books (dev grants, strange runs) still deserves
+  // plausible gear — no world ships empty.
+  const loadout = snapshotInstallations(state.buildings);
   const completed = {
     lifetimeIndex: finished.lifetimeIndex,
     seed: finished.seed,
@@ -347,6 +352,10 @@ function completePlanet(
     survey: finished.survey,
     completionMs: Math.max(0, state.gameTimeMs - finished.startedAtGameMs),
     bottleneck,
+    installations:
+      loadout.length > 0
+        ? loadout
+        : deriveLegacyInstallations({ seed: finished.seed, bottleneck, survey: finished.survey }),
   };
   state.timers.stallMs = 0;
 

@@ -124,6 +124,8 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.waitForTimeout(700);
   } else if (kind === 'cine') {
     await page.evaluate(() => window.__tcBus.useUiBus.getState().cancelCinematics());
+  } else if (kind === 'dispatch') {
+    await page.evaluate((json) => window.__tc.dispatch(JSON.parse(json)), arg);
   } else if (kind === 'save') {
     const str = await page.evaluate(() => window.__tc.exportSave());
     await fs.writeFile(arg, str, 'utf8');

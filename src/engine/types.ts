@@ -82,6 +82,12 @@ export interface CompletedPlanetRecord {
   completionMs: number;
   /** The aspect furthest behind immediately before the finishing work. */
   bottleneck: AspectId;
+  /**
+   * The installations actually owned at delivery (building ids, most-built
+   * first, capped) — the working hardware this world keeps forever. Pre-v5
+   * worlds carry a biography-derived loadout from migration.
+   */
+  installations: string[];
 }
 
 export type ContractObjective =

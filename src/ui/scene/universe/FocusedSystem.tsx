@@ -22,6 +22,8 @@ import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { worldAnchors } from '../navControl';
 import { focusOn, focusSystemIndex, inspectHandlers, makeGlowSprite, TYPE_LABEL, visitHandlers } from './shared';
+import { CloseupLife, OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
+import { FreightLane } from './LivingLanes';
 import { formatDuration } from '../../../engine/num';
 import { QUIRK_BY_ID } from '../../../content/quirks';
 import { SURVEY_BY_ID } from '../../../content/surveys';
@@ -126,6 +128,10 @@ function VisitWorld({
   const root = useRef<Group>(null);
   const planet = useRef<Mesh>(null);
   const heritageRing = useRef<Mesh>(null);
+  // The camera parked at this exact world earns the full civic treatment.
+  const isCloseup = useUiBus(
+    (b) => b.focus?.kind === 'world' && b.focus.index === globalIndex,
+  );
   // Detail 3: these are the worlds you came to look at — give them curvature.
   const geometry = useMemo(() => createMiniPlanetGeometry(record, 3), [record]);
   useEffect(() => () => geometry.dispose(), [geometry]);
@@ -179,7 +185,12 @@ function VisitWorld({
         <mesh visible={false}>
           <sphereGeometry args={[1.9, 8, 8]} />
         </mesh>
+        {/* Settlements ride the surface, turning with the world. */}
+        <SettlementLights record={record} variant={isCloseup ? 'closeup' : 'visit'} />
       </mesh>
+      {/* The hardware recorded at delivery, still on station. */}
+      <OrbitalHardware record={record} variant={isCloseup ? 'closeup' : 'visit'} />
+      {isCloseup && <CloseupLife record={record} />}
       {heritage && (
         <mesh
           ref={heritageRing}
@@ -210,6 +221,9 @@ export function FocusedSystem() {
 }
 
 function FocusedSystemInner({ index }: { index: number }) {
+  // The dispatch halo circles the star at system scale; from a world
+  // close-up you are standing inside it, so it bows out.
+  const worldFocused = useUiBus((b) => b.focus?.kind === 'world');
   const { s } = useGame.getState();
   const records = useMemo(
     () =>
@@ -288,7 +302,7 @@ function FocusedSystemInner({ index }: { index: number }) {
       <sprite scale={[1.2, 1.2, 1]} raycast={() => null}>
         <primitive object={glowMat} attach="material" />
       </sprite>
-      {specialty && (
+      {specialty && !worldFocused && (
         <group ref={dispatch} rotation={[0.52, 0, 0.16]}>
           <mesh
             geometry={DISPATCH_RING_GEO}
@@ -302,6 +316,11 @@ function FocusedSystemInner({ index }: { index: number }) {
         </group>
       )}
       <pointLight color={star} intensity={3.6} distance={5.5} />
+      {/* A specialized system visibly works its dispatch route. At a world
+          close-up the system-scale traffic yields the frame. */}
+      {specialty && !worldFocused && (
+        <FreightLane specialty={specialty} seed={records[0]!.seed} />
+      )}
       <group ref={spin}>
         {orbits.map((l, i) => (
           <primitive key={i} object={l} />
@@ -316,6 +335,26 @@ function FocusedSystemInner({ index }: { index: number }) {
             delay={0.12 + i * 0.07}
           />
         ))}
+        {/* Commuters thread between the worlds, endpoints exact in spin space. */}
+        {!worldFocused && (
+        <SystemShuttles
+          spec={{
+            worldPos: (slot, t, out) => {
+              const o = orbit(slot);
+              const a = o.phase + t * o.speed;
+              out.set(
+                Math.cos(a) * o.radius,
+                Math.sin(a) * o.radius * 0.22,
+                Math.sin(a) * o.radius * 0.6,
+              );
+            },
+            worldCount: records.length,
+            ships: 1 + Math.min(3, Math.floor(s.lifetime.planetsCompleted / 10)),
+            seed: records[0]!.seed,
+            scale: 0.07,
+          }}
+        />
+        )}
       </group>
     </group>
   );
