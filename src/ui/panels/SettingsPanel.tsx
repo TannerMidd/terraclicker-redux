@@ -67,7 +67,8 @@ export function SettingsPanel() {
           Save recovery
           <div className="s-desc">Inspect and export the main save and both backup slots without running the game.</div>
         </div>
-        <a className="btn" href="/recovery.html">
+        {/* Relative to the app's base — the site lives under a subpath on Pages. */}
+        <a className="btn" href={`${import.meta.env.BASE_URL}recovery.html`}>
           Open
         </a>
       </div>

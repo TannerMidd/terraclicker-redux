@@ -189,7 +189,7 @@ function boot(): BootResult {
     }
     return {
       state: freshGame(),
-      loadError: `Main save was rejected (${r.error}) and no valid backup was found; autosave paused. The rejected data ${quarantined ? `is preserved in ${QUARANTINE_KEY}` : 'could not be quarantined'}. Open /recovery.html before importing or resetting.`,
+      loadError: `Main save was rejected (${r.error}) and no valid backup was found; autosave paused. The rejected data ${quarantined ? `is preserved in ${QUARANTINE_KEY}` : 'could not be quarantined'}. Open the recovery page (Settings → Save recovery) before importing or resetting.`,
       report: null,
       persistenceBlocked: true,
     };
