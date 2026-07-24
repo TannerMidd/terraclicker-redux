@@ -1,12 +1,16 @@
 import { useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
+import { forecastEvent } from '../../engine/improbability';
 import { Num } from '../bits';
 
 export function VortexPanel() {
   const rev = useGame((g) => g.rev);
   void rev;
-  const { s } = useGame.getState();
+  const { s, d } = useGame.getState();
   const pct = 100 * (1 - Math.exp(-s.lifetime.bestGalaxies / 6));
+  const hasForecast = s.research.completed.includes('sens-o-matic');
+  const forecast = hasForecast ? forecastEvent(s, d) : null;
+  const driveCount = s.buildings['heartOfGold'] ?? 0;
 
   return (
     <div>
@@ -24,6 +28,29 @@ export function VortexPanel() {
         </div>
         <div className="vortex-caption">of the universe terraformed. You are here. ↑</div>
       </div>
+      <div className="panel-h">Local Improbability</div>
+      <div className="stat-grid">
+        <div className="stat">
+          <div className="s-v num">
+            {d.improbability < 0.01 ? '0.000' : d.improbability.toFixed(d.improbability < 1 ? 2 : 1)}%
+          </div>
+          <div className="s-k">
+            local anomaly pressure | {driveCount} Heart of Gold {driveCount === 1 ? 'drive' : 'drives'}
+          </div>
+        </div>
+        <div className="stat">
+          <div className="s-v">{forecast?.name ?? 'Forecast unresolved'}</div>
+          <div className="s-k">
+            {forecast
+              ? `expected in ~${formatDuration(Math.max(0, s.timers.nextEventMs))}`
+              : 'Sub-Etha Sens-O-Matic research required'}
+          </div>
+        </div>
+      </div>
+      <p className="panel-sub">
+        Anomaly pressure now governs event cadence, rare-event weighting, and bubble quality.
+      </p>
+
 
       <div className="panel-h">The Record</div>
       <div className="stat-grid">

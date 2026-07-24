@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Deep Thought Node</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M16 13h32v38H16zM21 19h22v20H21zM22 45h4M30 45h4M38 45h4"/>
+      <path d="M27 24h4v10M27 29h7M38 24h-4v5h4v5h-4"/></g>
+    <g stroke="#F5C84C" stroke-width="2.35"><circle cx="42" cy="45" r="2"/><path d="M12 20H8v8M52 20h4v8M12 44H8v-8M52 44h4v-8"/></g>
+    <g fill="#F5C84C"></g>
+  </g>
+</svg>

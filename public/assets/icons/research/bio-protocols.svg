@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Bio-Enhancement Protocols</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M22 12c15 8 15 32 0 40M42 12c-15 8-15 32 0 40M24 18h16M21 27h22M21 37h22M24 46h16"/></g>
+    <g stroke="#58D68A" stroke-width="2.35"><path d="M32 41c-5-.5-8-3.1-8.2-7.7 5-.2 7.8 2.4 8.2 7.7ZM32 37.5c.4-4.5 3.2-7 8-6.8-.1 4.5-2.9 6.8-8 6.8Z"/></g>
+    <g fill="#58D68A"></g>
+  </g>
+</svg>

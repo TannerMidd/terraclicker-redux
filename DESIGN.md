@@ -138,6 +138,8 @@ Redux quirks get *small mechanical hooks* so personality lands:
 
 **Meta ladder (kept from v1):** 5 planets → system (+15% additive each, per run), 5 systems → galaxy (×1.5 multiplicative each, per run), galaxies → universe stages with the v1 names. Lifetime-best progress feeds the **Total Perspective Vortex** (§3.9).
 
+**Visiting (click-to-inspect):** every formed galaxy and system in the tableau is a destination, not a prop. Click a galaxy → the camera leaves the scroll rail and flies there; its five member stars surface in the disc, each clickable. Click a system (constellation glyph or member star) → its five worlds are rebuilt from their `completedPlanets` records — same seeded geometry they were terraformed with — orbiting their star, names on hover. While a system is inspected the host galaxy dims politely. Breadcrumbs (`everything › galaxy N › system M`) plus Esc / empty-space click step back out; scroll or pinch reclaims the journey outright; a formation ceremony starting reclaims the stage and clears the visit. Implementation: `focus` on the uiBus, framing math in `universeLayout.ts` (`focusSeat` / `focusFraming`), worlds in `universe/FocusedSystem.tsx`, camera blend in `CameraRig`. Headless verification: `shot.mjs` actions `focus:` / `clickobj:` / `hoverobj:` / `key:` against the dev hook `__tcCam.screenPos`.
+
 ### 3.7 The Improbability Engine (events, anomalies, Vogons)
 
 All randomness-as-content is unified under one stat: **Improbability**, raised by Heart of Gold Drives and certain research.
@@ -152,12 +154,12 @@ All randomness-as-content is unified under one stat: **Improbability**, raised b
 
 Narrative: when your run is big enough, **Magrathea reopens** and buys your terraformed portfolio; the mice commission a fresh start.
 
-- Reset: planets, systems, galaxies, buildings, TU, research-in-progress.
-- Keep: achievements, Guide entries, The Answer, towel (§4), **Blueprints**.
+- Reset: planets, systems, galaxies, buildings, TU, and commission-scale research.
+- Keep: achievements, Guide entries, towel (§4), **Blueprints**, and active or completed Deep Thought metaprojects.
 - **Blueprints (BP)** earned at reset: `BP = floor( (runTU / 1e12)^(1/3) + 0.5 × planetsCompleted )` — rewards both raw size and the game's identity (finishing planets).
 - Passive: every BP *ever earned* gives +2% global production (never spent away).
 - **The Magrathean Catalogue** — spend BP on permanent perks: start with N probes, Marvin clicks faster ("against his will"), Improbability tuning, offline cap +, *Fjord Certification* (all planets get better coastlines: +Biotic), aspect head-starts by planet type.
-- First prestige targeted at 45–90 minutes (§5).
+- First appraisal targeted at roughly 30–90 minutes (§5): five complete systems initially, then one additional system per successful commission.
 - The confirm button reads: **"So Long, and Thanks for All the Fish."**
 
 Post-1.0 second layer reserved: **Milliways** — a reservation you can only afford after watching the universe end a few times.
@@ -167,6 +169,16 @@ Post-1.0 second layer reserved: **Milliways** — a reservation you can only aff
 Every achievement writes an **entry in your copy of the Guide** (the in-game encyclopedia/stats panel). Each entry grants +1% production — collection *is* the meta. Broad categories from v1 (TU totals, building counts, clicks, planets, systems, galaxies, prestiges) plus the easter-egg set (§4).
 
 The stats panel is the **Total Perspective Vortex**: it shows your lifetime universe progress `100·(1 − e^(−galaxies/6))` on a scale that renders you invisibly small, with the caption "You are here." Surviving the Vortex (opening it) is itself an achievement.
+
+### 3.10 Galactic Operations
+
+Completed systems become a portfolio to operate, not merely a multiplier to admire:
+
+- **Acceptance Contracts:** the Guide files three deterministic offers at a time. One can be active; objectives cover deliveries, system formation, aspect bottlenecks, surveyed worlds, lean builds, and timed work. Contracts pay modest BP and faction reputation; standing improves that faction's future offers within a hard cap. The board may be rerolled once per newly formed system, and an active filing can be withdrawn without penalty.
+- **System Dispatch:** each formed system exposes aspect routes matching the bottlenecks recorded across its five worlds; Science appears after two surveyed worlds, while general Production is always available. Contract history unlocks up to four dispatch slots. Bonuses are intentionally smaller than the system ladder so dispatch changes strategy without replacing it.
+- **Heritage Worlds:** one completed world may be nominated during each commission. A successful Magrathean sale preserves it permanently in the Guide. The newest eight Heritage Worlds provide a small aspect bonus based on their recorded bottleneck; the complete archive remains available for memory, not power.
+
+All deadlines use simulated time and therefore behave identically online and offline. Contracts, reputation, and the Heritage archive survive prestige; active work, current offers, dispatch assignments, and the pending Heritage nomination reset with the sold portfolio.
 
 ---
 
@@ -203,7 +215,7 @@ Tone rule: never wink. Every joke is delivered as dry documentation.
 | First planet complete | 3–4 min |
 | Planet cadence mid-run | one per 2–8 min |
 | First system (5 planets) | ~20 min |
-| First prestige | 45–90 min, ~10–15 planets |
+| First prestige | ~30–90 min, 25+ planets |
 | First galaxy | run 2–3 |
 | The Answer | 42 h (real time, once) |
 

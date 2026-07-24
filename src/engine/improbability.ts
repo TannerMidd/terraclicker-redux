@@ -1,5 +1,5 @@
 import { C } from '../content/constants';
-import { EVENTS, EVENT_BY_ID } from '../content/events';
+import { EVENTS, EVENT_BY_ID, type EventDef } from '../content/events';
 import { D, Decimal } from './num';
 import { pickWeighted, randInt, randRange } from './rng';
 import type { BubbleKind, Derived, GameState, SimEffect } from './types';
@@ -126,6 +126,19 @@ export function rollEventGap(state: GameState, derived: Derived, first = false):
     : randRange(state.rng, 'events', C.EVENT_MIN_GAP_MS, C.EVENT_MAX_GAP_MS);
   return gap / (derived.eventFreqMult * stallBoost(state));
 }
+function weightedEvents(derived: Derived): EventDef[] {
+  const rareBoost = 1 + 2 * (derived.improbability / 42);
+  return EVENTS.map((event) => ({
+    ...event,
+    weight: event.weight * Math.pow(rareBoost, (8 - event.weight) / 6),
+  }));
+}
+
+/** Peek without advancing the persisted event stream. */
+export function forecastEvent(state: GameState, derived: Derived): EventDef {
+  return pickWeighted({ ...state.rng }, 'events', weightedEvents(derived));
+}
+
 
 export function spawnEvent(state: GameState, derived: Derived, effects: SimEffect[]): void {
   if (state.activeEvents.length > 0) {
@@ -133,7 +146,7 @@ export function spawnEvent(state: GameState, derived: Derived, effects: SimEffec
     state.timers.nextEventMs = 60_000;
     return;
   }
-  const def = pickWeighted(state.rng, 'events', EVENTS);
+  const def = pickWeighted(state.rng, 'events', weightedEvents(derived));
   state.activeEvents.push({ id: def.id, remainingMs: def.durationMs });
   if (def.instantSeconds) {
     const gain = derived.tuPerSec.mul(def.instantSeconds).max(D(15));

@@ -1,6 +1,7 @@
 import { actions, useGame } from '../../state/store';
 import { RESEARCH, RESEARCH_BY_ID } from '../../content/research';
 import { format, formatDuration } from '../../engine/num';
+import { researchIcon } from '../assets';
 
 export function ResearchPanel() {
   const rev = useGame((g) => g.rev);
@@ -38,6 +39,7 @@ export function ResearchPanel() {
       {active && activeDef && (
         <div className="research-active">
           <div className="ra-name">{activeDef.name}</div>
+          {activeDef.survivesPrestige && <div className="r-dur">Deep Thought metaproject | survives commission sale</div>}
           <div className="r-dur">
             {formatDuration(active.remainingMs / d.researchSpeedMult)} remaining
           </div>
@@ -63,14 +65,18 @@ export function ResearchPanel() {
             disabled={!affordable}
             onClick={() => actions.startResearch(r.id)}
           >
-            <div className="r-row">
-              <span className="r-name">{r.name}</span>
-              <span className="r-cost">🧪 {format(r.costScience)}</span>
-            </div>
-            <div className="r-desc">{r.guide}</div>
-            <div className="r-dur">
-              takes {formatDuration(r.durationMs / d.researchSpeedMult)}
-              {active ? ' · queue busy' : ''}
+            <img className="r-icon" src={researchIcon(r.id)} alt="" aria-hidden />
+            <div className="r-copy">
+              <div className="r-row">
+                <span className="r-name">{r.name}</span>
+                <span className="r-cost"><i className="science-mark">S</i> {format(r.costScience)}</span>
+              </div>
+              <div className="r-desc">{r.guide}</div>
+              <div className="r-dur">
+                takes {formatDuration(r.durationMs / d.researchSpeedMult)}
+                {r.survivesPrestige ? ' | persists across commissions' : ''}
+                {active ? ' · queue busy' : ''}
+              </div>
             </div>
           </button>
         );

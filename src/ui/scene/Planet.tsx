@@ -1,6 +1,15 @@
 import { useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Group, Mesh, RingGeometry, DoubleSide, MeshBasicMaterial } from 'three/webgpu';
+import {
+  DoubleSide,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  RingGeometry,
+  Sprite,
+  SpriteMaterial,
+  Vector3,
+} from 'three/webgpu';
 import { actions, useGame } from '../../state/store';
 import { useUiBus, zoomLive } from '../fx/uiBus';
 import { ASPECTS, type AspectId } from '../../engine/types';
@@ -14,6 +23,15 @@ import {
   paletteFor,
 } from './planetMaterial';
 import * as audio from '../audio/audio';
+import { SCENE_SPRITES } from '../assets';
+import { sceneTex } from './spriteTextures';
+import {
+  HabitualAuroras,
+  PlanetClickFX,
+  SentientClouds,
+  useReducedMotionRef,
+  type PlanetClickFxHandle,
+} from './PlanetFX';
 
 const SUN_DIR: [number, number, number] = [4.2, 1.8, 2.6];
 
@@ -37,6 +55,8 @@ export function Planet({ detail }: { detail: number }) {
   const fjords = quirks.includes('award-winning-fjords') ? 1 : 0;
   const reverse = quirks.includes('reverse-spin');
   const ringed = quirks.includes('pet-asteroid');
+  const sentientClouds = quirks.includes('sentient-clouds');
+  const auroraHabit = quirks.includes('aurora-habit');
 
   const geometry = useMemo(
     () => createPlanetGeometry(seed, type, detail, fjords),
@@ -62,7 +82,11 @@ export function Planet({ detail }: { detail: number }) {
 
   const group = useRef<Group>(null);
   const spin = useRef<Group>(null);
+  const impact = useRef<PlanetClickFxHandle>(null);
+  const clickNormal = useMemo(() => new Vector3(), []);
+  const reducedMotion = useReducedMotionRef();
   const scaleRef = useRef({ v: 0.01, vel: 0 });
+  const squashRef = useRef({ v: 0, vel: 0 });
   const moonRefs = useRef<(Mesh | null)[]>([]);
 
   // Hooks must not live inside conditional JSX (hook-order law).
@@ -106,15 +130,44 @@ export function Planet({ detail }: { detail: number }) {
     const accel = (1 - s.v) * stiffness - s.vel * damping;
     s.vel += accel * d;
     s.v += s.vel * d;
+
+    // A click compresses the world by a few percent, then lets it settle.
+    const squash = squashRef.current;
+    if (reducedMotion.current) {
+      squash.v = 0;
+      squash.vel = 0;
+    } else {
+      squash.vel += (-squash.v * 82 - squash.vel * 13) * d;
+      squash.v += squash.vel * d;
+    }
+
     // On the perspective journey the current world recedes toward a dot —
     // the Total Perspective Vortex, performed rather than described.
     const zz = Math.max(0, Math.min(1, (zoomLive.v - 0.5) / 0.5));
     const vortex = 1 - (zz * zz * (3 - 2 * zz)) * 0.7;
-    if (group.current)
-      group.current.scale.setScalar(Math.max(0.01, s.v) * sizeScale * vortex);
+    if (group.current) {
+      const base = Math.max(0.01, s.v) * sizeScale * vortex;
+      const q = Math.max(-0.18, Math.min(0.42, squash.v));
+      group.current.scale.set(
+        base * (1 + q * 0.05),
+        base * (1 - q * 0.075),
+        base * (1 + q * 0.05),
+      );
+    }
 
     // Rotation (occasionally, allegedly, reversed).
     if (spin.current) spin.current.rotation.y += d * 0.045 * (reverse ? -1 : 1);
+
+    // The pet asteroid follows its planet around like a very slow dog.
+    const pet = petRef.current;
+    if (pet) {
+      const a = state.clock.elapsedTime * 0.09 + 1.2;
+      pet.position.set(
+        Math.cos(a) * 2.35,
+        Math.sin(state.clock.elapsedTime * 0.5) * 0.18,
+        Math.sin(a) * 2.35,
+      );
+    }
 
     // Moons orbit.
     const t = state.clock.elapsedTime;
@@ -132,11 +185,27 @@ export function Planet({ detail }: { detail: number }) {
     actions.click();
     audio.thock();
     const bus = useUiBus.getState();
-    bus.punch();
+    if (!reducedMotion.current) {
+      bus.punch();
+      squashRef.current.vel = Math.min(8, squashRef.current.vel + 5.4);
+    }
+    if (spin.current) {
+      spin.current.worldToLocal(clickNormal.copy(e.point)).normalize();
+      impact.current?.burst(clickNormal);
+    }
     bus.addFloat(e.nativeEvent.clientX, e.nativeEvent.clientY - 12, `+${format(d.clickPower)}`);
   };
 
   const marvin = useGame((g) => (g.s.buildings['marvin'] ?? 0) > 0);
+  const marvinMat = useMemo(
+    () => new SpriteMaterial({ map: sceneTex(SCENE_SPRITES.installation('marvin')), transparent: true, depthWrite: false }),
+    [],
+  );
+  const petMat = useMemo(
+    () => new SpriteMaterial({ map: sceneTex(SCENE_SPRITES.misc.petAsteroid), transparent: true, depthWrite: false }),
+    [],
+  );
+  const petRef = useRef<Sprite>(null);
 
   return (
     <group ref={group}>
@@ -148,16 +217,37 @@ export function Planet({ detail }: { detail: number }) {
           <icosahedronGeometry args={[1, Math.max(3, detail - 1)]} />
           <primitive object={clouds.mat} attach="material" />
         </mesh>
+        <PlanetClickFX ref={impact} reducedMotion={reducedMotion} />
       </group>
       <mesh scale={1.18} raycast={() => null}>
         <icosahedronGeometry args={[1, 4]} />
         <primitive object={atmosphere.mat} attach="material" />
       </mesh>
+      {sentientClouds && (
+        <SentientClouds
+          key={`sentient-${planetKey}`}
+          seed={seed}
+          reducedMotion={reducedMotion}
+        />
+      )}
+      {auroraHabit && (
+        <HabitualAuroras
+          key={`aurora-${planetKey}`}
+          seed={seed}
+          reducedMotion={reducedMotion}
+        />
+      )}
       {decor.hasRing && (
         <mesh rotation={[Math.PI / 2.35, 0, 0.2]} raycast={() => null}>
           <primitive object={ringGeometry} attach="geometry" />
           <primitive object={ringMaterial} attach="material" />
         </mesh>
+      )}
+      {ringed && (
+        /* The pet asteroid. It has a collar. Nobody discusses this. */
+        <sprite ref={petRef} scale={[0.13, 0.13, 1]} raycast={() => null}>
+          <primitive object={petMat} attach="material" />
+        </sprite>
       )}
       {decor.moons.map((m, i) => (
         <mesh
@@ -171,10 +261,9 @@ export function Planet({ detail }: { detail: number }) {
           <meshStandardMaterial color={0x8d8d94} roughness={0.95} />
           {i === 0 && marvin && (
             /* Marvin sits on the nearest moon. He never animates. He has asked us not to. */
-            <mesh position={[0, m.size + 0.012, 0]} raycast={() => null}>
-              <boxGeometry args={[0.018, 0.03, 0.012]} />
-              <meshStandardMaterial color={0x3a3f4a} roughness={0.6} metalness={0.7} />
-            </mesh>
+            <sprite position={[0, m.size + 0.028, 0]} scale={[0.06, 0.06, 1]} raycast={() => null}>
+              <primitive object={marvinMat} attach="material" />
+            </sprite>
           )}
         </mesh>
       ))}

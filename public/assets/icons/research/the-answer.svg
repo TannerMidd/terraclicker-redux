@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">The Answer</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M15 18v18h14M25 14v32M36 20c0-5 13-7 13 1 0 8-13 9-13 20h14"/></g>
+    <g stroke="#F5C84C" stroke-width="2.35"><circle cx="50" cy="46" r="2"/><path d="M11 12h42M11 52h42" stroke-dasharray="2 4"/></g>
+    <g fill="#F5C84C"></g>
+  </g>
+</svg>

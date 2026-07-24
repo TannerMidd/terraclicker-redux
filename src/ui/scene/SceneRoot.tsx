@@ -9,6 +9,8 @@ import { VogonFleet } from './VogonFleet';
 import { Infrastructure } from './Infrastructure';
 import { Universe } from './Universe';
 import { Traffic } from './Traffic';
+import { EventFX } from './EventFX';
+import { stepFocusOut } from './universe/shared';
 import { useSettings } from '../settings';
 
 // Register the three/webgpu namespace for R3F JSX intrinsics.
@@ -45,6 +47,7 @@ export default function SceneRoot() {
     <Canvas
       dpr={cfg.dpr}
       camera={{ position: [1.85, 0.25, 6.4], fov: 42, near: 0.1, far: 650 }}
+      onPointerMissed={() => stepFocusOut()}
       gl={async (props) => {
         const renderer = new THREE.WebGPURenderer({
           ...(props as ConstructorParameters<typeof THREE.WebGPURenderer>[0]),
@@ -67,6 +70,7 @@ export default function SceneRoot() {
       <Infrastructure />
       <Universe />
       <Traffic />
+      <EventFX />
       <Bubbles />
       <VogonFleet />
       <CameraRig />

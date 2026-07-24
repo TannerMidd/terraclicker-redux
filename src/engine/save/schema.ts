@@ -10,6 +10,65 @@ const aspectRecord = z.object({
   bio: dec,
 });
 
+const aspectId = z.enum(['thermal', 'atmo', 'hydro', 'bio']);
+const factionId = z.enum(['magrathea', 'mice', 'vogon']);
+const contractTemplateId = z.enum([
+  'delivery',
+  'system',
+  'bottleneck',
+  'survey',
+  'lean',
+  'timed',
+]);
+const systemSpecialty = z.enum([
+  'thermal',
+  'atmo',
+  'hydro',
+  'bio',
+  'science',
+  'production',
+]);
+const positiveCount = z.number().int().min(1);
+const contractObjective = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('planets'), count: positiveCount }),
+  z.object({ kind: z.literal('systems'), count: positiveCount }),
+  z.object({
+    kind: z.literal('bottleneck'),
+    aspect: aspectId,
+    count: positiveCount,
+  }),
+  z.object({ kind: z.literal('surveyed'), count: positiveCount }),
+  z.object({
+    kind: z.literal('lean'),
+    maxBuildings: z.number().int().min(0),
+    count: positiveCount,
+  }),
+  z.object({
+    kind: z.literal('timed'),
+    count: positiveCount,
+    durationMs: z.number().int().positive(),
+  }),
+]);
+const contractOffer = z.object({
+  id: z.string(),
+  templateId: contractTemplateId,
+  faction: factionId,
+  objective: contractObjective,
+  rewardBp: z.number().int().min(0),
+  rewardReputation: z.number().int().min(0),
+});
+const completedPlanetRecord = z.object({
+  lifetimeIndex: z.number().int().min(1),
+  seed: z.number().int(),
+  type: z.enum(['terrestrial', 'ice', 'desert', 'volcanic', 'ocean', 'gasgiant']),
+  size: z.enum(['small', 'medium', 'large', 'huge']),
+  name: z.string(),
+  quirks: z.array(z.string()),
+  survey: z.string().nullable(),
+  completionMs: z.number().int().min(0),
+  bottleneck: aspectId,
+});
+
 export const saveSchema = z.object({
   version: z.number().int().min(1),
   seed: z.number().int(),
@@ -19,6 +78,7 @@ export const saveSchema = z.object({
     events: z.number(),
     vogons: z.number(),
     visuals: z.number(),
+    contracts: z.number(),
   }),
   gameTimeMs: z.number().min(0),
   createdAtWall: z.number(),
@@ -39,6 +99,7 @@ export const saveSchema = z.object({
     type: z.enum(['terrestrial', 'ice', 'desert', 'volcanic', 'ocean', 'gasgiant']),
     size: z.enum(['small', 'medium', 'large', 'huge']),
     name: z.string(),
+    startedAtGameMs: z.number().min(0),
     quirks: z.array(z.string()),
     survey: z.string().nullable(),
     surveyOptions: z.array(z.string()).nullable(),
@@ -53,10 +114,15 @@ export const saveSchema = z.object({
     tuEarned: dec,
     completedPlanets: z.array(
       z.object({
+        lifetimeIndex: z.number().int().min(1),
         seed: z.number().int(),
         type: z.enum(['terrestrial', 'ice', 'desert', 'volcanic', 'ocean', 'gasgiant']),
         size: z.enum(['small', 'medium', 'large', 'huge']),
         name: z.string(),
+        quirks: z.array(z.string()),
+        survey: z.string().nullable(),
+        completionMs: z.number().int().min(0),
+        bottleneck: z.enum(['thermal', 'atmo', 'hydro', 'bio']),
       }),
     ),
   }),
@@ -77,6 +143,44 @@ export const saveSchema = z.object({
     bp: z.number().min(0),
     bpEarned: z.number().min(0),
     catalogue: z.record(z.string(), z.number().int().min(0)),
+  }),
+  operations: z.object({
+    offers: z.array(contractOffer),
+    active: z
+      .object({
+        offer: contractOffer,
+        acceptedAtGameMs: z.number().min(0),
+        startPlanets: z.number().int().min(0),
+        startSystems: z.number().int().min(0),
+        progress: z.number().int().min(0),
+        deadlineAtGameMs: z.number().min(0).nullable(),
+      })
+      .nullable(),
+    completed: z.array(
+      z.object({
+        id: z.string(),
+        templateId: contractTemplateId,
+        faction: factionId,
+        completedAtGameMs: z.number().min(0),
+        rewardBp: z.number().int().min(0),
+        rewardReputation: z.number().int().min(0),
+      }),
+    ),
+    reputation: z.object({
+      magrathea: z.number().int().min(0),
+      mice: z.number().int().min(0),
+      vogon: z.number().int().min(0),
+    }),
+    offerGeneration: z.number().int().min(0),
+    rerolledAtSystem: z.number().int().min(-1),
+    systemSpecialties: z.record(z.string(), systemSpecialty),
+    heritageCandidateLifetimeIndex: z.number().int().min(1).nullable(),
+    heritageWorlds: z.array(
+      completedPlanetRecord.extend({
+        commissionNumber: z.number().int().min(1),
+        preservedAtGameMs: z.number().min(0),
+      }),
+    ),
   }),
   buffs: z.array(
     z.object({

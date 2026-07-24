@@ -1,5 +1,6 @@
 import { Component, type ReactNode } from 'react';
 import { exportToClipboard } from '../state/store';
+import { BRAND_ASSETS } from './assets';
 
 interface Props {
   children: ReactNode;
@@ -21,7 +22,8 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div className="dont-panic">
         <div className="dp-inner">
-          <h1>DON&rsquo;T PANIC</h1>
+          <img className="dp-art" src={BRAND_ASSETS.dontPanic} alt="" aria-hidden />
+          <h1 className="sr-only">DON&rsquo;T PANIC</h1>
           <p className="dp-sub">
             Something improbable has happened to the interface. Your save is intact.
           </p>

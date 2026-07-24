@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, BufferAttribute, BufferGeometry, CanvasTexture, Color, MeshBasicNodeMaterial, PointsMaterial, SpriteMaterial } from 'three/webgpu';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, MeshBasicNodeMaterial, PointsMaterial, SpriteMaterial, TextureLoader } from 'three/webgpu';
 import { mix, mx_fractal_noise_float, normalLocal, smoothstep, vec3 } from 'three/tsl';
 import { mulberry } from '../../engine/rng';
 import { useGame } from '../../state/store';
 import { zoomLive } from '../fx/uiBus';
+import { SCENE_SPRITES, TEXTURE_ASSETS } from '../assets';
+import { sceneTex } from './spriteTextures';
 
 function starPoints(seed: number, count: number, rMin: number, rMax: number): BufferGeometry {
   const rand = mulberry(seed);
@@ -26,6 +28,11 @@ function starPoints(seed: number, count: number, rMin: number, rMax: number): Bu
 /** Starfield + a seeded nebula dome. The nebula regenerates per galaxy. */
 export function Stars({ count }: { count: number }) {
   const galaxySeed = useGame((g) => g.s.seed + g.s.run.galaxies * 101);
+  // Loaded imperatively, NOT via useLoader: suspending inside the Canvas
+  // (with our async WebGPU renderer factory) detaches R3F's pointer events
+  // from the live canvas — every scene handler, planet clicks included,
+  // silently dies. The texture pops in when ready; it's a decorative layer.
+  const lensTexture = useMemo(() => new TextureLoader().load(TEXTURE_ASSETS.lensDirt), []);
 
   const far = useMemo(() => starPoints(galaxySeed ^ 0xaaaa, count, 55, 95), [galaxySeed, count]);
   const near = useMemo(
@@ -59,29 +66,31 @@ export function Stars({ count }: { count: number }) {
     return m;
   }, [galaxySeed]);
 
-  const sunTexture = useMemo(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 256;
-    const g = canvas.getContext('2d')!;
-    const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-    grad.addColorStop(0, 'rgba(255,252,240,1)');
-    grad.addColorStop(0.18, 'rgba(255,238,200,0.9)');
-    grad.addColorStop(0.45, 'rgba(255,196,120,0.28)');
-    grad.addColorStop(1, 'rgba(255,180,90,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 256, 256);
-    return new CanvasTexture(canvas);
-  }, []);
-
+  // The authored corona (SPRITE_MANIFEST.md §F), tinted warm; the painted
+  // petal lobes replace the old flat radial gradient.
   const sunSprite = useMemo(
     () =>
       new SpriteMaterial({
-        map: sunTexture,
+        map: sceneTex(SCENE_SPRITES.fx.starCorona),
+        color: 0xffe7c2,
         blending: AdditiveBlending,
         depthWrite: false,
         transparent: true,
       }),
-    [sunTexture],
+    [],
+  );
+
+  const lensSprite = useMemo(
+    () =>
+      new SpriteMaterial({
+        map: lensTexture,
+        color: 0xffd49b,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.18,
+      }),
+    [lensTexture],
   );
 
   const nearMat = useMemo(
@@ -94,6 +103,7 @@ export function Stars({ count }: { count: number }) {
   useFrame(() => {
     const z = zoomLive.v;
     sunSprite.opacity = Math.max(0, 1 - (z - 0.3) / 0.3);
+    lensSprite.opacity = 0.18 * Math.max(0, 1 - (z - 0.22) / 0.3);
     nearMat.opacity = 0.9 * Math.max(0.25, 1 - (z - 0.5) / 0.4);
   });
 
@@ -112,6 +122,9 @@ export function Stars({ count }: { count: number }) {
       </points>
       <sprite position={[46, 20, 28]} scale={[16, 16, 1]} raycast={() => null}>
         <primitive object={sunSprite} attach="material" />
+      </sprite>
+      <sprite position={[46, 20, 27.9]} scale={[23, 23, 1]} raycast={() => null}>
+        <primitive object={lensSprite} attach="material" />
       </sprite>
     </group>
   );

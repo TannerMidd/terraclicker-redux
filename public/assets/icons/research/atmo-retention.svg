@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Atmospheric Retention Models</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><circle cx="32" cy="32" r="18"/><circle cx="32" cy="32" r="11"/><path d="M14 32h36"/></g>
+    <g stroke="#5AD7E8" stroke-width="2.35"><path d="M21 27h14a3 3 0 1 0-2.6-4.5M43 36H29a3 3 0 1 0 2.6 4.5"/></g>
+    <g fill="#5AD7E8"></g>
+  </g>
+</svg>

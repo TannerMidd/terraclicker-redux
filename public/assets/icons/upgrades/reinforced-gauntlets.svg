@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Reinforced Gauntlets</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M19 48c-3-6-4-12-3-20l1-9c.5-4 6-4 7 0l1 8 1-13c.5-5 7-4 7 0l1 13 2-11c1-5 7-3 7 1l-1 12 4-7c2-4 8-1 6 4l-6 17c-2 6-6 9-12 9H19Z"/></g>
+    <g stroke="#FF8A3D" stroke-width="2.35"><path d="M18 36h30M20 42h24M25 31h17"/></g>
+    <g fill="#FF8A3D"></g>
+  </g>
+</svg>

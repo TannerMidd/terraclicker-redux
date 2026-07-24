@@ -4,9 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host localhost --port 5173 --strictPort",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "assets:generate": "node scripts/generate-themed-assets.mjs",
+    "preview": "vite preview --host localhost --port 4173 --strictPort",
+    "deploy": "npm run build && node scripts/deploy-pages.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "balance": "tsx balance/run.ts"

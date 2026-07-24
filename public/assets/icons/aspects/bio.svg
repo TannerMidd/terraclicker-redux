@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"
+  fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+  stroke-linejoin="round" role="img" aria-labelledby="title">
+  <title id="title">Biotic</title>
+  <path d="M12 21V9.5"/>
+     <path d="M11.8 13.2C7.2 13.4 4.2 11 4 6.6c4.4-.5 7.5 1.6 7.8 6.6Z"/>
+     <path d="M12.1 10.7c.3-4.8 3.2-7.2 7.7-6.9.1 4.7-2.7 7.2-7.7 6.9Z"/>
+     <path d="M8.3 21h7.4"/>
+</svg>

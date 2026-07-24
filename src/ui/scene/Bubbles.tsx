@@ -1,10 +1,12 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Mesh } from 'three/webgpu';
+import { Mesh, SpriteMaterial } from 'three/webgpu';
 import { actions, useGame } from '../../state/store';
 import { useUiBus } from '../fx/uiBus';
 import { mulberry } from '../../engine/rng';
 import type { BubbleKind } from '../../engine/types';
+import { SCENE_SPRITES } from '../assets';
+import { sceneTex } from './spriteTextures';
 
 const KIND_STYLE: Record<BubbleKind, { color: number; emissive: number; scale: number }> = {
   normal: { color: 0x9ecfff, emissive: 0x3a6ea8, scale: 1 },
@@ -12,6 +14,14 @@ const KIND_STYLE: Record<BubbleKind, { color: number; emissive: number; scale: n
   whale: { color: 0x7a9eff, emissive: 0x2a3a8a, scale: 1.5 },
   petunias: { color: 0xd88ab8, emissive: 0x8a3a6a, scale: 0.9 },
   gargle: { color: 0xaef29a, emissive: 0x3a8a2a, scale: 1.05 },
+};
+
+/** Rare bubbles carry their contents (SPRITE_MANIFEST.md §D). */
+const CORE_ART: Partial<Record<BubbleKind, string>> = {
+  whale: SCENE_SPRITES.bubble.whale,
+  petunias: SCENE_SPRITES.bubble.petunias,
+  gargle: SCENE_SPRITES.bubble.gargle,
+  golden: SCENE_SPRITES.bubble.golden,
 };
 
 function BubbleMesh({ id, kind, seed }: { id: number; kind: BubbleKind; seed: number }) {
@@ -30,6 +40,13 @@ function BubbleMesh({ id, kind, seed }: { id: number; kind: BubbleKind; seed: nu
     })(),
   );
 
+  const coreMat = useMemo(() => {
+    const url = CORE_ART[kind];
+    return url
+      ? new SpriteMaterial({ map: sceneTex(url), transparent: true, depthWrite: false })
+      : null;
+  }, [kind]);
+
   useFrame((state) => {
     const p = path.current;
     const t = state.clock.elapsedTime;
@@ -41,6 +58,8 @@ function BubbleMesh({ id, kind, seed }: { id: number; kind: BubbleKind; seed: nu
     );
     const wobble = 1 + Math.sin(t * 2.2 + seed) * 0.04;
     ref.current?.scale.setScalar(KIND_STYLE[kind].scale * wobble * 0.22);
+    // The contents drift lazily; the bubble does the traveling.
+    if (coreMat) coreMat.rotation = Math.sin(t * 1.1 + seed) * 0.2;
   });
 
   const onCatch = (e: ThreeEvent<PointerEvent>) => {
@@ -61,7 +80,13 @@ function BubbleMesh({ id, kind, seed }: { id: number; kind: BubbleKind; seed: nu
         opacity={0.42}
         roughness={0.1}
         metalness={0.1}
+        depthWrite={false}
       />
+      {coreMat && (
+        <sprite scale={[1.2, 1.2, 1]} raycast={() => null}>
+          <primitive object={coreMat} attach="material" />
+        </sprite>
+      )}
     </mesh>
   );
 }

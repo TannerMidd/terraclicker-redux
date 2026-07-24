@@ -9,7 +9,9 @@ export function MagratheaPanel() {
   void rev;
   const [confirming, setConfirming] = useState(false);
   const { s, d } = useGame.getState();
-  const canPrestige = d.prestigeBp >= 1;
+  const canPrestige = d.prestigeEligible;
+  const requiredWorlds = d.prestigeRequiredSystems * C.PLANETS_PER_SYSTEM;
+  const worldsRemaining = Math.max(0, requiredWorlds - s.run.planetsCompleted);
 
   const branches: PerkBranch[] = ['construction', 'improbability', 'bureaucracy'];
 
@@ -17,12 +19,21 @@ export function MagratheaPanel() {
     <div>
       <div className="panel-h">The Commission</div>
       <div className="magrathea-offer">
-        <div className="m-bp num">+{d.prestigeBp} BP</div>
+        <div className="m-bp num">
+          {canPrestige ? '+' : 'provisional +'}
+          {d.prestigeBp} BP
+        </div>
         <div className="m-sub">
           Magrathea&rsquo;s current offer for this portfolio ({s.run.planetsCompleted} planets,{' '}
           {format(s.run.tuEarned)} TU of demonstrated work). Selling resets the run; Blueprints,
-          Guide entries, and the Answer are yours forever.
+          Guide entries, and completed Deep Thought metaprojects are yours forever.
         </div>
+        {!canPrestige && (
+          <div className="m-sub" style={{ marginTop: 8 }}>
+            This commission requires {d.prestigeRequiredSystems} complete systems
+            ({worldsRemaining} world{worldsRemaining === 1 ? '' : 's'} remaining). Each sale raises future expectations.
+          </div>
+        )}
         <button
           className="btn-prestige"
           disabled={!canPrestige}
@@ -30,7 +41,7 @@ export function MagratheaPanel() {
         >
           {canPrestige
             ? 'Sell the portfolio to Magrathea'
-            : 'Magrathea is not yet impressed (need ≥ 1 BP)'}
+            : `Complete portfolio (${worldsRemaining} remaining)`}
         </button>
       </div>
 

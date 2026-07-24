@@ -11,6 +11,7 @@ import {
   computeDerived,
   maxAffordable,
   prestigeBpFor,
+  prestigeEligible,
   upgradeVisible,
   UPGRADE_BY_ID,
 } from './economy';
@@ -24,6 +25,20 @@ import {
   spawnEvent,
   spawnVogons,
 } from './improbability';
+import {
+  acceptContract,
+  abandonContract,
+  assignSystemSpecialty,
+  createOperationsState,
+  designateHeritage,
+  ensureContractBoard,
+  expireContract,
+  prepareOperationsForPrestige,
+  progressContractOnPlanet,
+  progressContractOnSystem,
+  refreshContractBoard,
+  rerollContracts,
+} from './operations';
 import {
   ASPECTS,
   type AspectId,
@@ -54,7 +69,12 @@ export function newGame(seed: number, nowWall: number): GameState {
     upgrades: {},
     research: { completed: [], active: null },
     achievements: {},
-    planet: generatePlanet(rng, { runIndex: 0, lifetimeIndex: 1, headStart: 0 }),
+    planet: generatePlanet(rng, {
+      runIndex: 0,
+      lifetimeIndex: 1,
+      startedAtGameMs: 0,
+      headStart: 0,
+    }),
     run: {
       number: 1,
       planetsCompleted: 0,
@@ -77,6 +97,7 @@ export function newGame(seed: number, nowWall: number): GameState {
       prestiges: 0,
     },
     prestige: { bp: 0, bpEarned: 0, catalogue: {} },
+    operations: createOperationsState(),
     buffs: [],
     bubbles: [],
     activeEvents: [],
@@ -92,6 +113,7 @@ export function newGame(seed: number, nowWall: number): GameState {
     },
     flags: {},
   };
+  refreshContractBoard(state);
   return state;
 }
 
@@ -205,6 +227,21 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       state.prestige.catalogue[input.id] = rank + 1;
       break;
     }
+    case 'acceptContract':
+      acceptContract(state, input.id, effects);
+      break;
+    case 'abandonContract':
+      abandonContract(state, effects);
+      break;
+    case 'rerollContracts':
+      rerollContracts(state, effects);
+      break;
+    case 'assignSystemSpecialty':
+      assignSystemSpecialty(state, input.systemIndex, input.specialty, effects);
+      break;
+    case 'designateHeritage':
+      designateHeritage(state, input.lifetimeIndex, effects);
+      break;
     case 'devGrant': {
       addTu(state, D(input.tu));
       if (input.gaugeFrac !== undefined) {
@@ -226,12 +263,18 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
 // ————————————————— Prestige —————————————————
 
 export function doPrestige(state: GameState, effects: SimEffect[]): void {
+  if (!prestigeEligible(state)) return;
   const bp = prestigeBpFor(state);
-  if (bp < 1) return;
 
   state.prestige.bp += bp;
   state.prestige.bpEarned += bp;
   state.lifetime.prestiges += 1;
+  const persistentCompleted = state.research.completed.filter(
+    (id) => RESEARCH_BY_ID[id]?.survivesPrestige,
+  );
+  const persistentActive = state.research.active && RESEARCH_BY_ID[state.research.active.id]?.survivesPrestige
+    ? { ...state.research.active } : null;
+  prepareOperationsForPrestige(state, effects);
 
   // Reset the run; keep the lifetime.
   state.tu = DZERO;
@@ -239,8 +282,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
   state.buildings = {};
   state.upgrades = {};
   state.research = {
-    completed: state.research.completed.filter((id) => id === 'the-answer'),
-    active: null,
+    completed: persistentCompleted,
+    active: persistentActive,
   };
   state.buffs = [];
   state.bubbles = [];
@@ -266,6 +309,7 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     runIndex: 0,
     lifetimeIndex: state.lifetime.planetsCompleted + 1,
     headStart: derived.headStart,
+    startedAtGameMs: state.gameTimeMs,
   });
 
   state.timers.nextBubbleMs = C.FIRST_BUBBLE_MS;
@@ -275,24 +319,35 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
   state.timers.stallMs = 0;
   state.timers.sinceBubbleCatchMs = 0;
 
+  refreshContractBoard(state, effects);
   effects.push({ t: 'prestiged', bp });
 }
 
 // ————————————————— Planet completion —————————————————
 
-function completePlanet(state: GameState, derived: Derived, effects: SimEffect[]): void {
+function completePlanet(
+  state: GameState,
+  derived: Derived,
+  effects: SimEffect[],
+  bottleneck: AspectId,
+): void {
   const finished = state.planet;
   const bonus = derived.tuPerSec.mul(C.PLANET_BONUS_SECONDS).max(D(C.PLANET_BONUS_MIN));
   addTu(state, bonus);
 
   state.run.planetsCompleted += 1;
   state.lifetime.planetsCompleted += 1;
-  state.run.completedPlanets.push({
+  const completed = {
+    lifetimeIndex: finished.lifetimeIndex,
     seed: finished.seed,
     type: finished.type,
     size: finished.size,
     name: finished.name,
-  });
+    quirks: [...finished.quirks],
+    survey: finished.survey,
+    completionMs: Math.max(0, state.gameTimeMs - finished.startedAtGameMs),
+    bottleneck,
+  };
   state.timers.stallMs = 0;
 
   effects.push({
@@ -301,6 +356,8 @@ function completePlanet(state: GameState, derived: Derived, effects: SimEffect[]
     lifetimeIndex: finished.lifetimeIndex,
     bonus,
   });
+  state.run.completedPlanets.push(completed);
+  progressContractOnPlanet(state, completed, derived.totalBuildings, effects);
 
   // Earth setpiece: ten minutes after Earth completes, a demolition notice arrives.
   if (finished.lifetimeIndex === 42) {
@@ -319,11 +376,13 @@ function completePlanet(state: GameState, derived: Derived, effects: SimEffect[]
       state.lifetime.bestGalaxies = Math.max(state.lifetime.bestGalaxies, state.run.galaxies);
       effects.push({ t: 'galaxyFormed', count: state.run.galaxies });
     }
+    progressContractOnSystem(state, effects);
   }
 
   state.planet = generatePlanet(state.rng, {
     runIndex: finished.index + 1,
     lifetimeIndex: state.lifetime.planetsCompleted + 1,
+    startedAtGameMs: state.gameTimeMs,
     headStart: derived.headStart,
   });
   if (state.planet.surveyOptions) effects.push({ t: 'surveyOffered' });
@@ -397,10 +456,16 @@ export function step(
   const effects: SimEffect[] = [];
   const offline = Boolean(opts.offline);
   const TICK = C.LOGIC_TICK_MS;
+  ensureContractBoard(state);
+  expireContract(state, effects);
 
-  for (const input of inputs) handleInput(state, input, effects, opts);
+  let completionBottleneck = lowestGauge(state.planet);
+  for (const input of inputs) {
+    if (input.type === 'click' || input.type === 'devGrant') completionBottleneck = lowestGauge(state.planet);
+    handleInput(state, input, effects, opts);
+  }
   if (planetComplete(state.planet)) {
-    completePlanet(state, computeDerived(state, opts), effects);
+    completePlanet(state, computeDerived(state, opts), effects, completionBottleneck);
   }
 
   state.timers.tickCarryMs += dtMs;
@@ -419,6 +484,7 @@ export function step(
     const { derived } = rates;
 
     // 1) Accrue one tick of production.
+    const tickBottleneck = lowestGauge(state.planet);
     if (rates.tuPerTick.gt(0)) addTu(state, rates.tuPerTick);
     if (rates.sciencePerTick.gt(0)) state.science = state.science.add(rates.sciencePerTick);
     for (const a of ASPECTS) {
@@ -428,6 +494,7 @@ export function step(
     state.gameTimeMs += TICK;
     state.timers.stallMs += TICK;
     state.timers.sinceBubbleCatchMs += TICK;
+    if (expireContract(state, effects)) dirty = true;
 
     // 2) Countdowns. Expiries that change production mark rates dirty.
     if (state.buffs.length > 0) {
@@ -484,7 +551,7 @@ export function step(
 
     // 4) Planet completion at tick resolution (overshoot becomes overflow TU).
     if (planetComplete(state.planet)) {
-      completePlanet(state, derived, effects);
+      completePlanet(state, derived, effects, tickBottleneck);
       dirty = true;
     }
 

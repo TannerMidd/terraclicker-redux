@@ -41,7 +41,7 @@ A "reasonable player" sits between the two bots; `npm run balance` reproduces th
 | First System (5 planets) | 2 m 15 s | ~45+ min | |
 | Planet 10 / System 2 | 5 m 30 s | — | |
 | Planet 20 / System 4 | ~14 min | — | cadence stretching by design |
-| 45-minute mark | 30 planets · 15 BP ready | 13 planets · 6 BP ready | first prestige lands naturally inside 45–90 min for any style |
+| 45-minute mark | 29 planets · 14 BP eligible | 11 planets · 5 BP provisional | active appraisal is available; idle appraisal lands later in the 90-minute window |
 | Max stall observed | 30 s | 8 min | both inside the 12-min rubber-band ceiling |
 
 ## 4. The first ten minutes (scripted density)
@@ -97,7 +97,9 @@ Plus quirks (±5–15% nudges) and size (`sizeMod` 0.7 / 1.0 / 1.4 / 2.0 with pr
 
 `BP = floor((runTU / 1e12)^(1/3) + 0.5 × planetsCompleted)`
 
-Worked targets: run 1 ends ~1–3e12 TU + 15 planets → **8–9 BP**. Every BP *ever earned* = +2% production (never spent away); spending BP in the Catalogue is separate.
+The offer remains provisional until the assigned portfolio is complete: five systems (25 worlds) for the first commission, then one additional system after each successful sale. This prevents repeatedly farming the scripted opening worlds.
+
+Worked target: the first active appraisal lands near 30 minutes at 25 worlds for roughly **12 BP**; idle-leaning play reaches the same gate later. Every BP *ever earned* = +2% production (never spent away); spending BP in the Catalogue is separate.
 
 **The Magrathean Catalogue** — three branches, costs 1/2/4/8/16 BP per depth:
 
@@ -109,17 +111,30 @@ Worked targets: run 1 ends ~1–3e12 TU + 15 planets → **8–9 BP**. Every BP 
 | survey rerolls | Gargle Blaster on demand (1/day) | **auto-buy tier 1–3 buildings** (endgame QoL) |
 | Fjord Certification (+Bio all planets) | start with 1 Heart of Gold | Marvin clicks 2×, "against his will" |
 
-**Run-length model the harness enforces:**
+**Run-length planning model:**
 
 | Run | Time to prior peak | New territory | End state |
 |---|---|---|---|
-| 1 | — | planets 1–15 | 8–9 BP |
-| 2 | ~35 min (−55%) | planets 16–20, **galaxy 1** | ~22 BP total |
-| 3–5 | ~25 min | galaxies 2–3, deep research | ~60 BP |
-| 6–10 | ~15 min | multi-galaxy runs, Earth #42 territory (42nd *lifetime* completion) | Answer started |
+| 1 | — | 25 worlds / 5 systems | ~12 BP |
+| 2 | faster to prior depth | 30 worlds / 6 systems | ~27 BP total |
+| 3–5 | accelerated, but deeper | one additional required system per sale; persistent metaprojects | ~40–80 BP total |
+| 6–10 | portfolio-scale runs | multi-galaxy commissions, Earth #42 territory | The Answer underway |
 | 10+ | — | universe stages III–IV, Vortex tourism, Guide completion | Milliways tease |
 
 Universe progress (lifetime best): `100·(1 − e^(−g/6))` — 4 galaxies ≈ 49%, 14 ≈ 90%. The last 10% is meant to be a horizon, not a checklist; the Vortex presents this honestly ("You are here").
+
+### 7.1 Galactic Operations budgets
+
+Operations adds choices to the established curve without becoming a second exponential ladder. Ignoring the contract board leaves baseline planet, system, galaxy, and prestige pacing unchanged.
+
+| Operation | Mechanical budget |
+|---|---|
+| Aspect dispatch | +8% matching aspect production per routed system |
+| Science dispatch | +10% Science production per routed system |
+| Production dispatch | +4% all production per routed system |
+| Heritage archive | newest 8 worlds only; +1% to each recorded bottleneck aspect |
+
+Dispatch slots are `min(4, 1 + floor(completedContracts / 3))`. A system's aspect routes come from its five recorded bottlenecks, Science requires at least two surveyed worlds, and Production is always eligible. Base filings award 0-1 BP plus faction reputation; each 10 reputation adds +1 BP to that faction's newly generated offers, capped at +1. Contract BP counts as lifetime BP earned. The 45-minute operations bot closes 10 contracts for 7 BP while its portfolio is worth 15 BP at appraisal, keeping Magrathea above optional paperwork. Deadlines use the simulation clock; the board rerolls at most once per newly formed system.
 
 ## 8. Celebration rationing
 
@@ -127,11 +142,11 @@ Celebrations follow [ART_DIRECTION.md §8](ART_DIRECTION.md) tiers. Budget: T1 f
 
 ## 9. The balance harness (how this stays true)
 
-`pnpm balance` runs the **headless engine** (no DOM, same `step()`) with scripted bots over simulated days, in seconds of real time:
+`npm run balance` runs the **headless engine** (no DOM, same `step()`) with scripted bots over simulated sessions, in seconds of real time:
 
-- **Bots:** `greedy-tups` (always best TU/sec per cost), `clicker` (8 clicks/s active blocks), `idler` (checks in every 8 h), `optimizer` (aspect-aware pivots), `afk-then-binge`.
-- **Metrics per run:** time-to-each-planet/system/galaxy/prestige, income doubling intervals, ETA-ribbon honesty (predicted vs actual), stall windows (longest gap between acquisitions), BP per run.
-- **CI assertions (fail the build):** planet 1 ≤ 4 min; first prestige 45–90 min (`optimizer`); no stall > 12 min in run 1 (`greedy`); active/idle advantage 15–40%; run 2 reaches run-1 peak ≥ 45% faster; no NaN/negative/∞ anywhere across 1e0–1e300.
-- **Output:** an HTML report with income curves, acquisition timelines, and stall heatmaps per bot — the tuning conversation happens over charts, not feelings.
+- **Bots:** `greedy-clicker`, `idler`, `aspect-optimizer`, `afk-then-binge`, contract-aware `operations-manager`, and adversarial `earliest-prestige`.
+- **Metrics per run:** planet/system/galaxy/prestige/contract timeline, income doublings, longest acquisition stall, lifetime BP, contract count, active dispatch routes, Heritage count, and current appraisal depth.
+- **CI assertions (fail the build):** planet 1 <= 4 min; active play reaches appraisal eligibility by 90 min; hostile reset spam cannot sell an incomplete portfolio; no stall > 12 min in the first 45 min; no NaN/negative/infinite economy values.
+- **Output:** a compact console timeline for each bot, with prestige milestones always surfaced even after the timeline truncates.
 
 Change protocol: any constant change ships with a harness run attached to the commit. If a change moves a CI band intentionally, the band moves in the same commit, with one line of why.

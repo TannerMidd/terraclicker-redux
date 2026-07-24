@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { newGame, step, computeDerived } from '../src/engine/sim';
-import { buildingCost, bulkCost, maxAffordable } from '../src/engine/economy';
+import {
+  buildingCost,
+  bulkCost,
+  maxAffordable,
+  prestigeBpFor,
+  prestigeEligible,
+  prestigeRequiredSystems,
+} from '../src/engine/economy';
+import { forecastEvent, spawnEvent } from '../src/engine/improbability';
+import type { SimEffect } from '../src/engine/types';
 import { D } from '../src/engine/num';
 import { format } from '../src/engine/num';
+import { C } from '../src/content/constants';
 
 const OPTS = { utcDay: 3 };
 
@@ -46,6 +56,66 @@ describe('economy', () => {
     expect(s.buildings['marvin']).toBe(1);
     step(s, 250, [{ type: 'buyBuilding', id: 'marvin', qty: 5 }], OPTS);
     expect(s.buildings['marvin']).toBe(1);
+  });
+
+  it('rejects a valuable but incomplete portfolio until the assigned depth is finished', () => {
+    const s = newGame(42, 0);
+    s.run.planetsCompleted = 2;
+    s.run.tuEarned = D('1e15');
+    expect(prestigeBpFor(s)).toBeGreaterThanOrEqual(10);
+    expect(prestigeEligible(s)).toBe(false);
+    expect(computeDerived(s, OPTS).prestigeEligible).toBe(false);
+
+    const rejected = step(s, 0, [{ type: 'prestige' }], OPTS);
+    expect(rejected.effects.some((e) => e.t === 'prestiged')).toBe(false);
+    expect(s.run.number).toBe(1);
+
+    s.run.planetsCompleted = C.PLANETS_PER_SYSTEM * C.PRESTIGE_MIN_SYSTEMS;
+    s.run.systems = C.PRESTIGE_MIN_SYSTEMS;
+    expect(prestigeEligible(s)).toBe(true);
+
+    const accepted = step(s, 0, [{ type: 'prestige' }], OPTS);
+    expect(accepted.effects.some((e) => e.t === 'prestiged')).toBe(true);
+    expect(s.run.number).toBe(2);
+    expect(prestigeRequiredSystems(s)).toBe(
+      C.PRESTIGE_MIN_SYSTEMS + C.PRESTIGE_SYSTEMS_PER_COMMISSION,
+    );
+  });
+
+  it('carries Deep Thought metaprojects across commission sales', () => {
+    const s = newGame(42, 0);
+    s.run.planetsCompleted = C.PLANETS_PER_SYSTEM * C.PRESTIGE_MIN_SYSTEMS;
+    s.run.systems = C.PRESTIGE_MIN_SYSTEMS;
+    s.research.completed = ['thermal-dynamics', 'sep-field'];
+    s.research.active = { id: 'bubble-stabilization', remainingMs: 12_345 };
+
+    const result = step(s, 0, [{ type: 'prestige' }], OPTS);
+
+    expect(result.effects.some((effect) => effect.t === 'prestiged')).toBe(true);
+    expect(s.research.completed).toEqual(['sep-field']);
+    expect(s.research.active).toEqual({
+      id: 'bubble-stabilization',
+      remainingMs: 12_345,
+    });
+  });
+
+  it('turns Heart of Gold into coherent, forecastable Improbability', () => {
+    const s = newGame(7, 0);
+    const baseline = computeDerived(s, OPTS);
+    s.buildings['heartOfGold'] = 1;
+    const derived = computeDerived(s, OPTS);
+
+    expect(derived.improbability).toBeGreaterThan(baseline.improbability);
+    expect(derived.eventFreqMult).toBeGreaterThan(baseline.eventFreqMult);
+    expect(derived.bubbleFreqMult).toBeGreaterThan(baseline.bubbleFreqMult);
+    expect(derived.goldenOddsMult).toBeGreaterThan(baseline.goldenOddsMult);
+
+    const eventCursor = s.rng.events;
+    const forecast = forecastEvent(s, derived);
+    expect(s.rng.events).toBe(eventCursor);
+    const effects: SimEffect[] = [];
+    spawnEvent(s, derived, effects);
+    expect(s.activeEvents[0]?.id).toBe(forecast.id);
   });
 
   it('no NaN/negative anywhere across extreme magnitudes', () => {

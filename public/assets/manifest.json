@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/generate-themed-assets.mjs",
+  "palette": {
+    "void": "#05060A",
+    "panel": "#0D1020",
+    "line": "#2A3350",
+    "ink": "#E9EEF9",
+    "dim": "#8C96AF",
+    "faint": "#5A6378",
+    "thermal": "#FF8A3D",
+    "atmo": "#5AD7E8",
+    "hydro": "#4D8DFF",
+    "bio": "#58D68A",
+    "gold": "#F5C84C",
+    "magrathea": "#B36BFF",
+    "vogon": "#8A8F5A"
+  },
+  "counts": {
+    "buildings": 14,
+    "aspects": 4,
+    "research": 15,
+    "upgrades": 9,
+    "guideIllustrations": 20,
+    "eventIllustrations": 10,
+    "brand": 2,
+    "textures": 1
+  }
+}

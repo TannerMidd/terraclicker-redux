@@ -8,8 +8,9 @@
  *   z ≈ -34   galaxies
  *   z ≈ -95   the cosmic web (everything else; mostly dark; mostly not yours)
  */
-import { Color, Vector3 } from 'three/webgpu';
+import { Color, Euler, Vector3 } from 'three/webgpu';
 import { mulberry } from '../../engine/rng';
+import { C } from '../../content/constants';
 
 export const CURRENT_SYSTEM_ANCHOR = new Vector3(-4.9, 1.95, -7.4);
 
@@ -123,7 +124,77 @@ export function protoSwirlPoints(seed: number, count: number): Float32Array {
   return pts;
 }
 
-// ————— The cosmic web —————
+// ————— Visiting (click a galaxy or system to go look at it) —————
+
+/** Every formed galaxy hangs at this fixed tilt; member seats share it. */
+export const GALAXY_TILT = new Euler(0.7, 0, 0.2);
+
+/** Personality seed for the i-th galaxy — keep Galaxies.tsx in sync via this. */
+export function galaxySeed(index: number, masterSeed: number): number {
+  return (masterSeed ^ (index * 7919)) >>> 0;
+}
+
+/**
+ * Local seat of a galaxy's k-th member system, spread through the spiral
+ * disc (galaxy-local coordinates, before GALAXY_TILT is applied).
+ */
+export function memberSeatLocal(slot: number, gSeed: number): Vector3 {
+  const r = mulberry((gSeed ^ (slot * 0x3d1)) >>> 0);
+  const angle = slot * GOLDEN * 1.9 + r() * 0.5;
+  const radius = 1.15 + slot * 0.24 + r() * 0.12;
+  return new Vector3(Math.cos(angle) * radius, (r() - 0.5) * 0.14, Math.sin(angle) * radius);
+}
+
+export interface FocusRef {
+  kind: 'galaxy' | 'system';
+  index: number;
+}
+
+/**
+ * World seat of a focus target. A system folded into a galaxy sits at its
+ * member seat inside that galaxy's disc; one still in the constellation
+ * sits at its glyph.
+ */
+export function focusSeat(target: FocusRef, masterSeed: number, galaxies: number): Vector3 {
+  if (target.kind === 'galaxy') return galaxyPosition(target.index, masterSeed);
+  const consumed = galaxies * C.SYSTEMS_PER_GALAXY;
+  if (target.index < consumed) {
+    const g = Math.floor(target.index / C.SYSTEMS_PER_GALAXY);
+    const slot = target.index % C.SYSTEMS_PER_GALAXY;
+    return memberSeatLocal(slot, galaxySeed(g, masterSeed))
+      .applyEuler(GALAXY_TILT)
+      .add(galaxyPosition(g, masterSeed));
+  }
+  return systemGlyphPosition(target.index, masterSeed);
+}
+
+/**
+ * Camera pose for visiting a target: parked a respectful distance out,
+ * slightly above the plane, nudged toward the universe's center so the
+ * composition always faces home.
+ */
+export function focusFraming(
+  target: FocusRef,
+  masterSeed: number,
+  galaxies: number,
+  wide: boolean,
+  outCam: Vector3,
+  outLook: Vector3,
+): void {
+  const seat = focusSeat(target, masterSeed, galaxies);
+  const galaxy = target.kind === 'galaxy';
+  const dist = galaxy ? (wide ? 9.8 : 11.6) : wide ? 4.35 : 5.1;
+  // Galaxies get a higher vantage so the disc reads as a spiral, not a blob.
+  outCam
+    .set(-seat.x * 0.05, galaxy ? 0.62 : 0.44, 1)
+    .normalize()
+    .multiplyScalar(dist)
+    .add(seat);
+  outLook.copy(seat);
+  if (galaxy) outLook.y += 0.2;
+  // Portrait: the dock is a bottom sheet — sit the subject in the upper half.
+  if (!wide) outLook.y -= dist * 0.115;
+}
 
 export interface CosmicWebData {
   /** Dim filament dust, xyz triplets. */

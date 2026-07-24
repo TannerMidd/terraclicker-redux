@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="512" viewBox="0 0 1024 512" role="img" aria-labelledby="title">
+  <title id="title">DON'T PANIC</title>
+  <defs>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M170 84H854l86 172-86 172H170L84 256 170 84Z" stroke="#2A3350" stroke-width="4"/>
+    <path d="M190 108H834l72 148-72 148H190l-72-148 72-148Z" stroke="#F5C84C" stroke-width="3" opacity=".55"/>
+    <path d="M118 256h76M830 256h76M512 108v42M512 362v42" stroke="#F5C84C" stroke-width="4"/>
+    <circle cx="512" cy="256" r="176" stroke="#F5C84C" stroke-width="2" opacity=".18" stroke-dasharray="2 14"/>
+  </g>
+  <text x="512" y="282" text-anchor="middle" fill="#F5C84C" filter="url(#glow)"
+    font-family="Inter, Arial, sans-serif" font-size="104" font-weight="850" letter-spacing="7">DON'T PANIC</text>
+  <text x="512" y="327" text-anchor="middle" fill="#8C96AF" font-family="Inter, Arial, sans-serif"
+    font-size="18" font-weight="650" letter-spacing="8">LARGE FRIENDLY LETTERS</text>
+</svg>

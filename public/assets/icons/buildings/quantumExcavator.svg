@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Quantum Excavation Core</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M25 12h14v9H25zM28 21v7l-7 5v8l11 11 11-11v-8l-7-5v-7"/>
+      <path d="m25 41 7 7 7-7-7-7-7 7Z"/></g>
+    <g stroke="#4D8DFF" stroke-width="2.35"><path d="M14 29c-5 3.5-5 8.5 0 12s13 3.5 18 0M50 29c5 3.5 5 8.5 0 12s-13 3.5-18 0" stroke-dasharray="2.2 3.2"/>
+      <circle cx="32" cy="41" r="2.2"/></g>
+    <g fill="#4D8DFF"></g>
+  </g>
+</svg>

@@ -1,0 +1,119 @@
+{
+  "version": 2,
+  "seed": 23063,
+  "rng": {
+    "planets": 2607272456,
+    "bubbles": 2582833073,
+    "events": 694114352,
+    "vogons": 3767462178,
+    "visuals": 1389826142
+  },
+  "gameTimeMs": 987654,
+  "createdAtWall": 1700000000000,
+  "savedAtWall": 1700000123456,
+  "tu": "4200000000000000000",
+  "science": "12345",
+  "buildings": {
+    "seedProbe": 17,
+    "atmoProcessor": 9,
+    "hydroPump": 6,
+    "bioSeeder": 4
+  },
+  "upgrades": {
+    "bulk-procurement": 1
+  },
+  "research": {
+    "completed": [
+      "orbital-surveying"
+    ],
+    "active": null
+  },
+  "achievements": {
+    "first-click": 250,
+    "first-world": 60000
+  },
+  "planet": {
+    "index": 3,
+    "lifetimeIndex": 9,
+    "seed": 228280155,
+    "type": "terrestrial",
+    "size": "medium",
+    "name": "Terra Prima",
+    "quirks": [],
+    "survey": null,
+    "surveyOptions": null,
+    "gauges": {
+      "thermal": "0",
+      "atmo": "0",
+      "hydro": "0",
+      "bio": "0"
+    },
+    "targets": {
+      "thermal": "60",
+      "atmo": "60",
+      "hydro": "60",
+      "bio": "60"
+    }
+  },
+  "run": {
+    "number": 2,
+    "planetsCompleted": 3,
+    "systems": 0,
+    "galaxies": 0,
+    "tuEarned": "875000000000000000",
+    "completedPlanets": [
+      {
+        "seed": 111,
+        "type": "desert",
+        "size": "small",
+        "name": "Carpenter Delta"
+      },
+      {
+        "seed": 222,
+        "type": "ocean",
+        "size": "large",
+        "name": "Mostly Damp"
+      },
+      {
+        "seed": 333,
+        "type": "gasgiant",
+        "size": "huge",
+        "name": "Hooloovoo Minor"
+      }
+    ]
+  },
+  "lifetime": {
+    "tuEarned": "9900000000000000000",
+    "clicks": 4321,
+    "planetsCompleted": 8,
+    "systems": 1,
+    "galaxies": 0,
+    "bestGalaxies": 0,
+    "bubblesCaught": 0,
+    "petuniasCaught": 0,
+    "vogonShipsRepelled": 0,
+    "vogonReadingsEndured": 0,
+    "prestiges": 1
+  },
+  "prestige": {
+    "bp": 13,
+    "bpEarned": 21,
+    "catalogue": {
+      "cheapStarts": 2
+    }
+  },
+  "buffs": [],
+  "bubbles": [],
+  "activeEvents": [],
+  "vogon": null,
+  "timers": {
+    "nextBubbleMs": 180000,
+    "nextEventMs": 544404.7294836491,
+    "nextVogonMs": 4851724.531967193,
+    "stallMs": 0,
+    "sinceBubbleCatchMs": 0,
+    "nextIdCounter": 0,
+    "tickCarryMs": 0
+  },
+  "flags": {}
+}

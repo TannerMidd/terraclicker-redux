@@ -3,6 +3,9 @@ import type { RngState } from './rng';
 
 export type AspectId = 'thermal' | 'atmo' | 'hydro' | 'bio';
 export const ASPECTS: readonly AspectId[] = ['thermal', 'atmo', 'hydro', 'bio'];
+export type FactionId = 'magrathea' | 'mice' | 'vogon';
+export type ContractTemplateId = 'delivery' | 'system' | 'bottleneck' | 'survey' | 'lean' | 'timed';
+export type SystemSpecialty = AspectId | 'science' | 'production';
 
 export type PlanetType = 'terrestrial' | 'ice' | 'desert' | 'volcanic' | 'ocean' | 'gasgiant';
 export type PlanetSize = 'small' | 'medium' | 'large' | 'huge';
@@ -18,6 +21,8 @@ export interface PlanetState {
   type: PlanetType;
   size: PlanetSize;
   name: string;
+  /** Simulated time when this world entered the active commission. */
+  startedAtGameMs: number;
   quirks: string[];
   /** Chosen survey id, or null. */
   survey: string | null;
@@ -64,10 +69,71 @@ export interface VogonState {
 
 /** Compact record of a finished world — enough to re-derive its look forever. */
 export interface CompletedPlanetRecord {
+  /** 1-based count across every commission. */
+  lifetimeIndex: number;
   seed: number;
   type: PlanetType;
   size: PlanetSize;
   name: string;
+  /** Personality and survey choices preserved for the Guide atlas. */
+  quirks: string[];
+  survey: string | null;
+  /** Simulated time from arrival to delivery. Zero means an old save lacked the record. */
+  completionMs: number;
+  /** The aspect furthest behind immediately before the finishing work. */
+  bottleneck: AspectId;
+}
+
+export type ContractObjective =
+  | { kind: 'planets'; count: number }
+  | { kind: 'systems'; count: number }
+  | { kind: 'bottleneck'; aspect: AspectId; count: number }
+  | { kind: 'surveyed'; count: number }
+  | { kind: 'lean'; maxBuildings: number; count: number }
+  | { kind: 'timed'; count: number; durationMs: number };
+
+export interface ContractOffer {
+  id: string;
+  templateId: ContractTemplateId;
+  faction: FactionId;
+  objective: ContractObjective;
+  rewardBp: number;
+  rewardReputation: number;
+}
+
+export interface ActiveContract {
+  offer: ContractOffer;
+  acceptedAtGameMs: number;
+  startPlanets: number;
+  startSystems: number;
+  progress: number;
+  deadlineAtGameMs: number | null;
+}
+
+export interface ContractHistoryEntry {
+  id: string;
+  templateId: ContractTemplateId;
+  faction: FactionId;
+  completedAtGameMs: number;
+  rewardBp: number;
+  rewardReputation: number;
+}
+
+export interface HeritageWorldRecord extends CompletedPlanetRecord {
+  commissionNumber: number;
+  preservedAtGameMs: number;
+}
+
+export interface OperationsState {
+  offers: ContractOffer[];
+  active: ActiveContract | null;
+  completed: ContractHistoryEntry[];
+  reputation: Record<FactionId, number>;
+  offerGeneration: number;
+  rerolledAtSystem: number;
+  systemSpecialties: Record<string, SystemSpecialty>;
+  heritageCandidateLifetimeIndex: number | null;
+  heritageWorlds: HeritageWorldRecord[];
 }
 
 export interface GameState {
@@ -127,6 +193,8 @@ export interface GameState {
     catalogue: Record<string, number>;
   };
 
+
+  operations: OperationsState;
   buffs: BuffState[];
   bubbles: BubbleState[];
   activeEvents: ActiveEventState[];
@@ -159,6 +227,11 @@ export type Input =
   | { type: 'hitVogonShip'; id: number }
   | { type: 'prestige' }
   | { type: 'buyPerk'; id: string }
+  | { type: 'acceptContract'; id: string }
+  | { type: 'abandonContract' }
+  | { type: 'rerollContracts' }
+  | { type: 'assignSystemSpecialty'; systemIndex: number; specialty: SystemSpecialty | null }
+  | { type: 'designateHeritage'; lifetimeIndex: number }
   /** Dev/testing input: grant TU and optionally set gauge fractions. */
   | { type: 'devGrant'; tu: string; gaugeFrac?: number }
   /** Dev/testing input: force a spawn. */
@@ -178,7 +251,21 @@ export type SimEffect =
   | { t: 'researchDone'; id: string }
   | { t: 'surveyOffered' }
   | { t: 'prestiged'; bp: number }
-  | { t: 'click'; power: Decimal };
+  | { t: 'click'; power: Decimal }
+  | { t: 'contractAccepted'; id: string }
+  | {
+      t: 'contractCompleted';
+      id: string;
+      templateId: ContractTemplateId;
+      faction: FactionId;
+      rewardBp: number;
+      rewardReputation: number;
+    }
+  | { t: 'contractFailed'; id: string; templateId: ContractTemplateId; reason: 'deadline' | 'prestige' | 'abandoned' }
+  | { t: 'contractBoardRefreshed'; generation: number }
+  | { t: 'systemSpecialtyAssigned'; systemIndex: number; specialty: SystemSpecialty | null }
+  | { t: 'heritageDesignated'; lifetimeIndex: number }
+  | { t: 'heritageArchived'; lifetimeIndex: number };
 
 /** Everything computed from state — never persisted (engine law #3). */
 export interface Derived {
@@ -196,6 +283,8 @@ export interface Derived {
   bubbleFreqMult: number;
   bubbleLifetimeMs: number;
   goldenOddsMult: number;
+  /** Coherent local anomaly pressure, displayed on a 0?42% Guide scale. */
+  improbability: number;
   offlineEfficiency: number;
   offlineCapMs: number;
   vogonDebuffMult: number;
@@ -206,6 +295,14 @@ export interface Derived {
   startProbes: number;
   /** BP that would be earned by prestiging right now. */
   prestigeBp: number;
+  /** Complete systems required for the current Magrathean commission. */
+  prestigeRequiredSystems: number;
+  /** Whether Magrathea will currently accept the portfolio. */
+  prestigeEligible: boolean;
+  /** Concurrent system-specialty slots earned through completed contracts. */
+  dispatchSlots: number;
+  /** Slots currently occupied by formed systems with a specialty. */
+  dispatchesUsed: number;
   totalBuildings: number;
 }
 

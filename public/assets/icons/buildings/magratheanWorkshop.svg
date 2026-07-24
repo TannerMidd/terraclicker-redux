@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Magrathean Workshop</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M12 48h40M16 48V27l10 6V22l10 8V18h12v30M40 24h4M40 30h4M40 36h4"/>
+      <circle cx="25" cy="43" r="9"/><path d="M16 43h18M25 34v18"/></g>
+    <g stroke="#B36BFF" stroke-width="2.35"><path d="M20 41c2-5 7-6 11-2-5 1-4 6-10 7M11 16h13M14 12v8M21 12v8"/></g>
+    <g fill="#B36BFF"></g>
+  </g>
+</svg>

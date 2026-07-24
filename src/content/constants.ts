@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 2,
+  SAVE_VERSION: 4,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -67,10 +67,26 @@ export const C = {
   OFFLINE_MIN_MS: 30_000,
 
   // Prestige: BP = floor((runTU/1e12)^(1/3) + 0.5 × planetsCompleted)
+  /** First appraisal needs a real portfolio; later commissions add one system each. */
+  PRESTIGE_MIN_SYSTEMS: 5,
+  PRESTIGE_SYSTEMS_PER_COMMISSION: 1,
   PRESTIGE_TU_DIVISOR: 1e12,
   PRESTIGE_TU_EXP: 1 / 3,
   PRESTIGE_PER_PLANET: 0.5,
   BP_PASSIVE: 0.02, // +2% production per BP ever earned
+
+  // Operations
+  CONTRACT_OFFER_COUNT: 3,
+  CONTRACT_REPUTATION_PER_BP: 10,
+  CONTRACT_REPUTATION_BP_CAP: 1,
+  CONTRACT_DISPATCH_BASE: 1,
+  CONTRACTS_PER_DISPATCH_SLOT: 3,
+  CONTRACT_DISPATCH_MAX: 4,
+  SYSTEM_SPECIALTY_ASPECT_MULT: 1.08,
+  SYSTEM_SPECIALTY_SCIENCE_MULT: 1.1,
+  SYSTEM_SPECIALTY_PRODUCTION_MULT: 1.04,
+  HERITAGE_ACTIVE_LIMIT: 8,
+  HERITAGE_ASPECT_MULT: 1.01,
 
   // Achievements: +1% production per Guide entry
   ACHIEVEMENT_BONUS: 0.01,

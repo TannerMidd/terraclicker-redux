@@ -236,7 +236,7 @@ All synthesized via Web Audio at runtime:
 | Budget | Target |
 |---|---|
 | Initial JS (gz) | ≤ 1.8 MB total; three.js chunk lazy after first paint of the DON'T PANIC screen |
-| Network assets | **zero textures** — everything procedural or generated to GPU at boot; fonts ~80 KB subset |
+| Themed assets | ≤ 300 KB total for Guide SVGs/WebPs plus one 512px grayscale lens-dirt texture; all planet and environment textures remain procedural |
 | Time to interactive | < 3 s mid-range laptop, < 5 s mid-range phone |
 | Main-thread logic | ≤ 2 ms per logic tick; render ≤ 8 ms/frame Tier B |
 | Hidden tab | rendering fully suspended; engine advances on timestamps (no rAF dependence) |

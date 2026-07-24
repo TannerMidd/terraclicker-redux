@@ -20,6 +20,8 @@ export interface ResearchDef {
   costScience: number;
   durationMs: number;
   guide: string;
+  /** Continues thinking and stays completed across Magrathean commissions. */
+  survivesPrestige?: boolean;
   requiresResearch?: string;
   requiresBuilding?: Record<string, number>;
   effects: ResearchEffect[];
@@ -115,6 +117,7 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: "Somebody Else's Problem Field",
     costScience: 2_000,
     durationMs: HOUR,
+    survivesPrestige: true,
     requiresResearch: 'babel-fish',
     effects: [{ kind: 'allMult', v: 1.15 }],
     guide: 'Distractions become somebody else\'s. All production +15%, mostly from meetings you can no longer perceive.',
@@ -124,6 +127,7 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: 'Improbability Containment',
     costScience: 3_000,
     durationMs: 90 * MIN,
+    survivesPrestige: true,
     effects: [{ kind: 'bubbleLifetimeAddMs', v: 6_000 }],
     guide: 'Bubbles of concentrated luck now pop 6 seconds later. The luck has been notified.',
   },
@@ -132,6 +136,7 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: 'Bistromathics',
     costScience: 8_000,
     durationMs: 3 * HOUR,
+    survivesPrestige: true,
     effects: [{ kind: 'costGrowthDelta', v: -0.0015 }],
     guide: 'Numbers on restaurant bills obey different rules. Building cost growth 1.15 → 1.1485. This is enormous. It does not look enormous. That is bistromathics.',
   },
@@ -140,6 +145,7 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: 'Negotiable Universal Constants',
     costScience: 25_000,
     durationMs: 6 * HOUR,
+    survivesPrestige: true,
     requiresResearch: 'bistromathics',
     effects: [{ kind: 'allMult', v: 1.5 }],
     guide: 'The fundamental forces agree to new terms. All production +50%.',
@@ -149,6 +155,7 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: 'The Answer',
     costScience: 42_000,
     durationMs: 42 * HOUR,
+    survivesPrestige: true,
     requiresBuilding: { deepThought: 1 },
     effects: [{ kind: 'answer' }],
     guide: '42.',

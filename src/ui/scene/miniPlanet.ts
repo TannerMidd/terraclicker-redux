@@ -12,8 +12,11 @@ import { mulberry } from '../../engine/rng';
 
 const tmp = new Color();
 
-export function createMiniPlanetGeometry(record: CompletedPlanetRecord): BufferGeometry {
-  const geo = createPlanetGeometry(record.seed, record.type, 2);
+export function createMiniPlanetGeometry(
+  record: CompletedPlanetRecord,
+  detail = 2,
+): BufferGeometry {
+  const geo = createPlanetGeometry(record.seed, record.type, detail);
   const pal = paletteFor(record.type, record.seed);
   const elevation = geo.getAttribute('elevation');
   const latitude = geo.getAttribute('latitude');

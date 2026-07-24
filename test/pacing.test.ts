@@ -3,6 +3,7 @@ import { newGame, step, computeDerived } from '../src/engine/sim';
 import { bulkCost, upgradeVisible } from '../src/engine/economy';
 import { BUILDINGS } from '../src/content/buildings';
 import { UPGRADES } from '../src/content/upgrades';
+import { C } from '../src/content/constants';
 import type { GameState, Input } from '../src/engine/types';
 
 const OPTS = { utcDay: 3 };
@@ -68,7 +69,31 @@ describe('pacing smoke (harness CI bands, PROGRESSION.md §9)', () => {
     }
     const d = computeDerived(s, OPTS);
     expect(d.prestigeBp).toBeGreaterThanOrEqual(1);
-    expect(s.run.planetsCompleted).toBeGreaterThanOrEqual(5);
+    expect(d.prestigeEligible).toBe(true);
+    expect(s.run.systems).toBeGreaterThanOrEqual(C.PRESTIGE_MIN_SYSTEMS);
+  }, 60_000);
+
+  it('earliest-prestige spam cannot sell before completing the assigned portfolio', () => {
+    const s = newGame(20260723, 0);
+    let soldAtPlanets: number | null = null;
+    let soldAtMs: number | null = null;
+
+    for (let tick = 0; tick < 90 * 60 * 4; tick++) {
+      const inputs = botInputs(s, tick);
+      inputs.push({ type: 'prestige' });
+      const r = step(s, 250, inputs, OPTS);
+      if (r.effects.some((e) => e.t === 'prestiged')) {
+        soldAtPlanets = s.lifetime.planetsCompleted;
+        soldAtMs = s.gameTimeMs;
+        break;
+      }
+    }
+
+    expect(soldAtPlanets).toBe(C.PLANETS_PER_SYSTEM * C.PRESTIGE_MIN_SYSTEMS);
+    expect(soldAtMs).not.toBeNull();
+    expect(soldAtMs!).toBeGreaterThanOrEqual(15 * 60_000);
+    expect(soldAtMs!).toBeLessThanOrEqual(90 * 60_000);
+    expect(s.lifetime.systems).toBeGreaterThanOrEqual(C.PRESTIGE_MIN_SYSTEMS);
   }, 60_000);
 
   it('no stall over 12 minutes in the first 45 minutes of greedy play', () => {

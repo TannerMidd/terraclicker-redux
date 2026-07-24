@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Electronic Thumb</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M18 49V31c0-5 7-5 7 0v5-17c0-5 7-5 7 0v13l5-7c3-4 9 0 6 5l-4 6h8c5 0 6 7 1 8l-15 6c-5 2-10 1-15-1Z"/></g>
+    <g stroke="#F5C84C" stroke-width="2.35"><path d="M10 20h11M14 15v10M38 16h10M43 11v10"/><circle cx="32" cy="19" r="2"/></g>
+    <g fill="#F5C84C"></g>
+  </g>
+</svg>

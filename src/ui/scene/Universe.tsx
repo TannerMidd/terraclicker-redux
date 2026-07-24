@@ -4,6 +4,7 @@ import { Galaxies } from './universe/Galaxies';
 import { ProtoGalaxy } from './universe/ProtoGalaxy';
 import { CosmicWeb } from './universe/CosmicWeb';
 import { FormationFX } from './universe/FormationFX';
+import { FocusedSystem } from './universe/FocusedSystem';
 
 /**
  * The universe you have built, all of it visible and none of it faked:
@@ -11,7 +12,8 @@ import { FormationFX } from './universe/FormationFX';
  * recede into a constellation; five of those collapse into a galaxy; and
  * behind everything hangs the cosmic web, where each lifetime galaxy stays
  * lit forever. Scroll out to take perspective (CameraRig owns the journey;
- * FormationFX owns the ceremonies).
+ * FormationFX owns the ceremonies), or click a galaxy or system to fly
+ * there and inspect the worlds you actually made (FocusedSystem).
  */
 export function Universe() {
   return (
@@ -22,6 +24,7 @@ export function Universe() {
       <ProtoGalaxy />
       <CosmicWeb />
       <FormationFX />
+      <FocusedSystem />
     </group>
   );
 }

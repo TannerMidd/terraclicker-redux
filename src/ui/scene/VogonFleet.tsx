@@ -1,12 +1,33 @@
-import { useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
-import { Group } from 'three/webgpu';
+import { Sprite, SpriteMaterial } from 'three/webgpu';
 import { actions, useGame } from '../../state/store';
 import { useUiBus } from '../fx/uiBus';
 import { mulberry } from '../../engine/rng';
+import { SCENE_SPRITES } from '../assets';
+import { sceneTex } from './spriteTextures';
 
-function Slab({ id, seed, hit }: { id: number; seed: number; hit: boolean }) {
-  const ref = useRef<Group>(null);
+function Slab({
+  id,
+  seed,
+  hit,
+  flagship,
+}: {
+  id: number;
+  seed: number;
+  hit: boolean;
+  flagship: boolean;
+}) {
+  const ref = useRef<Sprite>(null);
+  const mat = useMemo(
+    () =>
+      new SpriteMaterial({
+        map: sceneTex(flagship ? SCENE_SPRITES.vogon.constructor : SCENE_SPRITES.vogon.escort),
+        transparent: true,
+        depthWrite: false,
+      }),
+    [flagship],
+  );
   const pos = useRef(
     (() => {
       const r = mulberry(seed);
@@ -14,21 +35,25 @@ function Slab({ id, seed, hit }: { id: number; seed: number; hit: boolean }) {
         x: -1.1 + r() * 3.4,
         y: 0.55 + r() * 1.25,
         z: 1.2 + r() * 1.4,
-        yaw: (r() - 0.5) * 0.5,
+        lean: (r() - 0.5) * 0.14,
         fall: 0,
       };
     })(),
   );
+  const scale = flagship ? 0.95 : 0.56;
 
   useFrame((_state, dt) => {
     const p = pos.current;
     if (hit) {
       // Destroyed ships drop straight down, without dignity.
       p.fall += dt * 6;
+      mat.rotation = p.lean + p.fall * 0.55;
+      mat.opacity = Math.max(0, 1 - p.fall / 2.4);
+    } else {
+      // Otherwise: they hang. They do not float, bob, or ease. That is the joke.
+      mat.rotation = p.lean;
     }
-    // Otherwise: they hang. They do not float, bob, or ease. That is the joke.
     ref.current?.position.set(p.x, p.y - (hit ? p.fall * p.fall : 0), p.z);
-    ref.current?.rotation.set(hit ? p.fall * 0.8 : 0, p.yaw, hit ? p.fall * 0.5 : 0);
     if (ref.current) ref.current.visible = !hit || p.fall < 2.2;
   });
 
@@ -40,20 +65,9 @@ function Slab({ id, seed, hit }: { id: number; seed: number; hit: boolean }) {
   };
 
   return (
-    <group ref={ref} onPointerDown={onHit}>
-      <mesh>
-        <boxGeometry args={[0.52, 0.2, 0.34]} />
-        <meshStandardMaterial color={0x8a8f5a} roughness={0.85} metalness={0.25} />
-      </mesh>
-      <mesh position={[0.1, 0.14, 0]}>
-        <boxGeometry args={[0.2, 0.1, 0.2]} />
-        <meshStandardMaterial color={0x707548} roughness={0.9} metalness={0.2} />
-      </mesh>
-      <mesh position={[-0.2, -0.08, 0.1]}>
-        <boxGeometry args={[0.14, 0.08, 0.1]} />
-        <meshStandardMaterial color={0x9a9f68} roughness={0.85} />
-      </mesh>
-    </group>
+    <sprite ref={ref} scale={[scale, scale, 1]} onPointerDown={onHit}>
+      <primitive object={mat} attach="material" />
+    </sprite>
   );
 }
 
@@ -65,8 +79,8 @@ export function VogonFleet() {
   if (!vogon) return null;
   return (
     <group>
-      {vogon.ships.map((sh) => (
-        <Slab key={sh.id} id={sh.id} seed={sh.seed} hit={sh.hit} />
+      {vogon.ships.map((sh, i) => (
+        <Slab key={sh.id} id={sh.id} seed={sh.seed} hit={sh.hit} flagship={i === 0} />
       ))}
     </group>
   );

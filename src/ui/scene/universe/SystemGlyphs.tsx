@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
+  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   DoubleSide,
@@ -13,7 +14,14 @@ import { useUiBus } from '../../fx/uiBus';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { starClass, starColor, systemGlyphPosition } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { inspectHandlers, makeGlowSprite } from './shared';
+import { focusOn, makeGlowSprite, visitHandlers } from './shared';
+import {
+  SPECIALTY_VISUAL,
+  specialtyFor,
+  specialtySummary,
+  universeMotion,
+  type SystemSpecialty,
+} from './operationsVisual';
 
 const RING_GEO = new RingGeometry(0.55, 0.585, 48);
 const RING_MAT = new MeshBasicMaterial({
@@ -23,14 +31,37 @@ const RING_MAT = new MeshBasicMaterial({
   side: DoubleSide,
 });
 
+const DISPATCH_RING_GEO = new RingGeometry(0.655, 0.682, 64);
+const DISPATCH_MATS: Record<SystemSpecialty, MeshBasicMaterial> = {
+  thermal: dispatchMaterial('thermal'),
+  atmo: dispatchMaterial('atmo'),
+  hydro: dispatchMaterial('hydro'),
+  bio: dispatchMaterial('bio'),
+  science: dispatchMaterial('science'),
+  production: dispatchMaterial('production'),
+};
+
+function dispatchMaterial(specialty: SystemSpecialty): MeshBasicMaterial {
+  return new MeshBasicMaterial({
+    color: SPECIALTY_VISUAL[specialty].color,
+    transparent: true,
+    opacity: 0.42,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+}
+
 /** A formed system receded into the constellation: star + tilted ring + world-dots. */
 function SystemGlyph({
   index,
   records,
+  specialty,
   settleDelay,
 }: {
   index: number;
   records: CompletedPlanetRecord[];
+  specialty: SystemSpecialty | null;
   settleDelay: number;
 }) {
   const seed = records[0]?.seed ?? index + 1;
@@ -53,16 +84,22 @@ function SystemGlyph({
 
   const root = useRef<Group>(null);
   const spin = useRef<Group>(null);
+  const dispatch = useRef<Group>(null);
   const born = useRef<number | null>(null);
 
   useFrame((state, dt) => {
-    if (spin.current) spin.current.rotation.y += dt * 0.1;
+    if (!universeMotion.reduced) {
+      if (spin.current) spin.current.rotation.y += dt * 0.1;
+      if (dispatch.current) dispatch.current.rotation.y -= dt * 0.055;
+    }
     const g = root.current;
     if (!g) return;
     const t = state.clock.elapsedTime;
     if (born.current === null) born.current = t;
     // Settle in: constellation glyphs pop softly, staggered, on first sight.
-    const k = Math.min(1, Math.max(0, (t - born.current - settleDelay) / 0.55));
+    const k = universeMotion.reduced
+      ? 1
+      : Math.min(1, Math.max(0, (t - born.current - settleDelay) / 0.55));
     g.scale.setScalar(k === 1 ? 1 : 0.001 + (1 - Math.pow(1 - k, 3)) * 0.999);
   });
 
@@ -70,16 +107,26 @@ function SystemGlyph({
     .map((r) => r.name)
     .slice(0, 3)
     .join(', ');
+  const dispatchSummary = specialtySummary(specialty);
+  const hoverSummary = `${starClass(seed)} · ${records.length} worlds — ${worlds}${
+    records.length > 3 ? '…' : ''
+  }${dispatchSummary ? ` · ${dispatchSummary}` : ''} · click to visit`;
+
   return (
     <group ref={root} position={pos} rotation={[0.5, 0, 0.12]}>
-      <mesh
-        {...inspectHandlers(
-          `System ${index + 1}`,
-          `${starClass(seed)} · ${records.length} worlds — ${worlds}${records.length > 3 ? '…' : ''}`,
-        )}
-      >
+      <mesh raycast={() => null}>
         <icosahedronGeometry args={[0.16, 1]} />
         <meshBasicMaterial color={color} />
+      </mesh>
+      <mesh
+        visible={false}
+        {...visitHandlers(
+          `System ${index + 1}`,
+          hoverSummary,
+          () => focusOn({ kind: 'system', index }),
+        )}
+      >
+        <sphereGeometry args={[0.78, 8, 8]} />
       </mesh>
       <sprite scale={[0.9, 0.9, 1]} raycast={() => null}>
         <primitive object={glow} attach="material" />
@@ -89,9 +136,36 @@ function SystemGlyph({
           <primitive object={RING_MAT} attach="material" />
         </mesh>
         <points geometry={dots} raycast={() => null}>
-          <pointsMaterial size={1.6} sizeAttenuation={false} color={0xbfe8d4} transparent opacity={0.95} depthWrite={false} />
+          <pointsMaterial
+            size={1.6}
+            sizeAttenuation={false}
+            color={0xbfe8d4}
+            transparent
+            opacity={0.95}
+            depthWrite={false}
+          />
         </points>
       </group>
+      {specialty && (
+        <group ref={dispatch}>
+          <mesh
+            geometry={DISPATCH_RING_GEO}
+            rotation={[-Math.PI / 2, 0, 0]}
+            raycast={() => null}
+          >
+            <primitive object={DISPATCH_MATS[specialty]} attach="material" />
+          </mesh>
+          {/* Two restrained dispatch markers make the otherwise symmetric halo legible. */}
+          <mesh position={[0.67, 0, 0]} scale={0.035} raycast={() => null}>
+            <tetrahedronGeometry args={[1, 0]} />
+            <primitive object={DISPATCH_MATS[specialty]} attach="material" />
+          </mesh>
+          <mesh position={[-0.67, 0, 0]} scale={0.025} raycast={() => null}>
+            <tetrahedronGeometry args={[1, 0]} />
+            <primitive object={DISPATCH_MATS[specialty]} attach="material" />
+          </mesh>
+        </group>
+      )}
     </group>
   );
 }
@@ -102,6 +176,7 @@ export function SystemGlyphs() {
   void rev;
   const cine = useUiBus((b) => b.activeCinematic);
   const queue = useUiBus((b) => b.cinematicQueue);
+  const focus = useUiBus((b) => b.focus);
   const { s } = useGame.getState();
   const systems = s.run.systems;
   // Systems consumed by a galaxy whose ceremony is still QUEUED remain in
@@ -111,25 +186,38 @@ export function SystemGlyphs() {
     (queuedGalaxies.length > 0 ? Math.min(...queuedGalaxies) : s.run.galaxies) *
     C.SYSTEMS_PER_GALAXY;
 
-  const glyphs: { index: number; records: CompletedPlanetRecord[] }[] = [];
+  const glyphs: {
+    index: number;
+    records: CompletedPlanetRecord[];
+    specialty: SystemSpecialty | null;
+  }[] = [];
   const first = Math.max(consumed, systems - 24);
   for (let i = first; i < systems; i++) {
     // The freshly-formed system stays hidden while its cinematic plays —
     // FormationFX delivers it to this spot, then it appears.
     if (cine?.kind === 'system' && cine.index === i) continue;
+    // A glyph being visited yields its seat to the full FocusedSystem view.
+    if (focus?.kind === 'system' && focus.index === i) continue;
     glyphs.push({
       index: i,
       records: s.run.completedPlanets.slice(
         i * C.PLANETS_PER_SYSTEM,
         (i + 1) * C.PLANETS_PER_SYSTEM,
       ),
+      specialty: specialtyFor(s, i),
     });
   }
 
   return (
     <group>
       {glyphs.map((g, order) => (
-        <SystemGlyph key={g.index} index={g.index} records={g.records} settleDelay={order * 0.04} />
+        <SystemGlyph
+          key={g.index}
+          index={g.index}
+          records={g.records}
+          specialty={g.specialty}
+          settleDelay={order * 0.04}
+        />
       ))}
     </group>
   );

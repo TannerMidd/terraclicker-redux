@@ -2,11 +2,20 @@ import { useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Vector3 } from 'three/webgpu';
 import { useUiBus, zoomLive } from '../fx/uiBus';
-import { bandAt, sampleJourney } from './universeLayout';
+import { useGame } from '../../state/store';
+import { bandAt, focusFraming, focusSeat, sampleJourney } from './universeLayout';
+import { exitFocus, stepFocusOut } from './universe/shared';
 import * as audio from '../audio/audio';
 
 const CAM = new Vector3();
 const LOOK = new Vector3();
+const FCAM = new Vector3();
+const FLOOK = new Vector3();
+
+function smoothstep(x: number): number {
+  const k = Math.max(0, Math.min(1, x));
+  return k * k * (3 - 2 * k);
+}
 
 /** Where the camera auto-travels to watch each formation cinematic —
  * wide enough to frame both the ignition and the constellation seat. */
@@ -30,6 +39,8 @@ export function CameraRig() {
   const cineOverride = useRef(false);
   const lastCineId = useRef(0);
   const lastBand = useRef(0);
+  /** Visit flight: eased camera pose + blend weight off the journey rail. */
+  const focusPose = useRef({ cam: new Vector3(), look: new Vector3(), b: 0 });
 
   useEffect(() => {
     if (punchNonce !== lastNonce.current) {
@@ -52,9 +63,23 @@ export function CameraRig() {
       // Trackpad pinch arrives as ctrl+wheel; keep it from zooming the page.
       if (e.ctrlKey) e.preventDefault();
       const bus = useUiBus.getState();
+      // Scroll is the journey's input: the first notch releases any visit.
+      if (bus.focus) {
+        exitFocus();
+        userInput();
+        return;
+      }
       const factor = e.ctrlKey ? 0.0032 : 0.0009;
       bus.setZoom(bus.zoom + e.deltaY * factor);
       userInput();
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const el = e.target as HTMLElement | null;
+      if (el && el.closest?.('input, textarea, select, [contenteditable]')) return;
+      // Step back out: system → its galaxy → the open journey.
+      stepFocusOut();
     };
 
     // Touch: pinch to travel. Tracked with pointer events so a lone tap
@@ -80,7 +105,11 @@ export function CameraRig() {
           const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
           if (pinchDist > 0) {
             const bus = useUiBus.getState();
-            bus.setZoom(bus.zoom - (d - pinchDist) * 0.0028);
+            if (bus.focus) {
+              exitFocus(); // pinch reclaims the journey, like scroll
+            } else {
+              bus.setZoom(bus.zoom - (d - pinchDist) * 0.0028);
+            }
             userInput();
           }
           pinchDist = d;
@@ -101,14 +130,29 @@ export function CameraRig() {
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerEnd);
     window.addEventListener('pointercancel', onPointerEnd);
+    window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('wheel', onWheel);
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerEnd);
       window.removeEventListener('pointercancel', onPointerEnd);
+      window.removeEventListener('keydown', onKey);
     };
   }, []);
+
+  // Headless-verification hook: project a focus seat to screen pixels so
+  // scripts/shot.mjs can aim real clicks at real objects.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as Record<string, unknown>)['__tcCam'] = {
+      screenPos: (kind: 'galaxy' | 'system', index: number) => {
+        const st = useGame.getState().s;
+        const v = focusSeat({ kind, index }, st.seed, st.run.galaxies).project(camera);
+        return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height, z: v.z };
+      },
+    };
+  }, [camera, size]);
 
   useFrame((state, dt) => {
     const d = Math.min(dt, 0.1);
@@ -128,7 +172,7 @@ export function CameraRig() {
       cineOverride.current = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     }
     const zTarget =
-      cine && cineOverride.current ? CINEMATIC_ZOOM[cine.kind] : bus.zoom;
+      cine && cineOverride.current && !bus.focus ? CINEMATIC_ZOOM[cine.kind] : bus.zoom;
 
     zoomSmooth.current += (zTarget - zoomSmooth.current) * (1 - Math.exp(-d * (cine ? 2.2 : 4)));
     const z = zoomSmooth.current;
@@ -150,10 +194,36 @@ export function CameraRig() {
     const wide = size.width > 900;
     sampleJourney(z, wide, CAM, LOOK);
 
+    // Visit flight: a click on a galaxy or system eases the camera off the
+    // journey rail and parks it at the object; releasing eases it back.
+    const fp = focusPose.current;
+    const focus = bus.focus;
+    if (focus) {
+      const st = useGame.getState().s;
+      focusFraming(focus, st.seed, st.run.galaxies, wide, FCAM, FLOOK);
+      if (fp.b <= 0.001) {
+        fp.cam.copy(CAM); // depart from wherever the journey had us
+        fp.look.copy(LOOK);
+      }
+      const fk = 1 - Math.exp(-d * 2.6);
+      fp.cam.lerp(FCAM, fk);
+      fp.look.lerp(FLOOK, fk);
+    }
+    fp.b += ((focus ? 1 : 0) - fp.b) * (1 - Math.exp(-d * (focus ? 2.4 : 3.1)));
+    const fS = smoothstep(fp.b);
+    if (fS > 0.0001) {
+      CAM.lerp(fp.cam, fS);
+      LOOK.lerp(fp.look, fS);
+    }
+
+    // A visiting camera holds steadier: breathing shrinks, parallax tightens.
+    const calm = 1 - fS * 0.82;
+    const reachF = reach * calm + 0.3 * fS;
+
     camera.position.set(
-      CAM.x + Math.sin(t * 0.05) * (0.09 + z * 0.5) + pt.sx * reach,
-      CAM.y + Math.sin(t * 0.083) * (0.06 + z * 0.35) - pt.sy * reach * 0.6,
-      CAM.z + Math.sin(t * 0.031) * 0.1 + p.v * 0.05 * (1 - z),
+      CAM.x + Math.sin(t * 0.05) * (0.09 + z * 0.5) * calm + pt.sx * reachF,
+      CAM.y + Math.sin(t * 0.083) * (0.06 + z * 0.35) * calm - pt.sy * reachF * 0.6,
+      CAM.z + Math.sin(t * 0.031) * 0.1 * calm + p.v * 0.05 * (1 - z) * (1 - fS),
     );
     camera.lookAt(LOOK.x, LOOK.y, LOOK.z);
   });

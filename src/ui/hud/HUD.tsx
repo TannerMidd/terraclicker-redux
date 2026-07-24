@@ -11,6 +11,7 @@ import { EVENT_BY_ID } from '../../content/events';
 import { VOGON_POEM_LINES } from '../../content/vogonPoetry';
 import { poemLine } from '../../engine/improbability';
 import { C } from '../../content/constants';
+import { BRAND_ASSETS, EVENT_ART, VOGON_ART } from '../assets';
 
 const ASPECT_META: Record<AspectId, { label: string; color: string; a0: number; a1: number }> = {
   thermal: { label: 'THERMAL', color: 'var(--thermal)', a0: -160, a1: -96 },
@@ -184,7 +185,7 @@ function BuffRow() {
         const def = EVENT_BY_ID[e.id];
         return (
           <span key={e.id} className="buff-chip event">
-            {def?.emoji} {def?.name}
+            <img className="bc-art" src={EVENT_ART[e.id]} alt="" aria-hidden /> {def?.name}
             <span className="bc-t">{formatDuration(e.remainingMs)}</span>
           </span>
         );
@@ -209,6 +210,7 @@ function VogonBanner() {
   const earth = Boolean(s.flags['earthDefenseActive']);
   return (
     <div className="vogon-banner">
+      <img className="v-art" src={VOGON_ART} alt="" aria-hidden />
       <div className="v-kicker">
         {earth ? '⚠ DEMOLITION NOTICE — EARTH ⚠' : 'Vogon poetry reading in progress'} · −
         {Math.round(C.VOGON_DEBUFF * 100)}% production
@@ -225,12 +227,17 @@ function VogonBanner() {
 function Toasts() {
   const toasts = useUiBus((b) => b.toasts);
   return (
-    <div className="toast-stack">
+    <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`}>
-          {t.kicker && <div className="t-kicker">{t.kicker}</div>}
-          <div className="t-title">{t.title}</div>
-          {t.body && <div className="t-body">{t.body}</div>}
+        <div key={t.id} className={`toast ${t.kind}${t.art ? ' has-art' : ''}`}>
+          {t.art && (
+            <img className="t-art" src={t.art} alt={t.artAlt ?? ''} />
+          )}
+          <div className="t-copy">
+            {t.kicker && <div className="t-kicker">{t.kicker}</div>}
+            <div className="t-title">{t.title}</div>
+            {t.body && <div className="t-body">{t.body}</div>}
+          </div>
         </div>
       ))}
     </div>
@@ -268,12 +275,25 @@ export function HUD() {
   void rev;
   const tuText = useSmoothTu();
   const { s, d } = useGame.getState();
+  const started = s.lifetime.clicks > 0 || s.lifetime.tuEarned.gt(0);
+  if (!started) {
+    return (
+      <div className="hud-layer">
+        <div className="cold-open-prompt">
+          <span>GUIDE ENTRY 0</span>
+          Touch the world. It has been waiting with admirable patience.
+          <small>Restoring a universe? Use Settings without starting this one.</small>
+        </div>
+      </div>
+    );
+  }
+
 
   return (
     <div className="hud-layer">
       <div className="masthead">
         <div className="brand">
-          TERRA<em>CLICKER</em>
+          <img className="brand-wordmark" src={BRAND_ASSETS.wordmark} alt="TerraClicker" />
         </div>
         <div className="tu-counter">
           <Num v={tuText} />
@@ -287,7 +307,7 @@ export function HUD() {
         </div>
         {(d.sciencePerSec.gt(0) || s.science.gt(0)) && (
           <div className="sci-chip">
-            🧪 <b>{format(s.science)}</b> science · {format(d.sciencePerSec)}/s
+            <i className="science-mark">S</i> <b>{format(s.science)}</b> science · {format(d.sciencePerSec)}/s
           </div>
         )}
       </div>

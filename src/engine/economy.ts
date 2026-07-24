@@ -9,6 +9,7 @@ import { CATALOGUE } from '../content/catalogue';
 import { EVENT_BY_ID } from '../content/events';
 import { D, DZERO, Decimal } from './num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions } from './types';
+import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
 
 /** BP that a prestige right now would award. */
 export function prestigeBpFor(state: GameState): number {
@@ -16,6 +17,16 @@ export function prestigeBpFor(state: GameState): number {
   const tuPart = fromTu.gt(0) ? Math.pow(fromTu.toNumber(), C.PRESTIGE_TU_EXP) : 0;
   const planetPart = C.PRESTIGE_PER_PLANET * state.run.planetsCompleted;
   return Math.floor(tuPart + planetPart);
+}
+/** Each successful commission raises the depth expected by Magrathean appraisal. */
+export function prestigeRequiredSystems(state: GameState): number {
+  return C.PRESTIGE_MIN_SYSTEMS
+    + C.PRESTIGE_SYSTEMS_PER_COMMISSION * state.lifetime.prestiges;
+}
+
+/** Appraisal requires the complete portfolio depth assigned to this commission. */
+export function prestigeEligible(state: GameState): boolean {
+  return state.run.systems >= prestigeRequiredSystems(state) && prestigeBpFor(state) >= 1;
 }
 
 function perkRank(state: GameState, id: string): number {
@@ -117,6 +128,27 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     }
   }
 
+  // --- Operations: assigned systems and the newest eight heritage worlds ---
+  for (const specialty of appliedSystemSpecialties(state)) {
+    switch (specialty) {
+      case 'production':
+        allMult = allMult.mul(C.SYSTEM_SPECIALTY_PRODUCTION_MULT);
+        break;
+      case 'science':
+        scienceMult *= C.SYSTEM_SPECIALTY_SCIENCE_MULT;
+        break;
+      case 'thermal':
+      case 'atmo':
+      case 'hydro':
+      case 'bio':
+        aspectMult[specialty] *= C.SYSTEM_SPECIALTY_ASPECT_MULT;
+        break;
+    }
+  }
+  for (const world of state.operations.heritageWorlds.slice(-C.HERITAGE_ACTIVE_LIMIT)) {
+    aspectMult[world.bottleneck] *= C.HERITAGE_ASPECT_MULT;
+  }
+
   // ——— catalogue perks ———
   let costMult = 1;
   let headStart = 0;
@@ -195,6 +227,17 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   if (planetType) {
     for (const a of ASPECTS) aspectMult[a] *= planetType.prodBias[a];
   }
+  const heartOfGoldCount = state.buildings['heartOfGold'] ?? 0;
+  eventFreqMult *= Math.pow(1.12, heartOfGoldCount);
+  const bubbleFreqMult = quirkBubbleFreq * Math.pow(1.08, heartOfGoldCount);
+  goldenOddsMult *= Math.pow(1.15, heartOfGoldCount);
+  const finalEventFreqMult = eventFreqMult * quirkEventFreq;
+  const anomalyPressure = finalEventFreqMult * bubbleFreqMult * Math.sqrt(goldenOddsMult);
+  const improbability = Math.min(
+    42,
+    100 * (1 - 1 / Math.sqrt(Math.max(1, anomalyPressure))),
+  );
+
 
   // ——— global production multiplier chain ———
   let prodMult = allMult
@@ -281,10 +324,11 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     costMult,
     buildingMults,
     prodMult,
-    eventFreqMult: eventFreqMult * quirkEventFreq,
-    bubbleFreqMult: quirkBubbleFreq,
+    eventFreqMult: finalEventFreqMult,
+    bubbleFreqMult,
     bubbleLifetimeMs,
     goldenOddsMult,
+    improbability,
     offlineEfficiency,
     offlineCapMs,
     vogonDebuffMult,
@@ -294,7 +338,11 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     headStart,
     startProbes,
     prestigeBp: prestigeBpFor(state),
+    prestigeRequiredSystems: prestigeRequiredSystems(state),
+    prestigeEligible: prestigeEligible(state),
     totalBuildings,
+    dispatchSlots: dispatchSlotsFor(state),
+    dispatchesUsed: dispatchesUsedBy(state),
   };
 }
 

@@ -5,6 +5,7 @@ import { UPGRADES } from '../../content/upgrades';
 import { bulkCost, maxAffordable, upgradeVisible } from '../../engine/economy';
 import { format } from '../../engine/num';
 import * as audio from '../audio/audio';
+import { AspectGlyph, buildingIcon, upgradeIcon } from '../assets';
 
 const QTYS = [1, 10, 100, 'max'] as const;
 
@@ -37,9 +38,12 @@ export function ShopPanel() {
                     audio.upgradeSting();
                   }}
                 >
-                  <div className="u-name">{u.name}</div>
-                  <div className="u-cost">{format(u.cost)} TU</div>
-                  <div className="u-desc">{u.guide}</div>
+                  <img className="u-icon" src={upgradeIcon(u.id)} alt="" aria-hidden />
+                  <div className="u-copy">
+                    <div className="u-name">{u.name}</div>
+                    <div className="u-cost">{format(u.cost)} TU</div>
+                    <div className="u-desc">{u.guide}</div>
+                  </div>
                 </button>
               );
             })}
@@ -67,12 +71,15 @@ export function ShopPanel() {
           if (lockedShown++ > 0) return null; // tease exactly one locked tier
           return (
             <div key={b.id} className="shop-item locked" aria-hidden>
-              <div className="row1">
-                <span className="b-name">?????</span>
-                <span className="b-cost">{format(b.baseCost)} TU</span>
-              </div>
-              <div className="row2">
-                <span>Keep terraforming to reveal.</span>
+              <div className="b-icon locked-icon">?</div>
+              <div className="b-copy">
+                <div className="row1">
+                  <span className="b-name">?????</span>
+                  <span className="b-cost">{format(b.baseCost)} TU</span>
+                </div>
+                <div className="row2">
+                  <span>Keep terraforming to reveal.</span>
+                </div>
               </div>
             </div>
           );
@@ -94,24 +101,35 @@ export function ShopPanel() {
             }}
           >
             <div className="fill" style={{ transform: `scaleX(${frac.toFixed(3)})` }} />
-            <div className="row1">
-              <span className="b-name">
-                {b.name} <span className="b-owned">×{owned}</span>
-              </span>
-              <span className="b-cost">
-                {uniqueOwned ? 'employed' : `${format(cost)} TU${n > 1 ? ` (×${n})` : ''}`}
-              </span>
-            </div>
-            <div className="row2">
-              <span className="b-asp">
-                {b.tuPerSec > 0 && <span>{format(b.tuPerSec)} TU/s</span>}
-                {b.aspects.thermal && <span className="asp-th">🔥{format(b.aspects.thermal)}</span>}
-                {b.aspects.atmo && <span className="asp-at">🌫{format(b.aspects.atmo)}</span>}
-                {b.aspects.hydro && <span className="asp-hy">💧{format(b.aspects.hydro)}</span>}
-                {b.aspects.bio && <span className="asp-bi">🌱{format(b.aspects.bio)}</span>}
-                {b.sciencePerSec && <span className="asp-sc">🧪{format(b.sciencePerSec)}</span>}
-                {b.special === 'marvin' && <span>auto-click, reluctantly</span>}
-              </span>
+            <img className="b-icon" src={buildingIcon(b.id)} alt="" aria-hidden />
+            <div className="b-copy">
+              <div className="row1">
+                <span className="b-name">
+                  {b.name} <span className="b-owned">×{owned}</span>
+                </span>
+                <span className="b-cost">
+                  {uniqueOwned ? 'employed' : `${format(cost)} TU${n > 1 ? ` (×${n})` : ''}`}
+                </span>
+              </div>
+              <div className="row2">
+                <span className="b-asp">
+                  {b.tuPerSec > 0 && <span>{format(b.tuPerSec)} TU/s</span>}
+                  {b.aspects.thermal && (
+                    <span className="asp-th"><AspectGlyph aspect="thermal" />{format(b.aspects.thermal)}</span>
+                  )}
+                  {b.aspects.atmo && (
+                    <span className="asp-at"><AspectGlyph aspect="atmo" />{format(b.aspects.atmo)}</span>
+                  )}
+                  {b.aspects.hydro && (
+                    <span className="asp-hy"><AspectGlyph aspect="hydro" />{format(b.aspects.hydro)}</span>
+                  )}
+                  {b.aspects.bio && (
+                    <span className="asp-bi"><AspectGlyph aspect="bio" />{format(b.aspects.bio)}</span>
+                  )}
+                  {b.sciencePerSec && <span className="asp-sc"><i className="science-mark">S</i>{format(b.sciencePerSec)}</span>}
+                  {b.special === 'marvin' && <span>auto-click, reluctantly</span>}
+                </span>
+              </div>
             </div>
           </button>
         );

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Hydraulic Servos</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M20 48h24l-3-14 6-7-5-9-10 4-10-4-5 9 6 7-3 14Z"/><path d="M25 26h14M27 34h10"/></g>
+    <g stroke="#4D8DFF" stroke-width="2.35"><path d="M15 48h34M24 48v5M40 48v5M32 22v12"/><circle cx="32" cy="36" r="3"/></g>
+    <g fill="#4D8DFF"></g>
+  </g>
+</svg>

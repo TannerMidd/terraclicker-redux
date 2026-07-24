@@ -2,7 +2,10 @@
  * Headless verification screenshot: node scripts/shot.mjs <out.png> [width] [height] [waitMs] [actions]
  * `actions` is a semicolon list: click:x,y | tab:Name | wait:ms | worlds:N (complete
  * N planets, auto-survey) | zoom:v (set journey zoom 0–1) | save:file | load:file |
- * shot:file (mid-run capture; the final <out.png> still happens).
+ * shot:file (mid-run capture; the final <out.png> still happens) |
+ * focus:kind,index|none (visit a galaxy/system via the bus) |
+ * clickobj:kind,index (REAL mouse click on the object via __tcCam.screenPos) |
+ * key:Name (keyboard press, e.g. key:Escape).
  * Prints console errors and the active render backend.
  */
 import { chromium } from 'playwright';
@@ -22,7 +25,7 @@ page.on('console', (msg) => {
 });
 page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`));
 
-await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
+await page.goto(process.env.SHOT_URL || 'http://localhost:5173', { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(Number(waitMs));
 
 for (const action of actionsRaw.split(';').filter(Boolean)) {
@@ -32,7 +35,7 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     const [x, y] = arg.split(',').map(Number);
     await page.mouse.click(x, y);
   } else if (kind === 'tab') {
-    await page.getByRole('button', { name: arg, exact: true }).click();
+    await page.getByRole('tab', { name: arg, exact: true }).click();
   } else if (kind === 'btn') {
     await page.getByRole('button', { name: arg }).first().click();
   } else if (kind === 'wait') {
@@ -71,6 +74,37 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'zoom') {
     await page.evaluate((v) => window.__tcBus.useUiBus.getState().setZoom(v), Number(arg));
     await page.waitForTimeout(1900);
+  } else if (kind === 'focus') {
+    const [fk, fi] = arg.split(',');
+    await page.evaluate(
+      ([k, i]) =>
+        window.__tcBus.useUiBus
+          .getState()
+          .setFocus(k === 'none' ? null : { kind: k, index: Number(i) }),
+      [fk, fi],
+    );
+    await page.waitForTimeout(2600);
+  } else if (kind === 'clickobj') {
+    const [ck, ci] = arg.split(',');
+    const p = await page.evaluate(([k, i]) => window.__tcCam.screenPos(k, Number(i)), [ck, ci]);
+    if (!p || p.z > 1 || p.x < 0 || p.y < 0 || p.x > Number(w) || p.y > Number(h)) {
+      errors.push(`clickobj: ${arg} projects off-screen (${JSON.stringify(p)})`);
+    } else {
+      if (p.x > Number(w) - 420)
+        errors.push(`clickobj: ${arg} at x=${Math.round(p.x)} may be under the dock panel`);
+      await page.mouse.click(p.x, p.y);
+      await page.waitForTimeout(2600);
+    }
+  } else if (kind === 'hoverobj') {
+    const [hk, hi] = arg.split(',');
+    const p = await page.evaluate(([k, i]) => window.__tcCam.screenPos(k, Number(i)), [hk, hi]);
+    if (p && p.z <= 1) {
+      await page.mouse.move(p.x, p.y);
+      await page.waitForTimeout(700);
+    }
+  } else if (kind === 'key') {
+    await page.keyboard.press(arg);
+    await page.waitForTimeout(2200);
   } else if (kind === 'save') {
     const str = await page.evaluate(() => window.__tc.exportSave());
     await fs.writeFile(arg, str, 'utf8');
@@ -80,6 +114,12 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.waitForTimeout(1200);
   } else if (kind === 'shot') {
     await page.screenshot({ path: arg });
+  } else if (kind === 'survey') {
+    await page.evaluate(() => {
+      const s = window.__tc.useGame.getState().s;
+      if (s.planet.surveyOptions)
+        window.__tc.dispatch({ type: 'chooseSurvey', id: s.planet.surveyOptions[0] });
+    });
   }
 }
 if (actionsRaw) await page.waitForTimeout(600);

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 64 64"
+  fill="none" role="img" aria-labelledby="title">
+  <title id="title">Somebody Else's Problem Field</title>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 18V10H18 M46 10H54V18 M54 46V54H46 M18 54H10V46"
+    stroke="#5A6378" stroke-width="1.25" opacity=".36"/>
+    <g stroke="#E9EEF9" stroke-width="2.35"><path d="M32 13c9 0 16 7 16 16v18H16V29c0-9 7-16 16-16Z"/><path d="M23 31h18M25 37h14"/></g>
+    <g stroke="#5AD7E8" stroke-width="2.35"><path d="M10 10 54 54M50 13l4-3M10 54l4-3" stroke-dasharray="3 3"/></g>
+    <g fill="#5AD7E8"></g>
+  </g>
+</svg>

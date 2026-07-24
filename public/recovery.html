@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TerraClicker Save Recovery</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0d1020; color: #eef4ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0%, #1a2344 0, #0d1020 45%); }
+    main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 42px 0 64px; }
+    h1 { margin: 0 0 8px; font-size: clamp(28px, 5vw, 52px); letter-spacing: -0.04em; }
+    h2 { margin: 0; font-size: 20px; }
+    p { color: #b9c7df; line-height: 1.55; }
+    .safe { border: 1px solid #58d68a66; background: #10251e; color: #baf3cf; padding: 14px 16px; border-radius: 10px; }
+    .warning { border-left: 3px solid #f5c84c; padding-left: 14px; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0; }
+    button, .button { appearance: none; border: 1px solid #5ad7e866; border-radius: 8px; background: #162443; color: #fff; padding: 10px 14px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
+    button:hover, .button:hover { border-color: #5ad7e8; background: #1d3158; }
+    button.restore { border-color: #f5c84c88; background: #3b3114; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #status { min-height: 24px; color: #f5c84c; font-weight: 700; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+    .card { position: relative; border: 1px solid #334466; border-radius: 14px; background: #11182cdd; padding: 18px; min-width: 0; }
+    .card.best { border-color: #f5c84c; box-shadow: 0 0 0 1px #f5c84c33 inset; }
+    .badge { display: inline-block; margin: 8px 0 12px; border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #0d1020; background: #f5c84c; }
+    .missing { color: #8793aa; }
+    dl { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; margin: 12px 0 18px; }
+    dt { color: #94a4c0; }
+    dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .actions button { padding: 8px 10px; font-size: 13px; }
+    code { color: #5ad7e8; }
+    footer { margin-top: 28px; color: #7f8da8; font-size: 13px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } main { width: min(100% - 20px, 620px); padding-top: 24px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Save Recovery</h1>
+    <p class="safe"><strong>Safe mode:</strong> this page does not start TerraClicker, run its simulation, or autosave. The three storage candidates were captured in memory when this page opened.</p>
+    <p class="warning">Download the recovery bundle first. Then choose the candidate with your real lifetime progress. Restoring creates an additional safety copy of the current main value before changing it.</p>
+    <div class="toolbar">
+      <button id="download-all">Download recovery bundle</button>
+      <button id="copy-all">Copy recovery bundle</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div class="grid" id="candidates"></div>
+    <footer>Origin: <code id="origin"></code> ? Captured: <span id="captured-at"></span></footer>
+  </main>
+  <script>
+    const SAVE_KEY = 'terraclicker2.save';
+    const SOURCES = [
+      { key: SAVE_KEY, label: 'Main save' },
+      { key: 'terraclicker2.backup.0', label: 'Backup 0' },
+      { key: 'terraclicker2.backup.1', label: 'Backup 1' },
+    ];
+    const capturedAt = new Date();
+    const captured = SOURCES.map((source) => ({ ...source, raw: localStorage.getItem(source.key) }));
+    const status = document.querySelector('#status');
+
+    function number(value) {
+      return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+    }
+
+    function inspect(candidate) {
+      if (!candidate.raw) return { missing: true, score: [-1] };
+      try {
+        const data = JSON.parse(candidate.raw);
+        const lifetime = data?.lifetime ?? {};
+        const run = data?.run ?? {};
+        const prestige = data?.prestige ?? {};
+        const summary = {
+          version: number(data?.version),
+          savedAtWall: number(data?.savedAtWall),
+          planets: number(lifetime?.planetsCompleted),
+          systems: number(lifetime?.systems),
+          galaxies: number(lifetime?.galaxies),
+          prestiges: number(lifetime?.prestiges),
+          runPlanets: number(run?.planetsCompleted),
+          bp: number(prestige?.bp),
+          bpEarned: number(prestige?.bpEarned),
+          tu: typeof data?.tu === 'string' ? data.tu : String(data?.tu ?? 'unknown'),
+        };
+        return {
+          ...summary,
+          parseable: true,
+          score: [summary.prestiges, summary.planets, summary.galaxies, summary.systems, summary.bpEarned, summary.savedAtWall],
+        };
+      } catch (error) {
+        return { parseable: false, error: String(error), score: [-1] };
+      }
+    }
+
+    function compareScore(left, right) {
+      for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+        const delta = (left[index] ?? 0) - (right[index] ?? 0);
+        if (delta !== 0) return delta;
+      }
+      return 0;
+    }
+
+    const inspected = captured.map((candidate) => ({ ...candidate, summary: inspect(candidate) }));
+    const viable = inspected.filter((candidate) => candidate.summary.parseable);
+    const best = viable.sort((a, b) => compareScore(b.summary.score, a.summary.score))[0] ?? null;
+
+    function addStat(list, label, value) {
+      const term = document.createElement('dt');
+      term.textContent = label;
+      const detail = document.createElement('dd');
+      detail.textContent = value;
+      list.append(term, detail);
+    }
+
+    function download(filename, text) {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function bundleText() {
+      return JSON.stringify({
+        capturedAt: capturedAt.toISOString(),
+        origin: location.origin,
+        candidates: Object.fromEntries(captured.map((candidate) => [candidate.key, candidate.raw])),
+      }, null, 2);
+    }
+
+    function renderCandidate(candidate) {
+      const card = document.createElement('section');
+      card.className = `card${best?.key === candidate.key ? ' best' : ''}`;
+      const heading = document.createElement('h2');
+      heading.textContent = candidate.label;
+      card.append(heading);
+
+      if (best?.key === candidate.key) {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = 'Highest recorded progress';
+        card.append(badge);
+      }
+
+      if (candidate.summary.missing) {
+        const missing = document.createElement('p');
+        missing.className = 'missing';
+        missing.textContent = 'No value exists in this slot.';
+        card.append(missing);
+        return card;
+      }
+
+      if (!candidate.summary.parseable) {
+        const invalid = document.createElement('p');
+        invalid.textContent = `Raw data exists (${candidate.raw.length.toLocaleString()} bytes) but JSON parsing failed. Download it for forensic repair.`;
+        card.append(invalid);
+      } else {
+        const list = document.createElement('dl');
+        addStat(list, 'Schema version', String(candidate.summary.version));
+        addStat(list, 'Lifetime planets', String(candidate.summary.planets));
+        addStat(list, 'Lifetime systems', String(candidate.summary.systems));
+        addStat(list, 'Lifetime galaxies', String(candidate.summary.galaxies));
+        addStat(list, 'Prestiges', String(candidate.summary.prestiges));
+        addStat(list, 'Blueprints earned', String(candidate.summary.bpEarned));
+        addStat(list, 'Current TU', candidate.summary.tu);
+        addStat(list, 'Saved', candidate.summary.savedAtWall ? new Date(candidate.summary.savedAtWall).toLocaleString() : 'unknown');
+        card.append(list);
+      }
+
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      const rawButton = document.createElement('button');
+      rawButton.textContent = 'Download raw';
+      rawButton.addEventListener('click', () => download(`${candidate.key.replaceAll('.', '-')}.json`, candidate.raw));
+      actions.append(rawButton);
+
+      const restoreButton = document.createElement('button');
+      restoreButton.className = 'restore';
+      restoreButton.textContent = 'Restore this candidate';
+      restoreButton.disabled = !candidate.summary.parseable;
+      restoreButton.addEventListener('click', () => {
+        const detail = candidate.summary.parseable
+          ? `${candidate.summary.planets} lifetime planets, ${candidate.summary.prestiges} prestiges, ${candidate.summary.bpEarned} BP earned`
+          : candidate.label;
+        if (!confirm(`Restore ${candidate.label}?\n\n${detail}\n\nThe current main value will be copied to a separate recovery key first.`)) return;
+        const currentMain = localStorage.getItem(SAVE_KEY);
+        if (currentMain) localStorage.setItem(`terraclicker2.recovery.pre-restore.${Date.now()}`, currentMain);
+        localStorage.setItem(SAVE_KEY, candidate.raw);
+        status.textContent = `${candidate.label} restored to the main slot. Keep this recovery page open until the game has loaded successfully.`;
+      });
+      actions.append(restoreButton);
+      card.append(actions);
+      return card;
+    }
+
+    document.querySelector('#origin').textContent = location.origin;
+    document.querySelector('#captured-at').textContent = capturedAt.toLocaleString();
+    for (const candidate of inspected) document.querySelector('#candidates').append(renderCandidate(candidate));
+
+    document.querySelector('#download-all').addEventListener('click', () => {
+      download(`terraclicker-recovery-${Date.now()}.json`, bundleText());
+      status.textContent = 'Recovery bundle downloaded. This is the untouched snapshot captured when the page opened.';
+    });
+    document.querySelector('#copy-all').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(bundleText());
+        status.textContent = 'Recovery bundle copied to the clipboard.';
+      } catch {
+        status.textContent = 'Clipboard access was blocked; use Download recovery bundle instead.';
+      }
+    });
+  </script>
+</body>
+</html>

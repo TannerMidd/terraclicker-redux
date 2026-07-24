@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../state/store';
-import { useUiBus, zoomLive } from '../fx/uiBus';
-import { BAND_STOPS } from '../scene/universeLayout';
+import { useUiBus, zoomLive, type FocusTarget } from '../fx/uiBus';
+import { BAND_STOPS, starClass } from '../scene/universeLayout';
+import { exitFocus, focusOn } from '../scene/universe/shared';
+import {
+  SPECIALTY_VISUAL,
+  operationsVisual,
+  specialtyFor,
+  specialtySummary,
+} from '../scene/universe/operationsVisual';
 import { C } from '../../content/constants';
 
 const RAIL_LABELS = ['the planet', 'the system', 'the neighbourhood', 'the galaxies', 'everything else'];
@@ -12,6 +19,84 @@ function stageName(bestGalaxies: number): string {
   if (bestGalaxies >= 3) return 'Cluster Age';
   if (bestGalaxies >= 1) return 'Early Galaxy Age';
   return 'Local System';
+}
+
+/** Ancestry row for a visit: everything › galaxy N › system M. */
+function Crumbs({
+  galaxy,
+  current,
+}: {
+  galaxy: number | null;
+  current: string;
+}) {
+  return (
+    <div className="uc-crumbs">
+      <button className="uc-crumb" onClick={() => exitFocus()}>
+        everything
+      </button>
+      {galaxy !== null && (
+        <>
+          <span className="uc-sep">›</span>
+          <button
+            className="uc-crumb"
+            onClick={() => focusOn({ kind: 'galaxy', index: galaxy })}
+          >
+            galaxy {galaxy + 1}
+          </button>
+        </>
+      )}
+      <span className="uc-sep">›</span>
+      <span className="uc-crumb here">{current}</span>
+    </div>
+  );
+}
+
+/** Caption while visiting a galaxy or system — the Guide does introductions. */
+function FocusCaption({ focus }: { focus: FocusTarget }) {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+
+  if (focus.kind === 'galaxy') {
+    return (
+      <div className="uni-caption" key={`fg-${focus.index}`}>
+        <Crumbs galaxy={null} current={`galaxy ${focus.index + 1}`} />
+        <div className="uc-kicker">galaxy {focus.index + 1} — formed, filed, yours</div>
+        <div className="uc-line">
+          {C.SYSTEMS_PER_GALAXY * C.PLANETS_PER_SYSTEM} worlds across{' '}
+          {C.SYSTEMS_PER_GALAXY} systems · ×{C.GALAXY_MULT} production, in perpetuity
+        </div>
+        <div className="uc-foot">click a star to visit its worlds · esc steps back out</div>
+      </div>
+    );
+  }
+
+  const records = s.run.completedPlanets.slice(
+    focus.index * C.PLANETS_PER_SYSTEM,
+    (focus.index + 1) * C.PLANETS_PER_SYSTEM,
+  );
+  const galaxy =
+    focus.index < s.run.galaxies * C.SYSTEMS_PER_GALAXY
+      ? Math.floor(focus.index / C.SYSTEMS_PER_GALAXY)
+      : null;
+  const seed = records[0]?.seed ?? focus.index + 1;
+  const specialty = specialtyFor(s, focus.index);
+  const dispatchSummary = specialtySummary(specialty);
+  return (
+    <div className="uni-caption" key={`fs-${focus.index}`}>
+      <Crumbs galaxy={galaxy} current={`system ${focus.index + 1}`} />
+      <div className="uc-kicker">
+        system {focus.index + 1}
+        {galaxy !== null ? ` · galaxy ${galaxy + 1}` : ' · the neighbourhood'}
+        {specialty ? ` · ${SPECIALTY_VISUAL[specialty].shortLabel} dispatch` : ''}
+      </div>
+      <div className="uc-line">
+        {starClass(seed)} · {records.length} worlds, every one of them finished and still turning
+        {dispatchSummary ? ` · ${dispatchSummary}` : ''}
+      </div>
+      <div className="uc-foot">{records.map((r) => r.name).join(' · ')}</div>
+    </div>
+  );
 }
 
 function Caption({ band }: { band: number }) {
@@ -40,6 +125,9 @@ function Caption({ band }: { band: number }) {
   const worldsToward = s.run.completedPlanets.length - systems * C.PLANETS_PER_SYSTEM;
   const systemsToward = systems - galaxies * C.SYSTEMS_PER_GALAXY;
   const pct = 100 * (1 - Math.exp(-s.lifetime.bestGalaxies / 6));
+  const assignments = Object.keys(operationsVisual(s).systemSpecialties).filter(
+    (key) => Number(key) >= 0 && Number(key) < systems,
+  ).length;
 
   let kicker = '';
   let line = '';
@@ -56,7 +144,7 @@ function Caption({ band }: { band: number }) {
       kicker = 'the neighbourhood';
       line = `${systems} system${systems === 1 ? '' : 's'} formed · +${Math.round(C.SYSTEM_BONUS * 100)}% production each${
         galaxies > 0 ? ` · ${galaxies * C.SYSTEMS_PER_GALAXY} folded into galaxies` : ''
-      }`;
+      }${assignments > 0 ? ` · ${assignments} dispatch route${assignments === 1 ? '' : 's'} active` : ''}`;
       if (systemsToward > 0)
         foot = `next galaxy: ${systemsToward} of ${C.SYSTEMS_PER_GALAXY} systems gathered — gravity has expressed interest`;
       break;
@@ -91,6 +179,7 @@ function Caption({ band }: { band: number }) {
  */
 export function UniverseHUD() {
   const inspect = useUiBus((b) => b.inspect);
+  const focus = useUiBus((b) => b.focus);
   const [band, setBand] = useState(0);
   const bandRef = useRef(0);
   const capWrap = useRef<HTMLDivElement>(null);
@@ -105,7 +194,11 @@ export function UniverseHUD() {
         setBand(zoomLive.band);
       }
       if (capWrap.current) {
-        capWrap.current.style.opacity = String(Math.max(0, Math.min(1, (z - 0.1) / 0.09)));
+        // A visit always narrates, even if the parked journey zoom is shallow.
+        const vis = useUiBus.getState().focus
+          ? 1
+          : Math.max(0, Math.min(1, (z - 0.1) / 0.09));
+        capWrap.current.style.opacity = String(vis);
       }
       if (railFill.current) railFill.current.style.height = `${(z * 100).toFixed(1)}%`;
       raf = requestAnimationFrame(tick);
@@ -134,7 +227,7 @@ export function UniverseHUD() {
         ))}
       </div>
       <div ref={capWrap} className="uni-caption-wrap" style={{ opacity: 0 }}>
-        <Caption band={band} />
+        {focus ? <FocusCaption focus={focus} /> : <Caption band={band} />}
       </div>
       {inspect && (
         <div

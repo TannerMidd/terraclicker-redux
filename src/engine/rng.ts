@@ -4,7 +4,7 @@
  * in the engine — that law is what keeps offline, tests, and saves honest.
  */
 
-export type StreamId = 'planets' | 'bubbles' | 'events' | 'vogons' | 'visuals';
+export type StreamId = 'planets' | 'bubbles' | 'events' | 'vogons' | 'visuals' | 'contracts';
 
 export type RngState = Record<StreamId, number>;
 
@@ -22,6 +22,7 @@ export function initRng(seed: number): RngState {
     events: mix(seed + 2),
     vogons: mix(seed + 3),
     visuals: mix(seed + 4),
+    contracts: mix(seed + 5),
   };
 }
 

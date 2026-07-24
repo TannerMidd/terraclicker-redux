@@ -6,6 +6,30 @@ import { runMigrations } from './migrate';
 
 const decOut = (d: Decimal): string => d.toString();
 
+function cloneOperations(operations: GameState['operations']): GameState['operations'] {
+  const cloneOffer = (offer: GameState['operations']['offers'][number]) => ({
+    ...offer,
+    objective: { ...offer.objective },
+  });
+  return {
+    ...operations,
+    offers: operations.offers.map(cloneOffer),
+    active: operations.active
+      ? {
+          ...operations.active,
+          offer: cloneOffer(operations.active.offer),
+        }
+      : null,
+    completed: operations.completed.map((entry) => ({ ...entry })),
+    reputation: { ...operations.reputation },
+    systemSpecialties: { ...operations.systemSpecialties },
+    heritageWorlds: operations.heritageWorlds.map((world) => ({
+      ...world,
+      quirks: [...world.quirks],
+    })),
+  };
+}
+
 /** GameState → plain JSON-safe object (Decimals as strings). */
 export function toSave(state: GameState): SaveShape {
   const aspects = (rec: Record<AspectId, Decimal>) => {
@@ -42,6 +66,7 @@ export function toSave(state: GameState): SaveShape {
       active: state.research.active ? { ...state.research.active } : null,
     },
     prestige: { ...state.prestige, catalogue: { ...state.prestige.catalogue } },
+    operations: cloneOperations(state.operations),
     rng: { ...state.rng },
     timers: { ...state.timers },
     flags: { ...state.flags },
@@ -66,6 +91,7 @@ export function fromSave(shape: SaveShape): GameState {
     },
     run: { ...shape.run, tuEarned: D(shape.run.tuEarned) },
     lifetime: { ...shape.lifetime, tuEarned: D(shape.lifetime.tuEarned) },
+    operations: cloneOperations(shape.operations),
   };
 }
 

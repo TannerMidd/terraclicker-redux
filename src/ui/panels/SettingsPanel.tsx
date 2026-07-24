@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { exportToClipboard, hardReset, importFromText, saveNow } from '../../state/store';
+import { exportToClipboard, hardReset, importFromText, saveNow, useGame } from '../../state/store';
 import { useSettings, type Quality } from '../settings';
 
 export function SettingsPanel() {
   const settings = useSettings();
+  const persistenceBlocked = useGame((game) => game.persistenceBlocked);
   const [copied, setCopied] = useState(false);
   const [importErr, setImportErr] = useState<string | null>(null);
   const [resetArmed, setResetArmed] = useState(false);
@@ -44,16 +45,31 @@ export function SettingsPanel() {
       <div className="set-row">
         <div>
           Save now
-          <div className="s-desc">Autosaves every 10 seconds regardless. This button is for comfort.</div>
+          <div className="s-desc">
+            {persistenceBlocked
+              ? 'Autosave is paused to protect rejected save data. Use recovery, import, or reset.'
+              : 'Autosaves every 10 seconds. This button is for comfort.'}
+          </div>
         </div>
         <button
           className="btn"
+          disabled={persistenceBlocked}
           onClick={() => {
             saveNow();
           }}
         >
-          Save
+          {persistenceBlocked ? 'Paused' : 'Save'}
         </button>
+      </div>
+
+      <div className="set-row">
+        <div>
+          Save recovery
+          <div className="s-desc">Inspect and export the main save and both backup slots without running the game.</div>
+        </div>
+        <a className="btn" href="/recovery.html">
+          Open
+        </a>
       </div>
 
       <div className="set-row">

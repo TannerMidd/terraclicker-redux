@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
-  DoubleSide,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -11,6 +10,7 @@ import {
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import { useUiBus, type CinematicJob } from '../../fx/uiBus';
+import { SCENE_SPRITES } from '../../assets';
 import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
 import {
   CURRENT_SYSTEM_ANCHOR,
@@ -21,7 +21,7 @@ import {
 } from '../universeLayout';
 import { C } from '../../../content/constants';
 import * as audio from '../../audio/audio';
-import { makeGlowSprite } from './shared';
+import { makeGlowSprite, makeTexSprite } from './shared';
 
 const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 const P = new Vector3();
@@ -58,10 +58,10 @@ function SystemFormation({ job }: { job: CinematicJob }) {
   const worlds = useRef<(Mesh | null)[]>([]);
   const starRef = useRef<Mesh>(null);
   const flareRef = useRef<Sprite>(null);
-  const shockRef = useRef<Mesh>(null);
+  const shockRef = useRef<Sprite>(null);
   const streakGlow = useRef<Sprite>(null);
   const streakTrail = useRef<Mesh>(null);
-  const arriveRef = useRef<Mesh>(null);
+  const arriveRef = useRef<Sprite>(null);
   const lightRef = useRef<PointLight>(null);
   const t0 = useRef<number | null>(null);
   const ignited = useRef(false);
@@ -69,11 +69,11 @@ function SystemFormation({ job }: { job: CinematicJob }) {
   const flareMat = useMemo(() => makeGlowSprite(star.getHex(), 0), [star]);
   const streakMat = useMemo(() => makeGlowSprite(0xfff6e0, 0.9), []);
   const shockMat = useMemo(
-    () => new MeshBasicMaterial({ color: star, transparent: true, opacity: 0, side: DoubleSide, depthWrite: false }),
+    () => makeTexSprite(SCENE_SPRITES.fx.shockwaveRing, { color: star.getHex(), opacity: 0, additive: true }),
     [star],
   );
   const arriveMat = useMemo(
-    () => new MeshBasicMaterial({ color: 0xbfd4ff, transparent: true, opacity: 0, side: DoubleSide, depthWrite: false }),
+    () => makeTexSprite(SCENE_SPRITES.fx.shockwaveRing, { color: 0xbfd4ff, opacity: 0, additive: true }),
     [],
   );
   const trailMat = useMemo(
@@ -130,9 +130,8 @@ function SystemFormation({ job }: { job: CinematicJob }) {
     if (starRef.current)
       starRef.current.scale.setScalar((0.34 + flare * 0.5) * (1 - departure));
     if (shockRef.current) {
-      shockRef.current.scale.setScalar(0.2 + f * 5.4);
-      shockMat.opacity = f > 0 ? (1 - f) * 0.65 : 0;
-      shockRef.current.quaternion.copy(state.camera.quaternion);
+      shockRef.current.scale.setScalar(0.5 + f * 12);
+      shockMat.opacity = f > 0 ? (1 - f) * 0.7 : 0;
     }
 
     // Phase 3 — delivery. One comet, one address label being typed.
@@ -172,9 +171,8 @@ function SystemFormation({ job }: { job: CinematicJob }) {
     // Phase 4 — arrival ring at the constellation seat.
     const ak = Math.max(0, Math.min(1, (e - STREAK_B) / (END - STREAK_B)));
     if (arriveRef.current) {
-      arriveRef.current.scale.setScalar(0.2 + ak * 3.2);
-      arriveMat.opacity = ak > 0 ? (1 - ak) * 0.8 : 0;
-      arriveRef.current.quaternion.copy(state.camera.quaternion);
+      arriveRef.current.scale.setScalar(0.5 + ak * 7.5);
+      arriveMat.opacity = ak > 0 ? (1 - ak) * 0.85 : 0;
     }
 
     if (e >= END) useUiBus.getState().finishCinematic();
@@ -200,10 +198,9 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       <sprite ref={flareRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
         <primitive object={flareMat} attach="material" />
       </sprite>
-      <mesh ref={shockRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
-        <ringGeometry args={[0.92, 1, 64]} />
+      <sprite ref={shockRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
         <primitive object={shockMat} attach="material" />
-      </mesh>
+      </sprite>
       <sprite ref={streakGlow} raycast={() => null}>
         <primitive object={streakMat} attach="material" />
       </sprite>
@@ -211,10 +208,9 @@ function SystemFormation({ job }: { job: CinematicJob }) {
         <boxGeometry args={[0.035, 0.035, 0.1]} />
         <primitive object={trailMat} attach="material" />
       </mesh>
-      <mesh ref={arriveRef} position={target} raycast={() => null}>
-        <ringGeometry args={[0.9, 1, 48]} />
+      <sprite ref={arriveRef} position={target} raycast={() => null}>
         <primitive object={arriveMat} attach="material" />
-      </mesh>
+      </sprite>
       <pointLight ref={lightRef} position={CURRENT_SYSTEM_ANCHOR} color={star} intensity={5} distance={12} />
     </group>
   );
@@ -252,9 +248,9 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
   const streakMats = useMemo(() => colors.map((c) => makeGlowSprite(c.getHex(), 0.9)), [colors]);
   const flashRef = useRef<Sprite>(null);
   const flashMat = useMemo(() => makeGlowSprite(0xfff0d0, 0), []);
-  const shockRef = useRef<Mesh>(null);
+  const shockRef = useRef<Sprite>(null);
   const shockMat = useMemo(
-    () => new MeshBasicMaterial({ color: 0xffe9c0, transparent: true, opacity: 0, side: DoubleSide, depthWrite: false }),
+    () => makeTexSprite(SCENE_SPRITES.fx.shockwaveRing, { color: 0xffe9c0, opacity: 0, additive: true }),
     [],
   );
   const lightRef = useRef<PointLight>(null);
@@ -295,9 +291,8 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
       flashMat.opacity = flash;
     }
     if (shockRef.current) {
-      shockRef.current.scale.setScalar(0.3 + f * 7);
-      shockMat.opacity = f > 0 ? (1 - f) * 0.6 : 0;
-      shockRef.current.quaternion.copy(state.camera.quaternion);
+      shockRef.current.scale.setScalar(0.7 + f * 16);
+      shockMat.opacity = f > 0 ? (1 - f) * 0.65 : 0;
     }
     if (lightRef.current) lightRef.current.intensity = flash * 90;
 
@@ -320,10 +315,9 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
       <sprite ref={flashRef} position={target} raycast={() => null}>
         <primitive object={flashMat} attach="material" />
       </sprite>
-      <mesh ref={shockRef} position={target} raycast={() => null}>
-        <ringGeometry args={[0.92, 1, 64]} />
+      <sprite ref={shockRef} position={target} raycast={() => null}>
         <primitive object={shockMat} attach="material" />
-      </mesh>
+      </sprite>
       <pointLight ref={lightRef} position={target} color={0xfff0d0} intensity={0} distance={20} />
     </group>
   );

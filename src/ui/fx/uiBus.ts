@@ -5,6 +5,8 @@ export interface Toast {
   kicker?: string;
   title: string;
   body?: string;
+  art?: string;
+  artAlt?: string;
   kind: 'info' | 'achievement' | 'event' | 'vogon';
   ttlMs: number;
 }
@@ -33,6 +35,16 @@ export interface InspectInfo {
 }
 
 /**
+ * A cosmic object the player clicked to visit. `system` uses the GLOBAL
+ * system index (works both for constellation glyphs and for systems already
+ * folded into a galaxy — the seat differs, the records don't).
+ */
+export interface FocusTarget {
+  kind: 'galaxy' | 'system';
+  index: number;
+}
+
+/**
  * Live camera zoom, written by CameraRig every frame and read imperatively
  * (scene fades, HUD captions) without triggering React renders.
  * `v` is the smoothed 0–1 journey position; `band` the current scale band
@@ -55,6 +67,8 @@ interface UiBus {
   activeCinematic: CinematicJob | null;
   cinematicQueue: CinematicJob[];
   inspect: InspectInfo | null;
+  /** The object the camera is visiting, or null for the free journey. */
+  focus: FocusTarget | null;
   addToast: (t: Omit<Toast, 'id'>) => void;
   addFloat: (x: number, y: number, text: string) => void;
   punch: () => void;
@@ -66,6 +80,8 @@ interface UiBus {
   finishCinematic: () => void;
   cancelCinematics: () => void;
   setInspect: (i: InspectInfo | null) => void;
+  /** Visit an object (or null to release the camera back to the journey). */
+  setFocus: (f: FocusTarget | null) => void;
 }
 
 let nextId = 1;
@@ -96,7 +112,8 @@ export const useUiBus = create<UiBus>((set) => ({
   queueCinematic: (kind, index) => {
     const job: CinematicJob = { id: nextId++, kind, index };
     set((s) => {
-      if (s.activeCinematic === null) return { activeCinematic: job };
+      // A ceremony beginning reclaims the stage from any visit.
+      if (s.activeCinematic === null) return { activeCinematic: job, focus: null };
       // Keep the queue short: one of each kind pending at most (offline
       // catch-up can form several systems at once; replaying all would drone).
       const queue = [...s.cinematicQueue.filter((j) => j.kind !== kind), job];
@@ -107,10 +124,16 @@ export const useUiBus = create<UiBus>((set) => ({
     set((s) => ({
       activeCinematic: s.cinematicQueue[0] ?? null,
       cinematicQueue: s.cinematicQueue.slice(1),
+      ...(s.cinematicQueue.length > 0 ? { focus: null } : {}),
     })),
   cancelCinematics: () => set({ activeCinematic: null, cinematicQueue: [] }),
   inspect: null,
   setInspect: (i) => set({ inspect: i }),
+  focus: null,
+  setFocus: (f) => {
+    if (typeof document !== 'undefined') document.body.style.cursor = '';
+    set({ focus: f, inspect: null });
+  },
 }));
 
 // Dev hook for headless verification of camera/cinematic plumbing.

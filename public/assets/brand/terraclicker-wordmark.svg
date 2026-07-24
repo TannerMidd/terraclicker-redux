@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="120" viewBox="0 0 640 120" role="img" aria-labelledby="title">
+  <title id="title">TerraClicker</title>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="61" cy="60" r="34" stroke="#58D68A" stroke-width="5"/>
+    <path d="M30 57c14-6 30-4 43 4 8 5 15 5 22 2M40 38c9 2 15 7 19 14M49 86c4-10 13-17 24-20"
+      stroke="#E9EEF9" stroke-width="4"/>
+    <path d="M61 16v13M61 91v13M17 60h13M92 60h13" stroke="#58D68A" stroke-width="4"/>
+  </g>
+  <text x="124" y="74" fill="#E9EEF9" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="760" letter-spacing="5">TERRA</text>
+  <text x="315" y="74" fill="#58D68A" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="760" letter-spacing="5">CLICKER</text>
+  <path d="M125 91H594" stroke="#2A3350" stroke-width="2"/>
+  <circle cx="607" cy="91" r="4" fill="#F5C84C"/>
+</svg>

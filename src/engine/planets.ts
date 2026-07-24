@@ -40,6 +40,8 @@ export function gaugeTargets(
 export interface NewPlanetOpts {
   runIndex: number;
   lifetimeIndex: number;
+  /** Simulated time when this planet became the active commission. */
+  startedAtGameMs: number;
   /** Gauge head start (0–1) from Fjord Certification / surveys. */
   headStart: number;
 }
@@ -99,6 +101,7 @@ export function generatePlanet(rng: RngState, opts: NewPlanetOpts): PlanetState 
     type: type as PlanetState['type'],
     size,
     name,
+    startedAtGameMs: opts.startedAtGameMs,
     quirks,
     survey: null,
     surveyOptions,

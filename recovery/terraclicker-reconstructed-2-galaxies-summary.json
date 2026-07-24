@@ -1,0 +1,81 @@
+{
+  "generatedAt": "2026-07-24T20:09:37.299Z",
+  "anchors": {
+    "prestiges": 0,
+    "galaxies": 2,
+    "systems": 10,
+    "completedPlanets": 50,
+    "totalSettlements": 512,
+    "tuPerSec": 3001070.25,
+    "targetTuPerSec": 3000000,
+    "currentTu": "420000000000",
+    "lifetimeTu": "1250000000000"
+  },
+  "buildings": {
+    "seedProbe": 164,
+    "atmoProcessor": 130,
+    "hydroSeeder": 90,
+    "geoTap": 60,
+    "bioDome": 40,
+    "researchLab": 16,
+    "orbitalMirror": 6,
+    "marvin": 1,
+    "quantumExcavator": 3,
+    "temporalCompressor": 2
+  },
+  "upgrades": [
+    "terraforming-gloves",
+    "reinforced-gauntlets",
+    "hydraulic-servos",
+    "neural-lace",
+    "seedProbe-eff-1",
+    "atmoProcessor-eff-1",
+    "hydroSeeder-eff-1",
+    "geoTap-eff-1",
+    "bioDome-eff-1",
+    "researchLab-eff-1",
+    "milestone-25",
+    "milestone-75",
+    "milestone-150"
+  ],
+  "research": [
+    "thermal-dynamics",
+    "atmo-retention",
+    "hydro-cycle",
+    "bio-protocols",
+    "ergonomic-terraforming",
+    "peer-review",
+    "while-hitchhiking-1",
+    "while-hitchhiking-2",
+    "babel-fish",
+    "sens-o-matic"
+  ],
+  "achievements": [
+    "tu-1",
+    "tu-1k",
+    "tu-1m",
+    "tu-1b",
+    "tu-1t",
+    "click-1",
+    "click-1k",
+    "planet-1",
+    "planet-5",
+    "planet-10",
+    "planet-25",
+    "life-universe-everything",
+    "first-system",
+    "first-galaxy",
+    "buildings-50",
+    "buildings-200",
+    "marvin-hired",
+    "bubble-1",
+    "resistance-is-useless",
+    "research-5"
+  ],
+  "validation": {
+    "schemaVersion": 4,
+    "portableImport": "passed",
+    "rawImport": "passed",
+    "rateErrorPercent": 0.035675000000000005
+  }
+}
