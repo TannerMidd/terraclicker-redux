@@ -10,7 +10,8 @@ import { VortexPanel } from './VortexPanel';
 import { MagratheaPanel } from './MagratheaPanel';
 import { SettingsPanel } from './SettingsPanel';
 
-const TABS = ['Shop', 'Research', 'Operations', 'Guide', 'Vortex', 'Magrathea', '⚙'] as const;
+const SETTINGS_TAB = 'Settings' as const;
+const TABS = ['Shop', 'Research', 'Operations', 'Guide', 'Vortex', 'Magrathea', SETTINGS_TAB] as const;
 type Tab = (typeof TABS)[number];
 
 export function Dock() {
@@ -18,7 +19,7 @@ export function Dock() {
   void rev;
   const { s, d } = useGame.getState();
   const started = s.lifetime.clicks > 0 || s.lifetime.tuEarned.gt(0);
-  const [tab, setTab] = useState<Tab>(started ? 'Shop' : TABS[TABS.length - 1]!);
+  const [tab, setTab] = useState<Tab>(started ? 'Shop' : SETTINGS_TAB);
 
   const isUnlocked = (candidate: Tab): boolean => {
     switch (candidate) {
@@ -40,8 +41,8 @@ export function Dock() {
     }
   };
   // Recovery/import must remain reachable without mutating a fresh universe.
-  const visibleTabs: readonly Tab[] = started ? TABS.filter(isUnlocked) : [TABS[TABS.length - 1]!];
-
+  const visibleTabs: readonly Tab[] = started ? TABS.filter(isUnlocked) : [SETTINGS_TAB];
+  const featureTabs = visibleTabs.filter((candidate) => candidate !== SETTINGS_TAB);
 
   const attention: Partial<Record<Tab, boolean>> = {
     Magrathea: d.prestigeEligible,
@@ -51,18 +52,31 @@ export function Dock() {
 
   return (
     <div className="dock">
-      <div className="dock-tabs" role="tablist" aria-label="Guide device panels">
-        {visibleTabs.map((t) => (
-          <button
-            key={t}
-            className={`dock-tab${t === tab ? ' active' : ''}${attention[t] ? ' attention' : ''}`}
-            onClick={() => setTab(t)}
-            role="tab"
-            aria-selected={t === tab}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="dock-nav" role="tablist" aria-label="Guide device panels">
+        <div className="dock-tabs">
+          {featureTabs.map((t) => (
+            <button
+              key={t}
+              className={`dock-tab${t === tab ? ' active' : ''}${attention[t] ? ' attention' : ''}`}
+              onClick={() => setTab(t)}
+              role="tab"
+              aria-selected={t === tab}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <button
+          className={`dock-tab dock-settings-tab${tab === SETTINGS_TAB ? ' active' : ''}`}
+          onClick={() => setTab(SETTINGS_TAB)}
+          role="tab"
+          aria-selected={tab === SETTINGS_TAB}
+          aria-label="Settings and save options"
+          title="Settings and save options"
+        >
+          <span className="dock-settings-icon" aria-hidden="true">⚙</span>
+          <span>Settings</span>
+        </button>
       </div>
       <div className="dock-body" role="tabpanel" aria-label={`${tab} panel`}>
         {tab === 'Shop' && <ShopPanel />}
@@ -71,7 +85,7 @@ export function Dock() {
         {tab === 'Vortex' && <VortexPanel />}
         {tab === 'Operations' && <OperationsPanel />}
         {tab === 'Magrathea' && <MagratheaPanel />}
-        {tab === '⚙' && <SettingsPanel />}
+        {tab === SETTINGS_TAB && <SettingsPanel />}
       </div>
     </div>
   );

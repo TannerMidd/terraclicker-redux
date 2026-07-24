@@ -317,16 +317,23 @@ button {
   background: rgba(255, 255, 255, 0.07);
 }
 
-.dock-tabs {
+.dock-nav {
   display: flex;
   padding: 8px 8px 0;
-  gap: 2px;
   border-bottom: 1px solid var(--line-soft);
   flex-shrink: 0;
+  min-width: 0;
+}
+.dock-tabs {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 2px;
   overflow-x: auto;
   scrollbar-width: none;
 }
 .dock-tabs::-webkit-scrollbar { display: none; }
+.dock-tabs:empty { display: none; }
 .dock-tab {
   flex: 1 0 auto;
   min-width: 44px;
@@ -342,6 +349,25 @@ button {
 }
 .dock-tab:hover { color: var(--ink-dim); }
 .dock-tab.active { color: var(--ink); }
+.dock-settings-tab {
+  flex: 0 0 auto;
+  min-width: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-left: 5px;
+  padding-inline: 9px;
+  color: var(--ink-dim);
+  border-left: 1px solid var(--line-soft);
+  background: linear-gradient(90deg, rgba(13, 16, 32, 0.35), rgba(13, 16, 32, 0.72));
+  box-shadow: -8px 0 16px rgba(9, 11, 22, 0.45);
+}
+.dock-tabs:empty + .dock-settings-tab { margin-left: 0; }
+.dock-settings-icon {
+  font-size: 14px;
+  line-height: 1;
+}
 .dock-tab.active::after {
   content: '';
   position: absolute;
