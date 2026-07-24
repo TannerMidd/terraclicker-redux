@@ -78,6 +78,14 @@ interface UiBus {
   inspect: InspectInfo | null;
   /** The object the camera is visiting, or null for the free journey. */
   focus: FocusTarget | null;
+  /** Manual flight: the player has the helm (flightControl + CameraRig). */
+  flightMode: boolean;
+  /**
+   * The formed system the runabout is close enough to for its worlds to
+   * materialize (FocusedSystem renders it), or null. Written by the flight
+   * landmark sweep with hysteresis; only meaningful while flightMode is on.
+   */
+  flightNearSystem: number | null;
   addToast: (t: Omit<Toast, 'id'>) => void;
   addFloat: (x: number, y: number, text: string) => void;
   punch: () => void;
@@ -91,6 +99,8 @@ interface UiBus {
   setInspect: (i: InspectInfo | null) => void;
   /** Visit an object (or null to release the camera back to the journey). */
   setFocus: (f: FocusTarget | null) => void;
+  setFlightMode: (on: boolean) => void;
+  setFlightNearSystem: (index: number | null) => void;
 }
 
 let nextId = 1;
@@ -143,6 +153,14 @@ export const useUiBus = create<UiBus>((set) => ({
     if (typeof document !== 'undefined') document.body.style.cursor = '';
     set({ focus: f, inspect: null });
   },
+  flightMode: false,
+  flightNearSystem: null,
+  setFlightMode: (on) => {
+    if (typeof document !== 'undefined') document.body.style.cursor = '';
+    // Taking the helm releases any visit; handing it back clears the reveal.
+    set(on ? { flightMode: true, focus: null, inspect: null } : { flightMode: false, flightNearSystem: null, inspect: null });
+  },
+  setFlightNearSystem: (index) => set({ flightNearSystem: index }),
 }));
 
 // Dev hook for headless verification of camera/cinematic plumbing.

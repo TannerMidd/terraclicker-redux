@@ -324,6 +324,14 @@ export function cosmicWeb(masterSeed: number): CosmicWebData {
 
 /** Journey stops: 0 planet · 1 system · 2 constellation · 3 galaxies · 4 universe. */
 export const BAND_STOPS = [0, 0.3, 0.55, 0.78, 1] as const;
+/** What the Guide calls each band (zoom rail, flight console). */
+export const BAND_LABELS = [
+  'the planet',
+  'the system',
+  'the neighbourhood',
+  'the galaxies',
+  'everything else',
+] as const;
 /** Band membership thresholds for HUD captions and fades. */
 const BAND_EDGES = [0.14, 0.44, 0.68, 0.9];
 

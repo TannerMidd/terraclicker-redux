@@ -19,6 +19,17 @@ import {
 import { focusOn, hopSibling, stepFocusOut } from './universe/shared';
 import { universeMotion } from './universe/operationsVisual';
 import { navLive, nudgeOrbit, orbitEngaged, resetOrbit, worldAnchors } from './navControl';
+import {
+  applyFlightCamera,
+  attachFlightInput,
+  beginFlightFromCamera,
+  endFlight,
+  flightLive,
+  flightZoom,
+  restoreFov,
+  setFlightMode,
+  stepFlight,
+} from './flightControl';
 import { MINI_SIZE } from './miniPlanet';
 import * as audio from '../audio/audio';
 
@@ -79,6 +90,7 @@ export function CameraRig() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const punchNonce = useUiBus((b) => b.punchNonce);
+  const flightMode = useUiBus((b) => b.flightMode);
   const punch = useRef({ v: 0, vel: 0 });
   const zoomSmooth = useRef(0);
   const lastNonce = useRef(0);
@@ -113,6 +125,12 @@ export function CameraRig() {
       punch.current.vel -= 2.4; // dolly impulse toward the planet
     }
   }, [punchNonce]);
+
+  // Manual flight owns its own controls; they live only while it does.
+  useEffect(() => {
+    if (!flightMode) return;
+    return attachFlightInput();
+  }, [flightMode]);
 
   // ————— Ladder helpers (wheel-through-the-scales) —————
 
@@ -202,6 +220,7 @@ export function CameraRig() {
 
     const onWheel = (e: WheelEvent) => {
       if (overUi(e.target)) return;
+      if (useUiBus.getState().flightMode) return; // the helm has the wheel
       // Trackpad pinch arrives as ctrl+wheel; keep it from zooming the page.
       if (e.ctrlKey) e.preventDefault();
       userInput();
@@ -266,12 +285,19 @@ export function CameraRig() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && el.closest?.('input, textarea, select, [contenteditable]')) return;
-      const focus = useUiBus.getState().focus;
+      const bus = useUiBus.getState();
+      if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+        setFlightMode(!bus.flightMode); // take the helm / hand it back
+        return;
+      }
+      const focus = bus.focus;
       if (e.key === 'Escape') {
-        if (focus) stepFocusOut();
+        if (bus.flightMode) setFlightMode(false);
+        else if (focus) stepFocusOut();
         else if (orbitEngaged()) resetOrbit();
         return;
       }
+      if (bus.flightMode) return; // flight has its own keymap
       if (!focus) return;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
@@ -303,6 +329,7 @@ export function CameraRig() {
 
     const onPointerDown = (e: PointerEvent) => {
       if (overUi(e.target)) return;
+      if (useUiBus.getState().flightMode) return; // no orbit drags at the helm
       if (e.pointerType === 'touch') {
         touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (touches.size === 2) {
@@ -323,6 +350,7 @@ export function CameraRig() {
     };
 
     const onPointerMove = (e: PointerEvent) => {
+      if (useUiBus.getState().flightMode) return; // steering reads the pointer
       if (e.pointerType === 'touch') {
         const t = touches.get(e.pointerId);
         if (t) {
@@ -442,6 +470,62 @@ export function CameraRig() {
     const p = punch.current;
     p.vel += (-p.v * 90 - p.vel * 12) * d;
     p.v += p.vel * d;
+
+    // ————— Manual flight: the player has the helm —————
+    if (bus.flightMode) {
+      if (!flightLive.active) {
+        // Handoff: the runabout materializes exactly where the camera was.
+        beginFlightFromCamera(camera);
+        PAN_T.set(0, 0, 0);
+        PAN_S.set(0, 0, 0);
+        dolly.current.t = dolly.current.v = 1;
+        dolly.current.preset = false;
+        cineOverride.current = false;
+        if (bus.activeCinematic) lastCineId.current = bus.activeCinematic.id;
+        navLive.dragging = false;
+        resetOrbit();
+        navLive.yaw = navLive.pitch = 0;
+        flight.current.active = false;
+        navLive.flying = false;
+      }
+      stepFlight(d, t);
+      applyFlightCamera(camera, d);
+      clockNow.current = t;
+
+      // Zoom-keyed fades and captions follow the runabout's range from home.
+      const fz = flightZoom();
+      zoomSmooth.current = fz.z;
+      zoomLive.v = fz.z;
+      if (fz.band !== lastBand.current) {
+        audio.zoomWhoosh(fz.band > lastBand.current ? 1 : -1, fz.band);
+        lastBand.current = fz.band;
+      }
+      zoomLive.band = fz.band;
+
+      // Keep the release pose warm: disembarking eases from here to the rail.
+      const fp = focusPose.current;
+      fp.cam.copy(flightLive.pos);
+      V1.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      fp.look.copy(flightLive.pos).addScaledVector(V1, 8);
+      fp.b = 1;
+      focusKey.current = 'journey';
+      LOOK_LAST.copy(fp.look);
+
+      heroScreen.o = 0; // the gauge ring belongs to the map view
+      camera.updateMatrixWorld();
+      return;
+    }
+    if (flightLive.active) {
+      // Just disembarked: park the journey at the matching range and let the
+      // usual release path (fp.b decay above zero) glide back to the rail.
+      const fz = flightZoom();
+      endFlight();
+      restoreFov(camera);
+      bus.setZoom(fz.z);
+      zoomSmooth.current = fz.z;
+      roll.current = flightLive.roll; // carry the bank; it eases out below
+      if (bus.activeCinematic) lastCineId.current = bus.activeCinematic.id;
+    }
 
     // A fresh cinematic claims the camera until the player objects.
     // (Under prefers-reduced-motion the ceremonies play, the camera stays.)

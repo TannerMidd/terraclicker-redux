@@ -228,6 +228,83 @@ export function galaxySting(): void {
   blip(1046, 1.3, 'sine', 0.05, 0.66);
 }
 
+// ————— Manual flight: the runabout's voice —————
+
+let humOsc1: OscillatorNode | null = null;
+let humOsc2: OscillatorNode | null = null;
+let humFilter: BiquadFilterNode | null = null;
+let humGain: GainNode | null = null;
+
+/** Start the engine idle. Safe to call twice; stops cleanly via flightHumStop. */
+export function flightHumStart(): void {
+  const c = ensure();
+  if (!c || !master || humGain) return;
+  humGain = c.createGain();
+  humGain.gain.value = 0.0001;
+  humFilter = c.createBiquadFilter();
+  humFilter.type = 'lowpass';
+  humFilter.frequency.value = 170;
+  humFilter.Q.value = 1.1;
+  humOsc1 = c.createOscillator();
+  humOsc1.type = 'sawtooth';
+  humOsc1.frequency.value = 47;
+  humOsc2 = c.createOscillator();
+  humOsc2.type = 'sawtooth';
+  humOsc2.frequency.value = 47.7; // a slow beat between the two coils
+  humOsc1.connect(humFilter);
+  humOsc2.connect(humFilter);
+  humFilter.connect(humGain).connect(master);
+  humOsc1.start();
+  humOsc2.start();
+  humGain.gain.setTargetAtTime(0.02, c.currentTime, 0.5);
+}
+
+/** Throttle 0–1 and boost 0–1 open the filter and lean on the coils. */
+export function flightHumSet(throttle: number, boost: number): void {
+  if (!ctx || !humFilter || !humGain || !humOsc1 || !humOsc2) return;
+  const t = ctx.currentTime;
+  const k = Math.max(0, Math.min(1, throttle));
+  const b = Math.max(0, Math.min(1, boost));
+  humFilter.frequency.setTargetAtTime(170 + k * 620 + b * 900, t, 0.18);
+  humGain.gain.setTargetAtTime(0.016 + k * 0.03 + b * 0.02, t, 0.25);
+  humOsc1.frequency.setTargetAtTime(47 * (1 + b * 0.28), t, 0.3);
+  humOsc2.frequency.setTargetAtTime(47.7 * (1 + b * 0.28), t, 0.3);
+}
+
+export function flightHumStop(): void {
+  if (!ctx || !humGain) return;
+  const t = ctx.currentTime;
+  humGain.gain.setTargetAtTime(0.0001, t, 0.2);
+  const o1 = humOsc1;
+  const o2 = humOsc2;
+  o1?.stop(t + 1.2);
+  o2?.stop(t + 1.2);
+  humOsc1 = humOsc2 = null;
+  humFilter = null;
+  humGain = null;
+}
+
+/** Punching the improbability boost: air, briefly in a hurry. */
+export function boostWhoosh(): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c);
+  const f = c.createBiquadFilter();
+  f.type = 'bandpass';
+  f.Q.value = 0.9;
+  f.frequency.setValueAtTime(240, t);
+  f.frequency.exponentialRampToValueAtTime(2400, t + 0.5);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.07, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  src.connect(f).connect(g).connect(master);
+  src.start(t);
+  src.stop(t + 0.75);
+}
+
 /** Vogon drone: atonal, bureaucratic, briefly unavoidable. */
 export function vogonDrone(): void {
   const c = ensure();

@@ -5,6 +5,7 @@ import { HUD } from './hud/HUD';
 import { Dock } from './panels/Dock';
 import { OfflineModal } from './hud/OfflineModal';
 import { SurveyModal } from './hud/SurveyModal';
+import { FlightHUD } from './hud/FlightHUD';
 import { useUiBus } from './fx/uiBus';
 import { EVENT_BY_ID } from '../content/events';
 import { ACHIEVEMENT_BY_ID } from '../content/achievements';
@@ -262,6 +263,7 @@ function useEffectWiring(): void {
             bus.flash();
             bus.warp();
             bus.cancelCinematics();
+            bus.setFlightMode(false); // the runabout goes back in the garage
             bus.setFocus(null);
             bus.setZoom(0);
             bus.addToast({
@@ -287,6 +289,7 @@ export function App() {
   useEffectWiring();
   const loadError = useGame((g) => g.loadError);
   const persistenceBlocked = useGame((g) => g.persistenceBlocked);
+  const flightMode = useUiBus((b) => b.flightMode);
 
   useEffect(() => {
     const onFirst = () => initAudioOnGesture();
@@ -310,7 +313,7 @@ export function App() {
 
   return (
     <ErrorBoundary>
-      <div className="app">
+      <div className={flightMode ? 'app in-flight' : 'app'}>
         <div className="scene-layer">
           <Suspense fallback={<BootScreen />}>
             <SceneRoot />
@@ -318,6 +321,7 @@ export function App() {
         </div>
         <HUD />
         <Dock />
+        <FlightHUD />
         <SurveyModal />
         <OfflineModal />
       </div>

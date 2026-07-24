@@ -1438,6 +1438,235 @@ button {
   outline-offset: 3px;
 }
 
+/* ————— Manual flight (the company runabout) ————— */
+
+/* The rail's boarding ramp: a little ship below the last stop. */
+.zr-helm {
+  position: absolute;
+  top: calc(100% + 16px);
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px;
+  color: var(--ink-faint);
+  transition: color var(--t-fast) ease;
+}
+.zr-helm svg { width: 16px; height: 16px; display: block; }
+.zr-helm:hover { color: var(--improbable); }
+.zr-helm:hover .zr-label { opacity: 1; transform: none; }
+
+/* At the helm, the map chrome stands down; the scene is the windshield. */
+.app.in-flight .dock,
+.app.in-flight .zoom-rail,
+.app.in-flight .uni-caption-wrap,
+.app.in-flight .eta-ribbon,
+.app.in-flight .planet-name-tag { display: none; }
+.app.in-flight .scene-layer { cursor: crosshair; }
+
+.flight-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  user-select: none;
+}
+
+.fh-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 120% 90% at 50% 42%, transparent 60%, rgba(2, 3, 6, 0.55) 100%);
+  animation: fhIn 700ms ease;
+}
+
+/* Boost: faint radial streaks marching outward past the glass. */
+.fh-streaks {
+  position: absolute;
+  inset: -12%;
+  opacity: 0;
+  transition: opacity 320ms ease;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 45%,
+    rgba(190, 214, 255, 0.055) 0deg 1.2deg,
+    transparent 1.2deg 8deg
+  );
+  -webkit-mask: radial-gradient(ellipse at 50% 45%, transparent 34%, #000 78%);
+  mask: radial-gradient(ellipse at 50% 45%, transparent 34%, #000 78%);
+}
+.flight-layer.boosting .fh-streaks { opacity: 1; animation: fhStreak 0.6s linear infinite; }
+@keyframes fhStreak { to { transform: rotate(8deg); } }
+
+.fh-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(233, 238, 249, 0.2);
+  border-radius: 50%;
+}
+.fh-reticle i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px;
+  border-radius: 50%;
+  background: rgba(233, 238, 249, 0.55);
+}
+
+.fh-top {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fhDrop 500ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.fh-chip {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  backdrop-filter: blur(14px);
+}
+.fh-exit {
+  pointer-events: auto;
+  font-size: 12px;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 14px;
+  backdrop-filter: blur(14px);
+  transition: color var(--t-fast) ease, border-color var(--t-fast) ease;
+}
+.fh-exit:hover { color: var(--ink); border-color: var(--ink-faint); }
+.fh-exit kbd {
+  font: inherit;
+  font-size: 10px;
+  color: var(--ink-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 5px;
+}
+
+.fh-console {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(180deg, rgba(13, 16, 32, 0.66), rgba(9, 11, 22, 0.85));
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 12px 18px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  animation: fhRise 600ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.fh-panic {
+  width: 74px;
+  transform: rotate(-2.5deg);
+  opacity: 0.92;
+  pointer-events: none;
+}
+.fh-mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.fh-loc {
+  font-size: 12px;
+  color: var(--ink-dim);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-throttle {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(140, 160, 200, 0.16);
+}
+.fh-throttle i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--atmo), var(--bio));
+}
+.boosting .fh-throttle i {
+  background: linear-gradient(90deg, var(--improbable), #ffedb0);
+  box-shadow: 0 0 12px rgba(245, 200, 76, 0.5);
+}
+.fh-throttle em {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  left: 0%;
+  background: var(--ink-dim);
+  opacity: 0;
+  transition: opacity var(--t-med) ease;
+}
+.fh-speedrow { display: flex; justify-content: space-between; align-items: baseline; }
+.fh-speedrow b {
+  font-family: var(--font-display);
+  font-weight: 640;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.boosting .fh-speedrow b { color: var(--improbable); }
+.fh-speedrow span { font-size: 11.5px; color: var(--ink-faint); }
+.fh-leds { display: flex; flex-direction: column; gap: 6px; }
+.fh-leds i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--bio);
+  animation: fhBlink 2.4s infinite;
+}
+.fh-leds i:nth-child(2) { background: var(--atmo); animation-delay: 0.8s; }
+.fh-leds i:nth-child(3) { background: var(--improbable); animation-delay: 1.5s; }
+@keyframes fhBlink { 0%, 72%, 100% { opacity: 0.25; } 80% { opacity: 0.95; } }
+
+.fh-legend {
+  position: absolute;
+  bottom: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--ink-dim);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  opacity: 0;
+  animation: fhLegend 9s ease forwards;
+}
+.fh-legend b { color: var(--ink); font-weight: 600; }
+@keyframes fhLegend {
+  0% { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  6% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes fhIn { from { opacity: 0; } }
+@keyframes fhRise { from { opacity: 0; transform: translateX(-50%) translateY(16px); } }
+@keyframes fhDrop { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+
 /* ————— Mobile ————— */
 
 @media (max-width: 900px) {
@@ -1469,8 +1698,15 @@ button {
      out of the subject's way at every band. */
   .uni-caption-wrap { left: 50%; top: 112px; bottom: auto; width: 86vw; }
   .uc-line { font-size: 13px; }
+  .fh-console { width: calc(100vw - 20px); bottom: 12px; padding: 10px 14px; gap: 12px; }
+  .fh-panic { width: 54px; }
+  .fh-legend { bottom: 96px; font-size: 11px; white-space: normal; text-align: center; width: 90vw; }
+  .fh-top { top: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* The instant-finish rule would strand the flight legend at opacity 0 —
+     keep it visible instead; it is the only place the controls are taught. */
+  .fh-legend { animation: none !important; opacity: 0.9; }
 }

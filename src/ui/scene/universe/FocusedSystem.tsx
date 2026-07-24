@@ -209,14 +209,18 @@ function VisitWorld({
  * their records, orbiting the star they were delivered to. Works at a
  * constellation glyph and equally deep inside a formed galaxy's disc.
  * Also carries the deepest ladder rung: a `world` focus renders its parent
- * system while the camera goes nose-to-nose with one planet.
+ * system while the camera goes nose-to-nose with one planet. In manual
+ * flight the same treatment greets the runabout: fly close to any formed
+ * system and its worlds materialize around you.
  */
 export function FocusedSystem() {
   const focus = useUiBus((b) => b.focus);
+  const flightSystem = useUiBus((b) => (b.flightMode ? b.flightNearSystem : null));
   const rev = useGame((g) => g.rev);
   void rev;
-  if (!focus || focus.kind === 'galaxy') return null;
-  const systemIndex = focusSystemIndex(focus);
+  const systemIndex =
+    flightSystem ?? (focus && focus.kind !== 'galaxy' ? focusSystemIndex(focus) : null);
+  if (systemIndex === null) return null;
   return <FocusedSystemInner key={systemIndex} index={systemIndex} />;
 }
 

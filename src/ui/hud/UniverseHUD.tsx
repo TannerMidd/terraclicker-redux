@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../state/store';
 import { useUiBus, zoomLive, type FocusTarget } from '../fx/uiBus';
-import { BAND_STOPS, starClass } from '../scene/universeLayout';
+import { BAND_LABELS, BAND_STOPS, starClass } from '../scene/universeLayout';
 import { exitFocus, focusOn, hopSibling, TYPE_LABEL } from '../scene/universe/shared';
 import { QUIRK_BY_ID } from '../../content/quirks';
 import { SURVEY_BY_ID } from '../../content/surveys';
@@ -14,7 +14,7 @@ import {
 } from '../scene/universe/operationsVisual';
 import { C } from '../../content/constants';
 
-const RAIL_LABELS = ['the planet', 'the system', 'the neighbourhood', 'the galaxies', 'everything else'];
+const RAIL_LABELS = BAND_LABELS;
 
 function stageName(bestGalaxies: number): string {
   if (bestGalaxies >= 10) return 'Cosmic Web Age';
@@ -296,6 +296,20 @@ export function UniverseHUD() {
             <span className="zr-label">{RAIL_LABELS[i]}</span>
           </button>
         ))}
+        <button
+          className="zr-helm"
+          title="Take the helm — fly it yourself (F)"
+          onClick={() => useUiBus.getState().setFlightMode(true)}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden focusable="false">
+            <path
+              d="M8 1.2c1.7 1.5 2.6 3.6 2.6 6.1l1.9 2.9-.7 1.1-2-1.2c-.2.6-.5 1.1-.8 1.6h-2c-.3-.5-.6-1-.8-1.6l-2 1.2-.7-1.1 1.9-2.9C5.4 4.8 6.3 2.7 8 1.2Z"
+              fill="currentColor"
+            />
+            <path d="M8 12.4l.9 2.4L8 14.2l-.9.6.9-2.4Z" fill="currentColor" opacity="0.7" />
+          </svg>
+          <span className="zr-label">take the helm</span>
+        </button>
       </div>
       <div ref={capWrap} className="uni-caption-wrap" style={{ opacity: 0 }}>
         {focus ? <FocusCaption focus={focus} /> : <Caption band={band} />}

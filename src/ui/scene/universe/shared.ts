@@ -114,6 +114,8 @@ export function focusSystemIndex(target: FocusTarget): number {
  */
 export function focusOn(target: FocusTarget): void {
   const bus = useUiBus.getState();
+  // Clicking a place from the helm hands the camera back and visits it.
+  if (bus.flightMode) bus.setFlightMode(false);
   const prev = bus.focus;
   if (prev && prev.kind === target.kind && prev.index === target.index) return;
   const galaxyish =

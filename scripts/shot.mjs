@@ -7,7 +7,9 @@
  * clickobj:kind,index (REAL mouse click on the object via __tcCam.screenPos) |
  * key:Name (keyboard press, e.g. key:Escape) |
  * wheel:x,y,dy (real wheel at coords — cursor zoom / focus dolly ladder) |
- * drag:x0,y0,x1,y1 (real mouse drag — orbit) | cine:cancel (skip ceremonies).
+ * drag:x0,y0,x1,y1 (real mouse drag — orbit) | cine:cancel (skip ceremonies) |
+ * flight:on|off (take/leave the helm) | move:x,y (park the mouse — steering) |
+ * flykeys:w+shift,1200 (hold real flight keys for ms) | flystate (log pose).
  * Prints console errors and the active render backend.
  */
 import { chromium } from 'playwright';
@@ -124,6 +126,28 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.waitForTimeout(700);
   } else if (kind === 'cine') {
     await page.evaluate(() => window.__tcBus.useUiBus.getState().cancelCinematics());
+  } else if (kind === 'flight') {
+    await page.evaluate((on) => (on === 'on' ? window.__tcFlight.enter() : window.__tcFlight.exit()), arg);
+    await page.waitForTimeout(900);
+  } else if (kind === 'move') {
+    const [x, y] = arg.split(',').map(Number);
+    await page.mouse.move(x, y);
+    await page.waitForTimeout(150);
+  } else if (kind === 'flykeys') {
+    const [names, ms] = arg.split(',');
+    const KEYMAP = {
+      w: 'w', a: 'a', s: 's', d: 'd', c: 'c',
+      shift: 'Shift', space: 'Space',
+      up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight',
+    };
+    const list = names.split('+').map((k) => KEYMAP[k] ?? k);
+    for (const k of list) await page.keyboard.down(k);
+    await page.waitForTimeout(Number(ms));
+    for (const k of list) await page.keyboard.up(k);
+    await page.waitForTimeout(250);
+  } else if (kind === 'flystate') {
+    const st = await page.evaluate(() => window.__tcFlight?.state());
+    console.log('flystate:', JSON.stringify(st));
   } else if (kind === 'dispatch') {
     await page.evaluate((json) => window.__tc.dispatch(JSON.parse(json)), arg);
   } else if (kind === 'save') {
