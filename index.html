@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060A" />
+    <meta
+      name="description"
+      content="Terraform the cosmos one click at a time. Mostly harmless."
+    />
+    <title>TerraClicker</title>
+    <style>
+      /* Pre-hydration void so first paint is never white */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #05060a;
+        height: 100%;
+        overflow: hidden;
+      }
+      #root {
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
