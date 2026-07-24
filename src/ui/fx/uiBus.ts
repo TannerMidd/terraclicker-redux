@@ -37,10 +37,11 @@ export interface InspectInfo {
 /**
  * A cosmic object the player clicked to visit. `system` uses the GLOBAL
  * system index (works both for constellation glyphs and for systems already
- * folded into a galaxy — the seat differs, the records don't).
+ * folded into a galaxy — the seat differs, the records don't). `world` is an
+ * index into run.completedPlanets — the deepest rung of the zoom ladder.
  */
 export interface FocusTarget {
-  kind: 'galaxy' | 'system';
+  kind: 'galaxy' | 'system' | 'world';
   index: number;
 }
 
@@ -51,6 +52,14 @@ export interface FocusTarget {
  * (0 planet · 1 system · 2 constellation · 3 galaxies · 4 universe).
  */
 export const zoomLive = { v: 0, band: 0 };
+
+/**
+ * The hero planet's live screen placement, written by CameraRig each frame.
+ * The diegetic gauge ring glues itself to this instead of a fixed CSS
+ * anchor, so it recedes WITH the planet instead of hanging half-detached.
+ * `x`/`y` px center · `r` projected planet radius in px · `o` opacity.
+ */
+export const heroScreen = { x: 0, y: 0, r: 236, o: 1 };
 
 interface UiBus {
   toasts: Toast[];

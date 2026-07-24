@@ -157,12 +157,14 @@ button {
 /* ————— Planet gauges (diegetic arcs) ————— */
 
 .gauge-anchor {
+  /* Positioned every frame from the hero planet's projection (heroScreen). */
   position: absolute;
-  left: var(--planet-x);
-  top: var(--planet-y);
+  left: 0;
+  top: 0;
   width: 0;
   height: 0;
   pointer-events: none;
+  will-change: transform, opacity;
 }
 .gauge-svg { overflow: visible; }
 .gauge-track { fill: none; stroke: rgba(233, 238, 249, 0.08); }
@@ -1182,6 +1184,27 @@ button {
   border-color: rgba(90, 215, 232, 0.35);
 }
 .uc-sep { color: var(--ink-faint); font-size: 11px; }
+.uc-hop {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  pointer-events: auto;
+}
+.uc-hop-btn {
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 13px;
+  cursor: pointer;
+  backdrop-filter: blur(14px);
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.uc-hop-btn:hover { color: var(--improbable); border-color: rgba(245, 200, 76, 0.4); }
 .uc-kicker {
   font-size: 12px;
   font-weight: 700;

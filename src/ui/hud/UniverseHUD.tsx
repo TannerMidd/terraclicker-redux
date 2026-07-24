@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../state/store';
 import { useUiBus, zoomLive, type FocusTarget } from '../fx/uiBus';
 import { BAND_STOPS, starClass } from '../scene/universeLayout';
-import { exitFocus, focusOn } from '../scene/universe/shared';
+import { exitFocus, focusOn, hopSibling, TYPE_LABEL } from '../scene/universe/shared';
+import { QUIRK_BY_ID } from '../../content/quirks';
+import { SURVEY_BY_ID } from '../../content/surveys';
+import { formatDuration } from '../../engine/num';
 import {
   SPECIALTY_VISUAL,
   operationsVisual,
@@ -21,12 +24,14 @@ function stageName(bestGalaxies: number): string {
   return 'Local System';
 }
 
-/** Ancestry row for a visit: everything › galaxy N › system M. */
+/** Ancestry row for a visit: everything › galaxy N › system M › world. */
 function Crumbs({
   galaxy,
+  system,
   current,
 }: {
   galaxy: number | null;
+  system?: number | null;
   current: string;
 }) {
   return (
@@ -45,8 +50,39 @@ function Crumbs({
           </button>
         </>
       )}
+      {system !== null && system !== undefined && (
+        <>
+          <span className="uc-sep">›</span>
+          <button
+            className="uc-crumb"
+            onClick={() => focusOn({ kind: 'system', index: system })}
+          >
+            system {system + 1}
+          </button>
+        </>
+      )}
       <span className="uc-sep">›</span>
       <span className="uc-crumb here">{current}</span>
+    </div>
+  );
+}
+
+const HOP_NOUN: Record<FocusTarget['kind'], string> = {
+  galaxy: 'galaxy',
+  system: 'system',
+  world: 'world',
+};
+
+/** ‹ › commute buttons — the little spaceship's rank-and-file route. */
+function HopRow({ kind }: { kind: FocusTarget['kind'] }) {
+  return (
+    <div className="uc-hop">
+      <button className="uc-hop-btn" onClick={() => hopSibling(-1)} title={`Previous ${HOP_NOUN[kind]} (←)`}>
+        ‹ prev {HOP_NOUN[kind]}
+      </button>
+      <button className="uc-hop-btn" onClick={() => hopSibling(1)} title={`Next ${HOP_NOUN[kind]} (→)`}>
+        next {HOP_NOUN[kind]} ›
+      </button>
     </div>
   );
 }
@@ -66,7 +102,36 @@ function FocusCaption({ focus }: { focus: FocusTarget }) {
           {C.SYSTEMS_PER_GALAXY * C.PLANETS_PER_SYSTEM} worlds across{' '}
           {C.SYSTEMS_PER_GALAXY} systems · ×{C.GALAXY_MULT} production, in perpetuity
         </div>
-        <div className="uc-foot">click a star to visit its worlds · esc steps back out</div>
+        <HopRow kind="galaxy" />
+        <div className="uc-foot">scroll to dive toward a star · drag to orbit · esc steps out</div>
+      </div>
+    );
+  }
+
+  if (focus.kind === 'world') {
+    const rec = s.run.completedPlanets[focus.index];
+    if (!rec) return null;
+    const system = Math.floor(focus.index / C.PLANETS_PER_SYSTEM);
+    const galaxy =
+      system < s.run.galaxies * C.SYSTEMS_PER_GALAXY
+        ? Math.floor(system / C.SYSTEMS_PER_GALAXY)
+        : null;
+    const quirks = rec.quirks.map((q) => QUIRK_BY_ID[q]?.text ?? q).slice(0, 2);
+    const survey = rec.survey ? SURVEY_BY_ID[rec.survey] : null;
+    return (
+      <div className="uni-caption" key={`fw-${focus.index}`}>
+        <Crumbs galaxy={galaxy} system={system} current={rec.name} />
+        <div className="uc-kicker">
+          {rec.name} — career world #{rec.lifetimeIndex}
+        </div>
+        <div className="uc-line">
+          {TYPE_LABEL[rec.type] ?? rec.type} · {rec.size}
+          {rec.completionMs > 0 ? ` · delivered in ${formatDuration(rec.completionMs)}` : ''}
+          {survey ? ` · surveyed: ${survey.name}` : ''}
+        </div>
+        {quirks.length > 0 && <div className="uc-line">{quirks.join(' · ')}</div>}
+        <HopRow kind="world" />
+        <div className="uc-foot">still turning, exactly as delivered · drag to orbit · esc steps out</div>
       </div>
     );
   }
@@ -94,7 +159,10 @@ function FocusCaption({ focus }: { focus: FocusTarget }) {
         {starClass(seed)} · {records.length} worlds, every one of them finished and still turning
         {dispatchSummary ? ` · ${dispatchSummary}` : ''}
       </div>
-      <div className="uc-foot">{records.map((r) => r.name).join(' · ')}</div>
+      <HopRow kind="system" />
+      <div className="uc-foot">
+        {records.map((r) => r.name).join(' · ')} — scroll dives to one · drag orbits
+      </div>
     </div>
   );
 }
@@ -219,7 +287,10 @@ export function UniverseHUD() {
             className={`zr-stop${band === i ? ' on' : ''}`}
             style={{ top: `${stop * 100}%` }}
             title={RAIL_LABELS[i]}
-            onClick={() => useUiBus.getState().setZoom(stop)}
+            onClick={() => {
+              exitFocus(); // the rail always returns to the open journey
+              useUiBus.getState().setZoom(stop);
+            }}
           >
             <span className="zr-dot" />
             <span className="zr-label">{RAIL_LABELS[i]}</span>

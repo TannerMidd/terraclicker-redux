@@ -12,14 +12,16 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   RingGeometry,
+  Vector3,
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
-import { focusSeat, starClass, starColor } from '../universeLayout';
+import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
+import { worldAnchors } from '../navControl';
+import { focusOn, focusSystemIndex, inspectHandlers, makeGlowSprite, TYPE_LABEL, visitHandlers } from './shared';
 import { formatDuration } from '../../../engine/num';
 import { QUIRK_BY_ID } from '../../../content/quirks';
 import { SURVEY_BY_ID } from '../../../content/surveys';
@@ -33,7 +35,6 @@ import {
 } from './operationsVisual';
 
 const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
-const GOLDEN = 2.39996;
 const HERITAGE_RING_GEO = new RingGeometry(1.23, 1.3, 56);
 const HERITAGE_RING_MAT = new MeshBasicMaterial({
   color: 0xf5c84c,
@@ -63,9 +64,7 @@ function dispatchMaterial(specialty: SystemSpecialty): MeshBasicMaterial {
   });
 }
 
-function orbit(i: number): { radius: number; phase: number; speed: number } {
-  return { radius: 0.56 + i * 0.3, phase: i * GOLDEN, speed: 0.14 / (1 + i * 0.4) };
-}
+const orbit = visitOrbit;
 
 const BOTTLENECK_LABEL: Record<CompletedPlanetRecord['bottleneck'], string> = {
   thermal: 'thermal',
@@ -113,11 +112,14 @@ function orbitGeometry(radius: number): BufferGeometry {
 function VisitWorld({
   record,
   slot,
+  globalIndex,
   heritage,
   delay,
 }: {
   record: CompletedPlanetRecord;
   slot: number;
+  /** Index into run.completedPlanets — the world-focus target. */
+  globalIndex: number;
   heritage: boolean;
   delay: number;
 }) {
@@ -127,6 +129,11 @@ function VisitWorld({
   // Detail 3: these are the worlds you came to look at — give them curvature.
   const geometry = useMemo(() => createMiniPlanetGeometry(record, 3), [record]);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  // Publish this world's exact position for the camera to descend onto.
+  useEffect(() => {
+    worldAnchors.set(globalIndex, new Vector3());
+    return () => void worldAnchors.delete(globalIndex);
+  }, [globalIndex]);
   const born = useRef<number | null>(null);
   const o = orbit(slot);
   const size = MINI_SIZE[record.size] * 0.85;
@@ -148,6 +155,8 @@ function VisitWorld({
       Math.sin(a) * o.radius * 0.6,
     );
     group.scale.setScalar(0.001 + ease * size);
+    const anchor = worldAnchors.get(globalIndex);
+    if (anchor) group.getWorldPosition(anchor);
     if (planet.current) planet.current.rotation.y = universeMotion.reduced ? 0 : t * 0.35;
     if (heritageRing.current && !universeMotion.reduced) {
       heritageRing.current.rotation.z = slot * 0.7 - t * 0.16;
@@ -160,9 +169,10 @@ function VisitWorld({
         ref={planet}
         geometry={geometry}
         material={MINI_MATERIAL}
-        {...inspectHandlers(
+        {...visitHandlers(
           record.name,
           memorySummary(record, slot, heritage),
+          () => focusOn({ kind: 'world', index: globalIndex }),
         )}
       >
         {/* Generous invisible hit volume — these worlds are small and precious. */}
@@ -187,13 +197,16 @@ function VisitWorld({
  * A visited system: the five worlds you actually terraformed, rebuilt from
  * their records, orbiting the star they were delivered to. Works at a
  * constellation glyph and equally deep inside a formed galaxy's disc.
+ * Also carries the deepest ladder rung: a `world` focus renders its parent
+ * system while the camera goes nose-to-nose with one planet.
  */
 export function FocusedSystem() {
   const focus = useUiBus((b) => b.focus);
   const rev = useGame((g) => g.rev);
   void rev;
-  if (!focus || focus.kind !== 'system') return null;
-  return <FocusedSystemInner key={focus.index} index={focus.index} />;
+  if (!focus || focus.kind === 'galaxy') return null;
+  const systemIndex = focusSystemIndex(focus);
+  return <FocusedSystemInner key={systemIndex} index={systemIndex} />;
 }
 
 function FocusedSystemInner({ index }: { index: number }) {
@@ -298,6 +311,7 @@ function FocusedSystemInner({ index }: { index: number }) {
             key={`${rec.seed}-${i}`}
             record={rec}
             slot={i}
+            globalIndex={index * C.PLANETS_PER_SYSTEM + i}
             heritage={isHeritageWorld(s, rec)}
             delay={0.12 + i * 0.07}
           />

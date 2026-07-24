@@ -146,26 +146,55 @@ export function memberSeatLocal(slot: number, gSeed: number): Vector3 {
 }
 
 export interface FocusRef {
-  kind: 'galaxy' | 'system';
+  kind: 'galaxy' | 'system' | 'world';
   index: number;
 }
 
 /**
  * World seat of a focus target. A system folded into a galaxy sits at its
  * member seat inside that galaxy's disc; one still in the constellation
- * sits at its glyph.
+ * sits at its glyph. A `world` target resolves to its parent system's seat
+ * (the live orbital offset is layered on by `visitWorldAnchor`).
  */
 export function focusSeat(target: FocusRef, masterSeed: number, galaxies: number): Vector3 {
   if (target.kind === 'galaxy') return galaxyPosition(target.index, masterSeed);
+  const systemIndex =
+    target.kind === 'world' ? Math.floor(target.index / C.PLANETS_PER_SYSTEM) : target.index;
   const consumed = galaxies * C.SYSTEMS_PER_GALAXY;
-  if (target.index < consumed) {
-    const g = Math.floor(target.index / C.SYSTEMS_PER_GALAXY);
-    const slot = target.index % C.SYSTEMS_PER_GALAXY;
+  if (systemIndex < consumed) {
+    const g = Math.floor(systemIndex / C.SYSTEMS_PER_GALAXY);
+    const slot = systemIndex % C.SYSTEMS_PER_GALAXY;
     return memberSeatLocal(slot, galaxySeed(g, masterSeed))
       .applyEuler(GALAXY_TILT)
       .add(galaxyPosition(g, masterSeed));
   }
-  return systemGlyphPosition(target.index, masterSeed);
+  return systemGlyphPosition(systemIndex, masterSeed);
+}
+
+/** Orbit slot for a visited system's k-th world (FocusedSystem + CameraRig). */
+export function visitOrbit(i: number): { radius: number; phase: number; speed: number } {
+  return { radius: 0.56 + i * 0.3, phase: i * 2.39996, speed: 0.14 / (1 + i * 0.4) };
+}
+
+/**
+ * Live position of a visited world at clock time `t` — the same math
+ * FocusedSystem animates with, so a camera aimed here tracks the planet.
+ */
+export function visitWorldAnchor(
+  worldIndex: number,
+  masterSeed: number,
+  galaxies: number,
+  t: number,
+  out: Vector3,
+): Vector3 {
+  const seat = focusSeat({ kind: 'world', index: worldIndex }, masterSeed, galaxies);
+  const o = visitOrbit(worldIndex % C.PLANETS_PER_SYSTEM);
+  const a = o.phase + t * o.speed;
+  return out.set(
+    seat.x + Math.cos(a) * o.radius,
+    seat.y + Math.sin(a) * o.radius * 0.22,
+    seat.z + Math.sin(a) * o.radius * 0.6,
+  );
 }
 
 /**

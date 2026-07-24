@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../state/store';
-import { useUiBus, zoomLive } from '../fx/uiBus';
+import { heroScreen, useUiBus } from '../fx/uiBus';
 import { UniverseHUD } from './UniverseHUD';
 import { Num, useSmoothTu } from '../bits';
 import { format, formatDuration } from '../../engine/num';
@@ -49,20 +49,23 @@ function useViewportScale(): number {
 function Gauges() {
   const rev = useGame((g) => g.rev);
   void rev;
-  const scale = useViewportScale();
+  const maxScale = useViewportScale();
   const anchor = useRef<HTMLDivElement>(null);
   const { s } = useGame.getState();
   const p = s.planet;
 
-  // The diegetic HUD belongs to the hero shot; it bows out as you pull back.
-  // Driven from the live camera zoom (cinematics move the camera without
-  // touching the user's zoom target), so it always matches what's on screen.
+  // The diegetic HUD is glued to the hero planet's PROJECTED position and
+  // apparent size (heroScreen, written by CameraRig every frame), so it
+  // recedes and shrinks with the world instead of hanging half-detached
+  // over empty space, and it bows out entirely as you pull back.
   useEffect(() => {
     let raf = 0;
     const tick = () => {
       const el = anchor.current;
       if (el) {
-        const o = Math.max(0, 1 - zoomLive.v * 4.2);
+        const o = heroScreen.o;
+        const k = Math.max(0.4, Math.min(maxScale, (heroScreen.r / 236) * 1.06));
+        el.style.transform = `translate3d(${heroScreen.x.toFixed(1)}px, ${heroScreen.y.toFixed(1)}px, 0) scale(${k.toFixed(3)})`;
         el.style.opacity = o.toFixed(2);
         el.style.visibility = o <= 0.01 ? 'hidden' : 'visible';
       }
@@ -70,7 +73,7 @@ function Gauges() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [maxScale]);
 
   const R = 236;
   let lowest: AspectId = 'thermal';
@@ -87,11 +90,7 @@ function Gauges() {
   }
 
   return (
-    <div
-      ref={anchor}
-      className="gauge-anchor"
-      style={{ transform: `scale(${scale.toFixed(3)})` }}
-    >
+    <div ref={anchor} className="gauge-anchor">
       <svg className="gauge-svg" width="0" height="0" viewBox="-300 -300 600 600" style={{ width: 600, height: 600, marginLeft: -300, marginTop: -300 }}>
         {ASPECTS.map((a) => {
           const m = ASPECT_META[a];
@@ -138,7 +137,7 @@ function Gauges() {
           </span>
         </div>
         {s.run.completedPlanets.length > 0 && (
-          <div className="pn-hint">scroll to survey your universe</div>
+          <div className="pn-hint">scroll to survey your universe · drag to orbit</div>
         )}
       </div>
     </div>

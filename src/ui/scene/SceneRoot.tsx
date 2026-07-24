@@ -11,6 +11,7 @@ import { Universe } from './Universe';
 import { Traffic } from './Traffic';
 import { EventFX } from './EventFX';
 import { stepFocusOut } from './universe/shared';
+import { clickSuppressed, resetOrbit } from './navControl';
 import { useSettings } from '../settings';
 
 // Register the three/webgpu namespace for R3F JSX intrinsics.
@@ -35,6 +36,16 @@ const TIER_CONFIG: Record<Tier, { detail: number; stars: number; dpr: [number, n
   low: { detail: 3, stars: 700, dpr: [1, 1] },
 };
 
+/** Empty-space clicks step out; a quick double-click recenters the orbit. */
+let lastMissAt = 0;
+function onMissed(): void {
+  if (clickSuppressed()) return; // that was the end of a camera drag
+  const now = performance.now();
+  if (now - lastMissAt < 340) resetOrbit();
+  else stepFocusOut();
+  lastMissAt = now;
+}
+
 export default function SceneRoot() {
   const quality = useSettings((s) => s.quality);
   const tier: Tier = useMemo(
@@ -47,7 +58,7 @@ export default function SceneRoot() {
     <Canvas
       dpr={cfg.dpr}
       camera={{ position: [1.85, 0.25, 6.4], fov: 42, near: 0.1, far: 650 }}
-      onPointerMissed={() => stepFocusOut()}
+      onPointerMissed={onMissed}
       gl={async (props) => {
         const renderer = new THREE.WebGPURenderer({
           ...(props as ConstructorParameters<typeof THREE.WebGPURenderer>[0]),

@@ -3,9 +3,11 @@
  * `actions` is a semicolon list: click:x,y | tab:Name | wait:ms | worlds:N (complete
  * N planets, auto-survey) | zoom:v (set journey zoom 0–1) | save:file | load:file |
  * shot:file (mid-run capture; the final <out.png> still happens) |
- * focus:kind,index|none (visit a galaxy/system via the bus) |
+ * focus:kind,index|none (visit a galaxy/system/world via the bus) |
  * clickobj:kind,index (REAL mouse click on the object via __tcCam.screenPos) |
- * key:Name (keyboard press, e.g. key:Escape).
+ * key:Name (keyboard press, e.g. key:Escape) |
+ * wheel:x,y,dy (real wheel at coords — cursor zoom / focus dolly ladder) |
+ * drag:x0,y0,x1,y1 (real mouse drag — orbit) | cine:cancel (skip ceremonies).
  * Prints console errors and the active render backend.
  */
 import { chromium } from 'playwright';
@@ -105,6 +107,23 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'key') {
     await page.keyboard.press(arg);
     await page.waitForTimeout(2200);
+  } else if (kind === 'wheel') {
+    const [x, y, dy] = arg.split(',').map(Number);
+    await page.mouse.move(x, y);
+    await page.mouse.wheel(0, dy);
+    await page.waitForTimeout(600);
+  } else if (kind === 'drag') {
+    const [x0, y0, x1, y1] = arg.split(',').map(Number);
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    for (let i = 1; i <= 14; i++) {
+      await page.mouse.move(x0 + ((x1 - x0) * i) / 14, y0 + ((y1 - y0) * i) / 14);
+      await page.waitForTimeout(16);
+    }
+    await page.mouse.up();
+    await page.waitForTimeout(700);
+  } else if (kind === 'cine') {
+    await page.evaluate(() => window.__tcBus.useUiBus.getState().cancelCinematics());
   } else if (kind === 'save') {
     const str = await page.evaluate(() => window.__tc.exportSave());
     await fs.writeFile(arg, str, 'utf8');
