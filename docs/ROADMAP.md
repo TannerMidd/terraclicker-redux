@@ -421,54 +421,51 @@ one-off landmark art in `DeepFieldObjects`, which is genuinely distinct rather
 than duplicated. (The first attempt also surfaced a real bug: the old cleanup
 disposed *shared* materials when a single world unmounted.)
 
-### Still to build
+## Phase 4 — Make space renewable — done
 
-### Dossiers, Charters, programmes — done
+**Unscheduled Objects Register.** A handful per commission, assembled by the
+composer. Renewable (new set each commission), deterministic (derived from seed
+and commission number, consuming no rng), and cheap (nothing persisted but
+which have been looked into, cleared with the commission). That last property
+is why they are not landmarks: a landmark is a permanent fact, an unscheduled
+object is a rumour with coordinates. Tag constraints tested across 400
+universes, not one.
 
-**Commission Dossiers** (v15): three briefs at every sale, each changing
-exactly four things — worlds, board, one economic rule, terms of sale. The
-one-rule limit is a test, not a convention. Weighting multiplies rather than
-replaces; the appraisal delta floors at one system.
+**Customs appeal** grows from three outs to seven — decoy, planetary shadow, a
+valid permit, an improbability wake. Still nothing that shoots at anybody.
 
-**System Charters** (v16): one article per system, offered when the fifth world
-lands, and *read from those five worlds' own histories* — attended systems get
-different articles from neglected ones. This is what the world record store was
-for. A tie is not a verdict. The standing floor clamps on write, not read,
-because `standingFactor` reads every world every tick.
+**Ship roles and infrastructure.** A role never un-buys a refit; it is a free,
+reversible configuration that trades one capability for another, and a test
+holds every role to improving something *and* costing something. Infrastructure
+is bought with salvage and touches only navigation, storage and convenience —
+the seal asserted directly rather than assumed.
 
-**Megaproject programmes** (v17): three phases per project, a question at each,
-the benefit paid the moment it is answered rather than at completion, and
-mutually exclusive final modules. **Phases divide `buildMs`; they never extend
-it** — a programme takes exactly as long as the project always took. An
-unanswered phase never stalls construction: the crew carry on, the question
-waits, and nothing here can be lost by being asleep.
+## Phase 5 — Give it an ending — done
 
-- **14 — Special Handling, physical ports, the bridge.** Flight pays in what
-  the desk cannot buy (law 4), never in TU parity.
-- **15 — Renewable space.** Procedural contacts over `content/composer.ts`;
-  geography and new verbs; expanded customs appeal; loadouts and infrastructure.
-  Gated on the frame budget — see the open thread above.
-- **16 — Statutes, Guide collections, Milliways.** Closes with the editorial
-  and naming pass, whose cost scales with everything above it.
+**Universe statutes** (v21): one law per stage, surviving prestige alongside the
+Blueprints, the monuments and the archive. Rules and story pools, never a
+currency — asserted by test. No repeal: a law you can undo is a menu.
 
-World biographies; Commission Dossiers and System Charters; megaproject
-programmes with phases, decisions, partial benefits and exclusive final
-modules; Special Handling and physical pickup; the bridge between modes.
+**Milliways.** The finale is a booking that turns out to have already been
+made. Every clause is a fact about what has already happened, so there is
+nothing to claim and nothing to miss, and it is the one place in the design
+that requires *both* halves of the game — which is fair only because it is
+last. It pays no multiplier: the reward for finishing is the ending.
 
-## Phase 4 — Make space renewable
+## What remains
 
-The Unscheduled Objects Register; space geography and the new verbs; expanded
-customs appeal; ship loadouts and salvage-built flight infrastructure.
+The build is feature-complete against the original plan. Outstanding, and
+deliberately not done:
 
-## Phase 5 — Give it an ending
-
-Universe statutes; expanded Guide collections; Milliways as a multi-system
-finale. Closes with the editorial and naming pass.
-
-## Tone
-
-Roughly 80% dry administrative competence, 15% absurd escalation, 5% genuine
-warmth. The comic mechanism is official precision applied to impossible
-circumstances. "A Quiet Request" works because it briefly stops performing
-jokes and lets a distant world matter — protect that register; it is the one
-the whole plan is ultimately for.
+- **The editorial and naming pass.** Cost scales with the string count, and the
+  string count roughly tripled here. Only matters if this ever leaves the
+  machine — see "Three costs" at the top.
+- **Balance across the new systems.** Dossiers, Charters, programmes and
+  statutes all add multipliers. They land on the additive BP curve rather than
+  the divergent one, which is why they were sequenced after Phase 0.1, but
+  nobody has played a long game with all of them switched on.
+- **`BP_PASSIVE`** remains at 0.02 pending playtest (M3 measures 33.9% against
+  a 45% target). The lever is one number wide.
+- **205 material graphs**, down from 227. The remainder is mostly one-off
+  landmark art rather than duplication. `TC_OWNERS=1 npm run budget` ranks
+  what is left.

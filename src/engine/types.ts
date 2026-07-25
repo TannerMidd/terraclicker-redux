@@ -559,6 +559,7 @@ export type SimEffect =
   | { t: 'unscheduledBoarded'; id: string; text: string }
   | { t: 'infrastructureBuilt'; id: string }
   | { t: 'statuteEnacted'; id: string }
+  | { t: 'reservationBooked' }
   | {
       t: 'situationResolved';
       uid: number;

@@ -3059,3 +3059,35 @@ button {
   font-size: 11px;
   color: var(--magrathea, #7fd1c8);
 }
+
+/* ————— Milliways ————— */
+
+.reservation { margin: 16px 0; }
+.rv-clauses { display: flex; flex-direction: column; gap: 5px; }
+.rv-clause {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+.rv-clause.met { color: var(--ink); }
+.rv-mark { flex: none; width: 12px; color: var(--ink-faint); }
+.rv-clause.met .rv-mark { color: var(--magrathea, #7fd1c8); }
+.rv-line { flex: 1; }
+.rv-pct { flex: none; font-variant-numeric: tabular-nums; font-size: 11px; }
+
+.reservation.booked {
+  padding: 14px 16px;
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--magrathea, #7fd1c8) 40%, transparent);
+  border-radius: 8px;
+}
+.rv-text {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink);
+}
+.rv-text:last-child { margin-bottom: 0; color: var(--magrathea, #7fd1c8); }

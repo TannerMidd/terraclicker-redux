@@ -3,6 +3,9 @@ import { format, formatDuration } from '../../engine/num';
 import { forecastSituation } from '../../engine/situations';
 import { Num } from '../bits';
 import { enactedStatutes, statuteOffers, universeStage } from '../../engine/statutes';
+import { hasBooked, reservationStatus } from '../../engine/reservation';
+import { RESERVATION_TEXT } from '../../content/reservation';
+import { PARA_BREAK } from './reservationText';
 
 /**
  * The law, and what may still be passed.
@@ -63,6 +66,57 @@ function Statutes() {
   );
 }
 
+/**
+ * The booking at the end of the universe.
+ *
+ * Shown only once the party is close enough for it to mean something — a list
+ * of unmet conditions presented from the first minute would be a checklist,
+ * and this is deliberately not a checklist. Every clause is something a player
+ * who played the whole game has already done; the finale asks you to look back
+ * rather than grind forward.
+ */
+
+function Reservation() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const status = reservationStatus(s);
+  const booked = hasBooked(s);
+  // Nothing until the universe is old enough for the joke to land.
+  if (!booked && status.progress < 0.25) return null;
+
+  if (booked) {
+    return (
+      <div className="reservation booked">
+        <div className="panel-h">Milliways — Table Confirmed</div>
+        {RESERVATION_TEXT.split(PARA_BREAK).map((para, i) => (
+          <p key={i} className="rv-text">{para}</p>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="reservation">
+      <div className="panel-h">Milliways — Reservation, Pending</div>
+      <p className="panel-sub">
+        The Restaurant at the End of the Universe books retrospectively: the table is
+        reserved once the meal has been eaten. The booking below is therefore not a list
+        of things to do. It is a list of things that will turn out to have happened.
+      </p>
+      <div className="rv-clauses">
+        {status.clauses.map(({ clause, met, progress }) => (
+          <div key={clause.id} className={`rv-clause${met ? ' met' : ''}`}>
+            <span className="rv-mark" aria-hidden>{met ? '✓' : '·'}</span>
+            <span className="rv-line">{clause.text}</span>
+            {!met && <span className="rv-pct">{Math.floor(progress * 100)}%</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function VortexPanel() {
   const rev = useGame((g) => g.rev);
   void rev;
@@ -114,6 +168,7 @@ export function VortexPanel() {
 
 
       <Statutes />
+      <Reservation />
 
       <div className="panel-h">The Record</div>
       <div className="stat-grid">

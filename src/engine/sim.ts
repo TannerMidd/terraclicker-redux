@@ -75,6 +75,7 @@ import { attendInPerson } from './bridge';
 import { boardUnscheduled } from './unscheduled';
 import { buildInfrastructure, setRole } from './loadouts';
 import { enactStatute, statuteEffects } from './statutes';
+import { checkReservation } from './reservation';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -938,6 +939,9 @@ export function step(
         dirty = true;
       }
       if (stepSituations(state, derived, effects, TICK)) dirty = true;
+      // The booking resolves itself: every clause is a fact about what has
+      // already happened, so there is nothing to claim and nothing to miss.
+      if (checkReservation(state, effects)) dirty = true;
       // Petitions queue instead of interrupting, so they may be more frequent.
       if ((state.timers.nextPetitionMs -= TICK) <= 0) {
         spawnPetition(state, effects);
