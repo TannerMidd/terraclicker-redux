@@ -69,6 +69,7 @@ import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
 import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './dossiers';
 import { charterOffersFor, signCharter } from './charters';
+import { answerPhase } from './programmes';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -157,6 +158,7 @@ export function newGame(seed: number, nowWall: number): GameState {
     expedition: createExpeditionState(),
     megaprojects: {},
     worldRecords: {},
+    programmes: {},
     standingOrders: createStandingOrders(),
     subEtha: createSubEthaState(),
     buffs: [],
@@ -412,6 +414,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       // is a queue that silently does nothing, which is worse than a rejected
       // edit because it looks like it worked.
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
+      break;
+    }
+    case 'answerPhase': {
+      answerPhase(state, input.id, input.optionId);
       break;
     }
     case 'signCharter': {

@@ -264,6 +264,7 @@ export const saveSchema = z.object({
       ),
     }),
   ),
+  programmes: z.record(z.string(), z.array(z.string())),
   standingOrders: z.object({
     enabled: z.boolean(),
     reserveSeconds: z.number().min(0),

@@ -12,6 +12,38 @@ import { FREIGHT_BY_ID, SEAM_BY_ID } from '../../content/freight';
 import { FACTION_META } from '../../content/contracts';
 import { D, format, formatDuration } from '../../engine/num';
 import { buildProgress, canStart, isBuilding, isBuilt } from '../../engine/megaprojects';
+import { openPhase } from '../../engine/programmes';
+
+/**
+ * The question a phase is waiting on.
+ *
+ * Rendered inside the project's own card rather than as a modal, because the
+ * crew are not interrupting you — they got on with it and would like a decision
+ * when you have a moment. Construction has already moved past this point; what
+ * is waiting is the benefit and the shape of the final object.
+ */
+function PhaseQuestion({ id }: { id: string }) {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const open = openPhase(useGame.getState().s, id);
+  if (!open) return null;
+  return (
+    <div className="mega-phase">
+      <div className="mp-kicker">
+        {open.phase.name} · decision {open.index + 1} of 3
+      </div>
+      <p className="mp-text">{open.phase.text}</p>
+      <div className="mp-options">
+        {open.phase.options.map((o) => (
+          <button key={o.id} className="mp-option" onClick={() => actions.answerPhase(id, o.id)}>
+            <b>{o.label}</b>
+            <span>{o.text}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 import { cargoCapacity, rigLimit, rigsStanding } from '../../engine/freight';
 import { actions, useGame } from '../../state/store';
 
@@ -50,6 +82,7 @@ export function MegaprojectSection() {
               </div>
               <div className="mega-guide">{def.guide}</div>
               <div className="mega-effect">{def.effectText}</div>
+              <PhaseQuestion id={def.id} />
               {built ? (
                 <div className="mega-state done">Standing. It will outlast the commission.</div>
               ) : building ? (

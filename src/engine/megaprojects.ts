@@ -31,6 +31,7 @@
 import { MEGAPROJECTS, MEGAPROJECT_BY_ID, type MegaprojectDef } from '../content/megaprojects';
 import type { GameState, MegaprojectState, SimEffect } from './types';
 import { D } from './num';
+import { programmeEffects } from './programmes';
 
 export function megaprojectState(state: GameState, id: string): MegaprojectState | null {
   return state.megaprojects[id] ?? null;
@@ -127,7 +128,7 @@ export function megaprojectEffects(state: GameState): {
  * ever goes that way — salvage still buys nothing but the ship.
  */
 export function stepMegaprojectSalvage(state: GameState, tickMs: number): void {
-  const rate = megaprojectEffects(state).salvagePerHour;
+  const rate = megaprojectEffects(state).salvagePerHour + programmeEffects(state).salvagePerHour;
   if (rate <= 0) return;
   state.expedition.salvage += (rate * tickMs) / 3_600_000;
 }

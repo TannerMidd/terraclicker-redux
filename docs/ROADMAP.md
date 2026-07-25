@@ -423,18 +423,26 @@ disposed *shared* materials when a single world unmounted.)
 
 ### Still to build
 
-- **13 — Dossiers ✅ · Charters and megaproject programmes remaining.**
-  Commission Dossiers landed (save v15): three briefs at every sale, each
-  changing exactly four things — which worlds arrive, what the board asks for,
-  one economic rule, and the terms of the sale. The one-rule constraint is
-  enforced by a test, not by good intentions, because several small modifiers
-  would be untraceable in play. Planet weighting multiplies rather than
-  replaces, so every type stays possible; the appraisal delta is floored at one
-  system. **Still to do:** System Charters (one choice when five worlds form a
-  system, read from their histories — the world record store already holds
-  what it needs) and megaproject programmes (three phases, a decision at each,
-  partial benefits, exclusive final modules — running on the Phase 0.4 queue,
-  with `doneAtMs` already in place from the Circular work).
+### Dossiers, Charters, programmes — done
+
+**Commission Dossiers** (v15): three briefs at every sale, each changing
+exactly four things — worlds, board, one economic rule, terms of sale. The
+one-rule limit is a test, not a convention. Weighting multiplies rather than
+replaces; the appraisal delta floors at one system.
+
+**System Charters** (v16): one article per system, offered when the fifth world
+lands, and *read from those five worlds' own histories* — attended systems get
+different articles from neglected ones. This is what the world record store was
+for. A tie is not a verdict. The standing floor clamps on write, not read,
+because `standingFactor` reads every world every tick.
+
+**Megaproject programmes** (v17): three phases per project, a question at each,
+the benefit paid the moment it is answered rather than at completion, and
+mutually exclusive final modules. **Phases divide `buildMs`; they never extend
+it** — a programme takes exactly as long as the project always took. An
+unanswered phase never stalls construction: the crew carry on, the question
+waits, and nothing here can be lost by being asleep.
+
 - **14 — Special Handling, physical ports, the bridge.** Flight pays in what
   the desk cannot buy (law 4), never in TU parity.
 - **15 — Renewable space.** Procedural contacts over `content/composer.ts`;

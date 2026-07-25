@@ -23,6 +23,7 @@ import { MEGAPROJECT_BY_ID } from '../content/megaprojects';
 import { SEAM_BY_ID } from '../content/freight';
 import { SITUATION_BY_ID } from '../content/situations';
 import { waypointId } from './waypoints';
+import { openPhases } from './programmes';
 import type { GameState } from './types';
 
 export type CircularKind = 'built' | 'full' | 'asking' | 'rumour' | 'building';
@@ -69,6 +70,17 @@ export function buildCircular(state: GameState, sinceMs: number): CircularItem[]
     items.push({
       kind: 'building',
       text: `${def.name} stands at ${pct}%. The crew report no difficulties worth the form.`,
+      panel: 'Operations',
+    });
+  }
+
+  // 2b. Programmes waiting on a decision. The crew carried on without you and
+  //     would now like an answer; this is the thing most worth coming back for.
+  for (const open of openPhases(state)) {
+    const def = MEGAPROJECT_BY_ID[open.id];
+    items.push({
+      kind: 'asking',
+      text: `${def?.name ?? open.id}: ${open.phase.name} is standing, and the crew want a decision.`,
       panel: 'Operations',
     });
   }

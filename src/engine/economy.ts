@@ -14,6 +14,7 @@ import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions 
 import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
 import { dossierEffects, dossierSystemsDelta } from './dossiers';
 import { charterEffects } from './charters';
+import { programmeEffects } from './programmes';
 
 /**
  * BP that a prestige right now would award.
@@ -297,6 +298,13 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   prodMult = prodMult.mul(mega.prodMult);
   scienceMult *= mega.scienceMult;
   offlineCapMs += mega.offlineCapAddMs;
+  // Phase answers pay the moment they are given, not when the thing is
+  // finished — that is the partial benefit programmes exist to provide.
+  const phases = programmeEffects(state);
+  prodMult = prodMult.mul(phases.prodMult);
+  scienceMult *= phases.scienceMult;
+  offlineCapMs += phases.offlineCapAddMs;
+  for (const a of ASPECTS) aspectMult[a] *= phases.aspectMult[a];
   if (answer) prodMult = prodMult.mul(C.ANSWER_MULT);
 
   // Buffs (bubbles) and events

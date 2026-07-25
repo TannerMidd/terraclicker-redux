@@ -273,6 +273,7 @@ export const actions = {
   setStandingOrders: (orders: StandingOrders) => dispatch({ type: 'setStandingOrders', orders }),
   acceptDossier: (id: string) => dispatch({ type: 'acceptDossier', id }),
   signCharter: (systemIndex: number, id: string) => dispatch({ type: 'signCharter', systemIndex, id }),
+  answerPhase: (id: string, optionId: string) => dispatch({ type: 'answerPhase', id, optionId }),
 };
 
 // Dev hook for headless verification and manual poking.

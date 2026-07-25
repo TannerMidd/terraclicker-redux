@@ -445,6 +445,15 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, run: { ...run, charters: {}, charterOffers: {} } };
     },
   },
+  {
+    // v16 → v17: megaproject programmes. A project already under way keeps its
+    // construction time exactly — phases divide buildMs rather than extending
+    // it — and its already-passed phases simply show up as open questions to
+    // answer, which is the correct outcome: the crew got on with it and would
+    // now like a decision.
+    from: 16,
+    migrate: (raw) => ({ ...raw, programmes: {} }),
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

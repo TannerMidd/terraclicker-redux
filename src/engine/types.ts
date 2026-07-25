@@ -357,6 +357,12 @@ export interface GameState {
    * deliberately: the portfolio sells, the memory does not.
    */
   worldRecords: Record<string, WorldRecord>;
+  /**
+   * Megaproject id → chosen option per phase, sparse by index. A phase that
+   * has been reached but not answered is simply absent. See
+   * engine/programmes.ts.
+   */
+  programmes: Record<string, string[]>;
   /** Player-written automation policies. See engine/standingOrders.ts. */
   standingOrders: StandingOrders;
 
@@ -471,7 +477,8 @@ export type Input =
   | { type: 'setFlag'; id: string; value: number }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
-  | { type: 'signCharter'; systemIndex: number; id: string };
+  | { type: 'signCharter'; systemIndex: number; id: string }
+  | { type: 'answerPhase'; id: string; optionId: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
