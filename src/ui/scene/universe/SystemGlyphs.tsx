@@ -16,6 +16,7 @@ import type { CompletedPlanetRecord } from '../../../engine/types';
 import { starClass, starColor, systemGlyphPosition } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { focusOn, focusSystemIndex, makeGlowSprite, visitHandlers } from './shared';
+import { sharedBasicMaterial } from './pool';
 import {
   SPECIALTY_VISUAL,
   specialtyFor,
@@ -129,7 +130,7 @@ function SystemGlyph({
     <group ref={root} position={pos} rotation={[0.5, 0, 0.12]}>
       <mesh raycast={() => null}>
         <icosahedronGeometry args={[0.16, 1]} />
-        <meshBasicMaterial color={color} />
+        <primitive object={sharedBasicMaterial({ color })} attach="material" />
       </mesh>
       <mesh
         visible={false}

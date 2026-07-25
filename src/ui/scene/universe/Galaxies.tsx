@@ -32,6 +32,7 @@ import { C } from '../../../content/constants';
 import { distantGeometry, distantMaterial } from '../settledPlanet';
 import { focusOn, makeGlowSprite, visitHandlers, visitOrbitGeometry } from './shared';
 import { universeMotion } from './operationsVisual';
+import { sharedBasicMaterial } from './pool';
 
 const APP_T0 = performance.now();
 const DETAILED = 8; // most recent galaxies get the full treatment
@@ -173,7 +174,7 @@ function MemberSystem({
     <group ref={root} position={pos}>
       <mesh raycast={() => null}>
         <icosahedronGeometry args={[0.11, 1]} />
-        <meshBasicMaterial color={color} />
+        <primitive object={sharedBasicMaterial({ color })} attach="material" />
       </mesh>
       <sprite scale={[0.6, 0.6, 1]} raycast={() => null}>
         <primitive object={glow} attach="material" />
@@ -347,7 +348,7 @@ function BeaconGalaxy({ index }: { index: number }) {
       </sprite>
       <mesh raycast={() => null}>
         <icosahedronGeometry args={[0.2, 1]} />
-        <meshBasicMaterial color={0xfff2d9} transparent opacity={0.85} />
+        <primitive object={sharedBasicMaterial({ color: 0xfff2d9, transparent: true, opacity: 0.85 })} attach="material" />
       </mesh>
       <mesh
         visible={false}

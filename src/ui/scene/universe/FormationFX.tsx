@@ -17,6 +17,7 @@ import { C } from '../../../content/constants';
 import * as audio from '../../audio/audio';
 import { makeGlowSprite, makeTexSprite } from './shared';
 import { useLamp } from '../SceneLamps';
+import { sharedBasicMaterial } from './pool';
 
 const P = new Vector3();
 const DIR = new Vector3();
@@ -188,7 +189,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       ))}
       <mesh ref={starRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
         <icosahedronGeometry args={[1, 2]} />
-        <meshBasicMaterial color={star} />
+        <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
       <sprite ref={flareRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
         <primitive object={flareMat} attach="material" />

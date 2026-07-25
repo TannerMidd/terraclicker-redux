@@ -19,6 +19,7 @@ import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
 import { useLamp } from '../SceneLamps';
 import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
+import { sharedBasicMaterial } from './pool';
 
 const TRANSIT_MS = 1900;
 
@@ -149,7 +150,7 @@ export function AssemblingSystem() {
         {...inspectHandlers(`System ${s.run.systems + 1}, assembling`, starClass(starSeed))}
       >
         <icosahedronGeometry args={[1, 2]} />
-        <meshBasicMaterial color={star} />
+        <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
       <sprite position={CURRENT_SYSTEM_ANCHOR} scale={[1.6, 1.6, 1]} raycast={() => null}>
         <primitive object={starGlow} attach="material" />

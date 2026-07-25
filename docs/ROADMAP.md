@@ -410,11 +410,16 @@ asked, so traits evolve from what actually happened. Surfaced in the Guide
 atlas beside the delivery certificate, and in settlement density: engineered
 worlds sprawl, austere ones stayed small.
 
-**Open thread from this work:** the 227 material graphs are still unexplained.
-`sharedGlowSprite` already caches by colour, so settlement lights were never
-the source — pooling them again moved the count by zero. Worth finding before
-Phase 4 authors more scenery on top of them. (It did surface a real bug: the
-old cleanup disposed those *shared* materials when a single world unmounted.)
+**The 227 graphs, found.** Not node materials — only **13** of the 227 were.
+The other 214 were plain `<meshBasicMaterial color={x} />` JSX elements in
+components that render once per system, per galaxy, per landmark; R3F builds a
+new material for every element, so 81 systems meant 81 identical materials.
+`TC_OWNERS=1 npm run budget` groups them by signature and prints the worst
+offenders, which is the diagnostic that should have existed before the first
+guess. Sharing the top signatures took **227 → 205**; the remainder are mostly
+one-off landmark art in `DeepFieldObjects`, which is genuinely distinct rather
+than duplicated. (The first attempt also surfaced a real bug: the old cleanup
+disposed *shared* materials when a single world unmounted.)
 
 ### Still to build
 

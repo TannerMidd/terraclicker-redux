@@ -1,11 +1,20 @@
 /**
  * Pooled scene objects — how the universe is allowed to accumulate.
  *
- * `docs/ROADMAP.md` measured the ceiling: 409 worlds are drawn by 279 meshes
- * carrying **227 distinct material graphs**, with exactly two instanced meshes
- * in the whole scene. Frame time is fine — a locked 60fps everywhere — but this
- * is a node-material renderer, so every distinct graph compiles its own
- * pipeline, and that is what the 167ms hitch on entering flight is made of.
+ * `docs/ROADMAP.md` measured the ceiling: 409 worlds drawn by 272 meshes
+ * carrying 227 distinct material graphs, with two instanced meshes in the whole
+ * scene. Frame time is fine — a locked 60fps everywhere — but every distinct
+ * graph compiles its own pipeline, and that is what the 167ms hitch on entering
+ * flight is made of.
+ *
+ * The cause was NOT node materials, which is what the first look assumed: only
+ * thirteen of the 227 were node materials. The rest were ordinary
+ * `<meshBasicMaterial color={x} />` JSX elements inside components that render
+ * once per system, per galaxy, per landmark. React Three Fiber constructs a
+ * fresh material for each such element, so eighty-one systems meant eighty-one
+ * identical materials — seventeen of one signature, sixteen of another.
+ * Sharing them by signature took the count to 205. `TC_OWNERS=1 npm run budget`
+ * prints the remaining duplicates, largest first.
  *
  * Everything still to be built accumulates visible objects: settlement lights
  * and weather per world, nebulae and comet trails and debris fields, relay
@@ -26,7 +35,8 @@
  * meshes against a 409-world save.
  */
 import { useLayoutEffect, useMemo, useRef } from 'react';
-import { Color, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
+import { Color, InstancedMesh, Matrix4, MeshBasicMaterial, Quaternion, Vector3 } from 'three/webgpu';
+import type { Blending } from 'three/webgpu';
 import type { BufferGeometry, Material } from 'three/webgpu';
 
 /**
@@ -137,4 +147,60 @@ export function InstancedPool({
       frustumCulled={frustumCulled}
     />
   );
+}
+
+/**
+ * Shared basic/standard materials, keyed by what they actually are.
+ *
+ * The measured 227 distinct material graphs turned out not to be a node-material
+ * problem at all — only 13 of them were node materials. The other 214 were
+ * ordinary `<meshBasicMaterial color={x} />` JSX elements inside components
+ * that render once per system, per galaxy, per landmark. React Three Fiber
+ * constructs a new material for every one of those elements, so eighty-one
+ * systems meant eighty-one identical materials, seventeen of one signature and
+ * sixteen of another.
+ *
+ * These helpers hand back one instance per distinct parameter set, so the same
+ * JSX renders the same graph however many times it appears. Use with
+ * `<primitive object={...} attach="material" />`.
+ */
+export interface BasicParams {
+  /** Hex or a Color — keyed by hex either way, so both dedupe together. */
+  color?: number | Color;
+  opacity?: number;
+  transparent?: boolean;
+  depthWrite?: boolean;
+  blending?: Blending;
+  toneMapped?: boolean;
+}
+
+function key(prefix: string, p: BasicParams): string {
+  return [
+    prefix,
+    p.color === undefined ? 'x' : (p.color instanceof Color ? p.color.getHexString() : p.color),
+    p.opacity ?? 'x',
+    p.transparent ? 't' : '-',
+    p.depthWrite === false ? 'nw' : '-',
+    p.blending ?? 'x',
+    p.toneMapped === false ? 'nt' : '-',
+  ].join('|');
+}
+
+export function sharedBasicMaterial(p: BasicParams = {}): MeshBasicMaterial {
+  return pooledMaterial(key('basic', p), () => new MeshBasicMaterial({
+    ...(p.color !== undefined ? { color: p.color } : {}),
+    ...(p.opacity !== undefined ? { opacity: p.opacity } : {}),
+    ...(p.transparent !== undefined ? { transparent: p.transparent } : {}),
+    ...(p.depthWrite !== undefined ? { depthWrite: p.depthWrite } : {}),
+    ...(p.blending !== undefined ? { blending: p.blending } : {}),
+    ...(p.toneMapped !== undefined ? { toneMapped: p.toneMapped } : {}),
+  }));
+}
+
+/**
+ * The invisible proxy every clickable body carries. One signature, one
+ * material, however many bodies — this alone was sixteen of the count.
+ */
+export function sharedHitProxyMaterial(): MeshBasicMaterial {
+  return sharedBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
 }

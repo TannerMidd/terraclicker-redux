@@ -72,6 +72,9 @@ async function measure(label, setup) {
           // Distinct material graphs = distinct pipeline compiles.
           const materials = new Set();
           const kinds = new Set();
+          // Who OWNS each distinct graph — the question the count alone
+          // cannot answer, and the one that says what to fix.
+          const byOwner = {};
           let meshes = 0;
           let instanced = 0;
           const root = window.__tcScene?.scene;
@@ -81,11 +84,32 @@ async function measure(label, setup) {
               meshes += 1;
               if (o.isInstancedMesh) instanced += 1;
               for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+                if (!materials.has(m.uuid)) {
+                  // Name the owner by the nearest useful label in the chain.
+                  let owner = o.name || '';
+                  let p = o.parent;
+                  while (!owner && p) { owner = p.name || ''; p = p.parent; }
+                  // Signature of what this material actually IS. Two
+                  // materials with the same signature are the same graph
+                  // twice, and could have been one shared instance.
+                  const sig = [
+                    m.type,
+                    m.color ? m.color.getHexString() : '-',
+                    m.opacity ?? '-',
+                    m.transparent ? 't' : '-',
+                    m.blending ?? '-',
+                    m.map ? (m.map.name || m.map.uuid.slice(0, 6)) : '-',
+                    m.depthWrite ? 'dw' : '-',
+                    owner || '(unnamed)',
+                  ].join('|');
+                  byOwner[sig] = (byOwner[sig] ?? 0) + 1;
+                }
                 materials.add(m.uuid);
                 kinds.add(m.type);
               }
             });
           }
+          const top = Object.entries(byOwner).sort((a, b) => b[1] - a[1]).slice(0, 12);
 
           resolve({
             geometries: gl.info.memory.geometries,
@@ -94,12 +118,18 @@ async function measure(label, setup) {
             materialTypes: kinds.size,
             meshes,
             instanced,
+            top,
           });
         }
       });
     });
   });
-  console.log(`${label.padEnd(16)} ${info ? JSON.stringify(info) : 'no renderer hook'}`);
+  if (!info) { console.log(`${label.padEnd(16)} no renderer hook`); return info; }
+  const { top, ...rest } = info;
+  console.log(`${label.padEnd(16)} ${JSON.stringify(rest)}`);
+  if (process.env.TC_OWNERS && top) {
+    for (const [k, n] of top) console.log(`                   ${String(n).padStart(4)}  ${k}`);
+  }
   return info;
 }
 

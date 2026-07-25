@@ -21,6 +21,7 @@ import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import { makeGlowSprite, inspectHandlers } from './shared';
 import { DeepFieldBody, tumbleFor } from './DeepFieldObjects';
+import { sharedHitProxyMaterial } from './pool';
 
 /** Beyond this the body is not drawn at all — just the glint. */
 const BODY_RANGE = 46;
@@ -130,7 +131,7 @@ function Landmark({ site }: { site: DeepFieldSite }) {
         {!flight && (
           <mesh {...inspectHandlers(title, sub)}>
             <sphereGeometry args={[def.radius * 1.5, 10, 8]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            <primitive object={sharedHitProxyMaterial()} attach="material" />
           </mesh>
         )}
         <DeepFieldBody def={def} />

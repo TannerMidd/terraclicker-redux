@@ -11,6 +11,7 @@ import { useGame } from '../../../state/store';
 import { galaxyPosition, protoSwirlPoints } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { inspectHandlers, makeGlowSprite } from './shared';
+import { sharedHitProxyMaterial } from './pool';
 
 /**
  * The next galaxy, pending: loose matter loitering at its future address,
@@ -71,7 +72,7 @@ export function ProtoGalaxy() {
         )}
       >
         <sphereGeometry args={[1.6, 8, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <primitive object={sharedHitProxyMaterial()} attach="material" />
       </mesh>
     </group>
   );

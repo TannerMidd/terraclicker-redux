@@ -35,6 +35,7 @@ import { FreightLane } from './LivingLanes';
 import { formatDuration } from '../../../engine/num';
 import { QUIRK_BY_ID } from '../../../content/quirks';
 import { SURVEY_BY_ID } from '../../../content/surveys';
+import { sharedBasicMaterial } from './pool';
 import {
   SPECIALTY_VISUAL,
   isHeritageWorld,
@@ -300,7 +301,7 @@ function FocusedSystemInner({ index }: { index: number }) {
         )}
       >
         <icosahedronGeometry args={[0.17, 2]} />
-        <meshBasicMaterial color={star} />
+        <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
       <sprite scale={[1.2, 1.2, 1]} raycast={() => null}>
         <primitive object={glowMat} attach="material" />
