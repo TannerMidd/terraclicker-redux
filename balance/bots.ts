@@ -101,11 +101,31 @@ export function operationsManager(state: GameState, tick: number): Input[] {
 }
 
 /**
+ * What a Blueprint is worth to a player who is sitting there playing. The two
+ * bureaucracy perks at the bottom buy offline cap and offline efficiency,
+ * which are worth real money to a human across a week and worth exactly
+ * nothing to a bot measuring a continuous foreground session. A spender that
+ * buys cheapest-first buys those two early — they are cheap — and then reports
+ * that prestige barely helped, which is a fact about the bot rather than about
+ * the game.
+ */
+const ACTIVE_RUN_PRIORITY = [
+  'surplus-stock', // starts the next commission with probes already running
+  'fjord-certification', // every planet arrives part-finished
+  'bulk-discount', // compounds across every purchase after it
+  'marvins-patience',
+  'golden-ratio',
+  'drive-tuning',
+  'bubble-lens',
+  'extended-forms',
+  'efficient-filing',
+];
+
+/**
  * Files the sale the moment it is available, then actually spends what it was
  * paid. Every other bot banks Blueprints forever, which meant the single
- * criterion the prestige layer is judged by — DESIGN.md M3, "run 2 >=45% faster
- * to prior peak" — was never once exercised. Perks are bought cheapest-first,
- * because the early ranks are where the acceleration is.
+ * criterion the prestige layer is judged by — DESIGN.md M3, "run 2 >=45%
+ * faster to prior peak" — was never once exercised.
  */
 export function catalogueSpender(state: GameState, tick: number): Input[] {
   const inputs: Input[] = [{ type: 'click' }];
@@ -118,7 +138,12 @@ export function catalogueSpender(state: GameState, tick: number): Input[] {
       return { perk, rank, cost: perk.costs[rank] };
     })
       .filter((e) => e.rank < e.perk.maxRank && e.cost !== undefined && state.prestige.bp >= e.cost)
-      .sort((a, b) => (a.cost as number) - (b.cost as number));
+      .sort((a, b) => {
+        const ai = ACTIVE_RUN_PRIORITY.indexOf(a.perk.id);
+        const bi = ACTIVE_RUN_PRIORITY.indexOf(b.perk.id);
+        if (ai !== bi) return ai - bi;
+        return (a.cost as number) - (b.cost as number);
+      });
     const next = affordable[0];
     if (next) inputs.push({ type: 'buyPerk', id: next.perk.id });
   }

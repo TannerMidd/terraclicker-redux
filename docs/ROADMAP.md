@@ -194,6 +194,41 @@ than run away). Megaproject **salvage** was deliberately left out under rule 3.
 Later consumers, per the substrate table: flight infrastructure construction
 and biography follow-ups. Tests: 159.
 
+### After 0.5 (the documents stopped disagreeing with the game)
+
+PROGRESSION.md §4 opened by claiming "the harness plays it and asserts each
+beat's window." There were four assertions in `pacing.test.ts` and none of them
+concerned the opening. Measured against the shipped game, the authored sheet
+was describing a different one:
+
+| Beat | authored | measured |
+|---|---|---|
+| First Seed Probe | 0:20 | **0:06** |
+| Planet 1 completes | 3:30 | **0:50** |
+| Research tab unlocks | 6:00 | **13:53** |
+| First random event | 8:30 | *system removed* |
+| State at 10:00 | 2 planets | **14 planets, 2 systems** |
+
+§4 is now measured rather than authored, and seven assertions in
+`pacing.test.ts` hold it there. Tests: 162.
+
+#### Two open decisions, both surfaced rather than taken
+
+1. **Is the opening supposed to be this fast?** §3's prose says the shipped
+   constant puts planet 1 at "~1–4 min active". It lands at 50 seconds. The
+   game is currently faster than both documents that describe it, and every
+   one of the three disagrees with the other two. Changing it means moving
+   `T(n) = 60 × 1.42^n`, which ripples through every band in this file — a
+   pacing decision, not a repair.
+2. **DESIGN.md M3 wants run 2 ≥45% faster to prior peak; it measures 33.9%.**
+   Not a regression from 0.1: at the twelve Blueprints a first prestige awards,
+   the old compounding curve gave 1.268× against the new 1.24×, nowhere near
+   enough to explain eleven points. The criterion was simply never checked. The
+   lever is `BP_PASSIVE`, and raising it is *safe* now that the bonus is
+   additive and cannot run away — but it makes every prestige in the game more
+   rewarding, which is a balance call. The test floor is set at 30% to catch
+   regressions without endorsing the gap.
+
 ## Phase 1 — Substrates
 
 Built once, with every consumer listed above in mind. Save-schema changes go

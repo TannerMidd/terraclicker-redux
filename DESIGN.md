@@ -256,7 +256,7 @@ Content (mechanical, listed above): Marvin, Heart of Gold, Deep Thought + The An
 
 Scripted:
 - **Planet #42 is always Earth** ("Mostly harmless", quirk-free, blue-green). Completing it: achievement *"Life, the Universe and Everything."* Ten real minutes after it completes, a Vogon demolition notice arrives for it — long since "on display at the local planning office in Alpha Centauri." Surviving or failing the setpiece both pay out (failing grants the **Towel**).
-- **The Towel** — earned via the Earth setpiece or 42 total achievements: permanent +42% offline cap, and the achievement *"A frood who really knows where their towel is."*
+- **The Towel** — earned via the Earth setpiece, by boarding the drifting towel in the Deep Field, or by filing 42 records: permanent +42% offline cap, and the achievement *"A frood who really knows where their towel is."* (A "record" is an achievement or a charted Deep Field object. The threshold used to read 42 *achievements*, of which there have only ever been 29, so that path could not be taken; the number is not negotiable, so the count changed. 29 + 15 = 44.)
 - Own **exactly 42** of any building: achievement *"Six by Nine."* (6×9=42 in base 13; the description just says "Something is wrong with mathematics.")
 - Konami-style: typing `42` on the keyboard while the Vortex is open shows the Question briefly, garbled.
 - **Pan Galactic Gargle Blaster** — rare bubble reward: ×20 click power 20s, then the screen wobbles like a lemon-wrapped gold brick.

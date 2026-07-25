@@ -28,7 +28,7 @@ Design rule: **every screen shows at least two clocks.** The shop shows seconds 
 
 - **Income:** building cost `base × 1.15^owned`; each next building ≈ ×9–12 base cost, ×4–6 output. Net effect: TU/sec roughly **doubles every 3–5 minutes** during active play in a healthy run. The harness asserts this band.
 - **Clicks:** `click = (1 + additives) × mults × (1 + 0.01 × TUps × thumbLevel)` — click power rides TU/sec late, so active play always beats idle by 15–40%, never by 10×.
-- **Planet requirement:** `T(n) = 60 × 1.42^n × sizeMod` per gauge, times the planet's aspect bias. (Shipped constant: the 400 first drafted here made planet 1 a wall for idle-leaning players; 60 puts planet 1 at ~1–4 min active, ~14 min pure-idle — harness-verified.) Why 1.42: income compounds at ~1.15 per purchase across ~14 buildings; 1.8 (v1) outran income by planet ~8 and turned planets into once-per-run events. Completion pays a bonus of 45 s of TU/s (was 90 s; the harness showed high-cadence players compounding bonuses into a runaway).
+- **Planet requirement:** `T(n) = 60 × 1.42^n × sizeMod` per gauge, times the planet's aspect bias. (Shipped constant: the 400 first drafted here made planet 1 a wall for idle-leaning players; 60 was chosen to put planet 1 at ~1–4 min active, ~14 min pure-idle. Measured, it lands at **50 s** active — faster than the band this line was written to describe. See §4.) Why 1.42: income compounds at ~1.15 per purchase across ~14 buildings; 1.8 (v1) outran income by planet ~8 and turned planets into once-per-run events. Completion pays a bonus of 45 s of TU/s (was 90 s; the harness showed high-cadence players compounding bonuses into a runaway).
 - **Offline:** 50% efficiency, 8 h cap (research/Catalogue push to 100% / 24 h + towel 42%). Offline uses the same `step()` chunked — parity is a test, not a hope.
 
 ### Worked pacing table (run 1 — harness-measured bands, seed 20260723)
@@ -44,25 +44,44 @@ A "reasonable player" sits between the two bots; `npm run balance` reproduces th
 | 45-minute mark | 29 planets · 14 BP eligible | 11 planets · 5 BP provisional | active appraisal is available; idle appraisal lands later in the 90-minute window |
 | Max stall observed | 30 s | 8 min | both inside the 12-min rubber-band ceiling |
 
-## 4. The first ten minutes (scripted density)
+## 4. The first ten minutes (measured)
 
-The opening is authored beat-by-beat; the harness plays it and asserts each beat's window.
+Beats below are **measured**, not authored — greedy bot, seed 20260723,
+reproduced by `npm run balance 10`. `test/pacing.test.ts` asserts each window.
+
+This section previously opened with "the opening is authored beat-by-beat; the
+harness plays it and asserts each beat's window." It did not: there were four
+assertions in that file and none of them were about the opening. In the
+meantime the shipped game drifted a long way from the sheet — the authored
+version put planet 1 at 3:30 and two planets by ten minutes, where the game
+does planet 1 at 0:50 and fourteen planets by ten minutes. It also scheduled a
+random buff event at 8:30, for a system that no longer exists. Everything below
+is what actually happens.
 
 | T | Beat |
 |---|---|
 | 0:00 | Cold open: dark planet, one line of Guide text, a single pulsing prompt. First click ripples the surface. No UI chrome yet. |
-| 0:20 | 15 TU → first Seed Probe. It *visibly launches* and starts orbiting. Shop panel slides in (one item). |
-| 0:50 | Second probe; TU/sec counter fades in; ETA ribbon appears ("Atmospheric Processor ~30s"). |
-| 1:30 | Atmo Processor → the rim of the atmosphere *visibly thickens* (aspect→visual mapping does the tutorializing; no tooltips explain what words can't). |
-| 2:00 | First upgrade (Terraforming Gloves). First aspect gauge crosses 50% — ambient audio layer swells in. |
-| 3:00 | First bubble drifts in (guaranteed, seeded). Catching it teaches interactables. |
-| 3:30 | **Planet 1 completes** — first T2 cinematic, system slot UI appears with 1/5 filled. |
-| 4:00 | Planet 2 arrives as an ice world: Thermal target ×2.5. The build must pivot — the whole game in one moment. |
-| 6:00 | Research Lab affordable → Research tab unlocks (one visible item). |
-| 8:30 | First random event fires (guaranteed window 7–10 min). |
-| 10:00 | Player has: 2 planets done, a pivot survived, research ticking, one bubble caught. Hooked or not — but never confused. |
+| 0:06 | 15 TU → first Seed Probe. It *visibly launches* and starts orbiting. Shop panel slides in (one item). |
+| 0:11 | Second probe; TU/sec counter fades in; ETA ribbon appears. |
+| 0:50 | **Planet 1 completes** — first T2 cinematic, system slot UI appears with 1/5 filled. Vortex and Operations tabs unlock. |
+| 0:51 | First upgrade. |
+| 0:56 | Atmo Processor → the rim of the atmosphere *visibly thickens* (aspect→visual mapping does the tutorializing; no tooltips explain what words can't). |
+| 1:06 | Planet 2 completes. The type change forces the build to pivot — the whole game in one moment. |
+| 2:19 | **System 1 forms** (5 planets). |
+| 3:00 | First bubble drifts in (guaranteed, seeded at `FIRST_BUBBLE_MS`). Catching it teaches interactables. |
+| 4:02 | First situation opens (window `SITUATION_FIRST_MIN_MS`–`MAX`). Something asks you a question. |
+| 6:16 | System 2. |
+| 10:00 | Player has: 14 planets, 2 systems, a bubble caught, a question answered or pointedly ignored. |
+| 13:53 | Research tab unlocks (gated at 950K lifetime TU; ten minutes earns 317K). |
+| 28:06 | Research Lab affordable and bought. |
 
-Panels unlock on first relevance, not at t=0: Shop → Research → Guide → Vortex → Magrathea (visible-but-locked with "Magrathea has noticed you" once run TU crosses 10% of the prestige threshold).
+The opening is therefore **much faster and much denser** than the authored
+sheet described. Whether that is the intended experience is an open question —
+see the note in [ROADMAP.md](ROADMAP.md); §3's own prose says the shipped
+constant puts planet 1 at "~1–4 min active", and it lands at 50 seconds, so the
+game is currently faster than both documents that describe it.
+
+Panels unlock on first relevance, not at t=0: Shop → Research → Guide → Vortex → Magrathea (visible-but-locked with "Magrathea has noticed you" once run TU crosses 10% of the prestige threshold). In practice Vortex and Operations arrive first, at planet 1.
 
 ## 5. The per-planet puzzle
 
