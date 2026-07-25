@@ -55,6 +55,7 @@ import {
 import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
 import { pinnedWaypoint, type WaypointRef } from '../../engine/waypoints';
+import { handlingFor } from '../../engine/handling';
 import { solveNav, type NavSolution } from '../../engine/navigation';
 import { flightPrefs, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
@@ -420,8 +421,9 @@ export function stepFlight(dt: number, t: number): void {
   const authority = f.ramp * (f.paused ? 0 : 1);
 
   // Steering → turn rates → orientation. Roll is cosmetic bank.
-  const yawTarget = -steerCurve(input.steerX) * YAW_RATE_MAX * authority;
-  const pitchTarget = -steerCurve(input.steerY) * PITCH_RATE_MAX * authority;
+  const turn = handlingFor(useGame.getState().s.expedition).turnMult;
+  const yawTarget = -steerCurve(input.steerX) * YAW_RATE_MAX * authority * turn;
+  const pitchTarget = -steerCurve(input.steerY) * PITCH_RATE_MAX * authority * turn;
   const rateK = 1 - Math.exp(-dt * RATE_RESP);
   f.yawRate += (yawTarget - f.yawRate) * rateK;
   f.pitchRate += (pitchTarget - f.pitchRate) * rateK;
@@ -487,7 +489,12 @@ export function stepFlight(dt: number, t: number): void {
   // exactly the tension a freight run is supposed to have. An empty ship
   // divides by 1 and flies as it always did.
   const heft = massFactor(useGame.getState().s.expedition);
-  const resp = (braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : RESP_COAST) / heft;
+  // Special Handling: the hold is felt through the stick, not read in a panel.
+  // A fragile load resists being hurried in BOTH directions, which is why this
+  // multiplies the response rather than the speed cap.
+  const hold = handlingFor(useGame.getState().s.expedition);
+  const resp = ((braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : RESP_COAST) / heft)
+    * hold.responseMult;
   if (braking > 0) DESIRED.set(0, 0, 0);
   f.vel.lerp(DESIRED, 1 - Math.exp(-dt * resp));
 
@@ -1181,11 +1188,17 @@ function stepManifest(st: ReturnType<typeof useGame.getState>['s']): void {
   const m = st.expedition.manifest;
   if (!m) return;
   const f = flightLive;
+  // Before collection the job names a place to GO, not a place to arrive. Both
+  // halves use the same arrival test, so "close enough to collect" and "close
+  // enough to deliver" agree by construction.
+  const waiting = m.pickedUpAtMs === null;
+  const target = waiting ? m.fromName : m.toName;
   for (const body of bodies) {
-    if (body.label !== m.toName) continue;
+    if (body.label !== target) continue;
     bodyPosition(body, f.clock, TMP);
     if (TMP.distanceTo(f.pos) <= DELIVER_RANGE + body.radius) {
-      actions.deliverManifest();
+      if (waiting) actions.pickUpManifest();
+      else actions.deliverManifest();
       return;
     }
   }

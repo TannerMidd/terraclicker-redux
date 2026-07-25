@@ -27,6 +27,34 @@ import { findWaypoint, waypointId } from '../../engine/waypoints';
  * sold with a previous commission is a letter from somewhere you can no longer
  * reach, which is its own kind of thing but not a destination.
  */
+/**
+ * The other way to answer: go there.
+ *
+ * Only offered for a world you have actually been to, because "attend in
+ * person" cannot be something you do from the desk — that is the whole
+ * distinction. Pays the same standing the desk would have paid, plus salvage
+ * the desk can never produce, plus a line in the world's history saying you
+ * came. See engine/bridge.ts.
+ */
+function AttendInPerson({
+  uid,
+  lifetimeIndex,
+  name,
+}: {
+  uid: number;
+  lifetimeIndex: number;
+  name: string;
+}) {
+  const { s } = useGame.getState();
+  if (!lifetimeIndex) return null;
+  if (s.expedition.visited[waypointId('world', lifetimeIndex)] === undefined) return null;
+  return (
+    <button className="sc-attend" onClick={() => actions.attendInPerson(uid)}>
+      see to it personally — you have been to {name}
+    </button>
+  );
+}
+
 function PinWorld({ lifetimeIndex, name }: { lifetimeIndex: number; name: string }) {
   const { s } = useGame.getState();
   if (!lifetimeIndex) return null;
@@ -275,6 +303,7 @@ function SituationCard({
       </div>
       <p className="sc-text">{fillSituationText(def.text, inst.worldName)}</p>
       <PinWorld lifetimeIndex={inst.world} name={inst.worldName} />
+      <AttendInPerson uid={inst.uid} lifetimeIndex={inst.world} name={inst.worldName} />
       <div className="sc-options">
         {def.options.map((o) => {
           const costs = situationCosts(d, o);

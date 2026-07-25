@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
 import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flightControl';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
+import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
 import { FirstSortie } from './FirstSortie';
 import { BAND_LABELS } from '../scene/universeLayout';
@@ -58,10 +59,15 @@ function ManifestStrip() {
   const m = useGame.getState().s.expedition.manifest;
   if (!m) return null;
   const def = FREIGHT_BY_ID[m.id];
+  const waiting = m.pickedUpAtMs === null;
+  const hold = handlingLabel(handlingFor(useGame.getState().s.expedition));
   return (
-    <div className="fh-manifest">
+    <div className={`fh-manifest${waiting ? ' waiting' : ''}`}>
       <span className="fm-label">{def?.label ?? m.id}</span>
-      <span className="fm-to">→ {m.toName}</span>
+      <span className="fm-to">
+        {waiting ? `collect at ${m.fromName}` : `→ ${m.toName}`}
+      </span>
+      {!waiting && hold && <span className="fm-hold">{hold}</span>}
       <span className="fm-pay">{m.salvage} salvage</span>
     </div>
   );

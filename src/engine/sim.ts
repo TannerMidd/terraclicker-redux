@@ -62,6 +62,7 @@ import {
   placeRig,
   prospectSeam,
   refreshJobBoard,
+  pickUpManifest,
 } from './freight';
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
@@ -70,6 +71,7 @@ import { findWaypoint } from './waypoints';
 import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './dossiers';
 import { charterOffersFor, signCharter } from './charters';
 import { answerPhase } from './programmes';
+import { attendInPerson } from './bridge';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -414,6 +416,14 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       // is a queue that silently does nothing, which is worse than a rejected
       // edit because it looks like it worked.
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
+      break;
+    }
+    case 'attendInPerson': {
+      attendInPerson(state, effects, input.uid);
+      break;
+    }
+    case 'pickUpManifest': {
+      pickUpManifest(state, effects);
       break;
     }
     case 'answerPhase': {

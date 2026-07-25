@@ -242,6 +242,15 @@ export interface JobOffer {
 /** The accepted job, once it is in the hold. */
 export interface ManifestState extends JobOffer {
   acceptedAtMs: number;
+  /**
+   * Sim time the cargo was actually collected from its origin, or null while
+   * the job is accepted but the hold is still empty.
+   *
+   * Accepting a job used to put the cargo straight in the hold, which skipped
+   * the first half of every journey — the run out to fetch it. A manifest is a
+   * commitment to go and get something; it is not the something.
+   */
+  pickedUpAtMs: number | null;
 }
 
 export interface RigState {
@@ -478,7 +487,10 @@ export type Input =
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
   | { type: 'signCharter'; systemIndex: number; id: string }
-  | { type: 'answerPhase'; id: string; optionId: string };
+  | { type: 'answerPhase'; id: string; optionId: string }
+  | { type: 'pickUpManifest' }
+  /** Resolve a request by having gone there. See engine/bridge.ts. */
+  | { type: 'attendInPerson'; uid: number };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -523,6 +535,8 @@ export type SimEffect =
   | { t: 'megaprojectFinished'; id: string }
   | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' }
   | { t: 'waypointSet'; id: string }
+  | { t: 'manifestPickedUp'; id: string; from: string }
+  | { t: 'attendedInPerson'; world: string; id: string }
   | {
       t: 'situationResolved';
       uid: number;

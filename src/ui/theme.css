@@ -2990,3 +2990,27 @@ button {
 .mp-option:hover { border-color: var(--magrathea, #7fd1c8); }
 .mp-option b { display: block; font-size: 12px; color: var(--ink); }
 .mp-option span { display: block; font-size: 11px; line-height: 1.45; color: var(--ink-faint); }
+
+/* Manifest: which half of the job, and what the hold is doing about it. */
+.fh-manifest.waiting .fm-to { color: var(--warn, #e8b26a); }
+.fm-hold {
+  font-size: 11px;
+  color: var(--warn, #e8b26a);
+  letter-spacing: 0.03em;
+}
+
+/* The bridge: answer it by having gone there. */
+.sc-attend {
+  display: block;
+  width: 100%;
+  margin: 6px 0 0;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--magrathea, #7fd1c8);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--magrathea, #7fd1c8) 45%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sc-attend:hover { background: color-mix(in srgb, var(--magrathea, #7fd1c8) 16%, transparent); }

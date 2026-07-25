@@ -274,6 +274,8 @@ export const actions = {
   acceptDossier: (id: string) => dispatch({ type: 'acceptDossier', id }),
   signCharter: (systemIndex: number, id: string) => dispatch({ type: 'signCharter', systemIndex, id }),
   answerPhase: (id: string, optionId: string) => dispatch({ type: 'answerPhase', id, optionId }),
+  pickUpManifest: () => dispatch({ type: 'pickUpManifest' }),
+  attendInPerson: (uid: number) => dispatch({ type: 'attendInPerson', uid }),
 };
 
 // Dev hook for headless verification and manual poking.

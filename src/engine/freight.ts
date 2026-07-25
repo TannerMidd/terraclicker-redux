@@ -74,7 +74,10 @@ export function rigsStanding(expedition: ExpeditionState): number {
  */
 export function massFactor(expedition: ExpeditionState): number {
   const m = expedition.manifest;
-  if (!m) return 1;
+  // An accepted job weighs nothing until it is actually in the hold. The run
+  // out to fetch it is flown empty, which is exactly the point of collecting
+  // things where they are.
+  if (!m || m.pickedUpAtMs === null) return 1;
   const def = FREIGHT_BY_ID[m.id];
   if (!def) return 1;
   const cap = Math.max(1, cargoCapacity(expedition));
@@ -147,7 +150,9 @@ export function acceptJob(state: GameState, effects: SimEffect[], uid: number): 
   if (def.mass > cargoCapacity(exp)) return;
 
   exp.jobs.splice(idx, 1);
-  exp.manifest = { ...job, acceptedAtMs: state.gameTimeMs };
+  // Accepted, not collected. The cargo is still sitting at its origin, and
+  // fetching it is the first half of the job.
+  exp.manifest = { ...job, acceptedAtMs: state.gameTimeMs, pickedUpAtMs: null };
   effects.push({ t: 'jobAccepted', uid, id: job.id, to: job.toName });
 }
 
@@ -309,6 +314,25 @@ export function stepRigs(state: GameState, tickMs: number): boolean {
     changed = true;
   }
   return changed;
+}
+
+/**
+ * Collect the cargo. Called by the flight layer on arrival at the origin.
+ *
+ * Idempotent: arriving twice does not re-collect, and a manifest already in
+ * the hold is unaffected.
+ */
+export function pickUpManifest(state: GameState, effects: SimEffect[]): boolean {
+  const m = state.expedition.manifest;
+  if (!m || m.pickedUpAtMs !== null) return false;
+  m.pickedUpAtMs = state.gameTimeMs;
+  effects.push({ t: 'manifestPickedUp', id: m.id, from: m.fromName });
+  return true;
+}
+
+/** Is the hold actually carrying anything? Mass only counts once collected. */
+export function isCarrying(expedition: ExpeditionState): boolean {
+  return expedition.manifest?.pickedUpAtMs !== null && expedition.manifest !== null;
 }
 
 /** Total waiting to be collected — the HUD's reason to fly back out. */

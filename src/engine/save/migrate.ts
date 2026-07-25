@@ -454,6 +454,30 @@ export const MIGRATIONS: readonly Migration[] = [
     from: 16,
     migrate: (raw) => ({ ...raw, programmes: {} }),
   },
+  {
+    // v17 → v18: cargo is collected physically. A job already in the hold was
+    // accepted under the old rules and is treated as collected — retroactively
+    // emptying somebody's hold mid-run would be a worse kind of honest.
+    from: 17,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      const manifest = exp['manifest'];
+      if (typeof manifest !== 'object' || manifest === null) return raw;
+      return {
+        ...raw,
+        expedition: {
+          ...exp,
+          manifest: {
+            ...(manifest as Record<string, unknown>),
+            pickedUpAtMs: (manifest as Record<string, unknown>)['acceptedAtMs'] ?? 0,
+          },
+        },
+      };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

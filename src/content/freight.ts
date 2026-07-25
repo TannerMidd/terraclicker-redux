@@ -27,6 +27,17 @@ export interface FreightDef {
   weight: number;
   /** Whoever posted it, for reputation. */
   faction: 'magrathea' | 'mice' | 'vogon';
+  /**
+   * How the cargo makes itself felt at the helm.
+   *
+   * The point of Special Handling is that cargo differs through FLYING rather
+   * than through another menu: a fragile load is a load you cannot throttle
+   * hard, an awkward one turns like a barn door, a secret one attracts
+   * attention, and an improbable one makes the sensors unreliable. None of
+   * these is a number in a panel; all of them are something you notice with
+   * your hands on the stick. See engine/handling.ts.
+   */
+  handling?: readonly ('fragile' | 'awkward' | 'secret' | 'improbable')[];
 }
 
 export const FREIGHT: readonly FreightDef[] = [
@@ -39,6 +50,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 4,
     weight: 10,
     faction: 'magrathea',
+    handling: ['awkward'],
   },
   {
     id: 'coastline',
@@ -49,6 +61,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 8,
     weight: 8,
     faction: 'magrathea',
+    handling: ['awkward'],
   },
   {
     id: 'teaset',
@@ -59,6 +72,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 5,
     weight: 7,
     faction: 'mice',
+    handling: ['fragile'],
   },
   {
     id: 'labware',
@@ -69,6 +83,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 6,
     weight: 8,
     faction: 'mice',
+    handling: ['fragile', 'awkward'],
   },
   {
     id: 'forms',
@@ -79,6 +94,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 7,
     weight: 9,
     faction: 'vogon',
+    handling: ['secret'],
   },
   {
     id: 'anthology',
@@ -89,6 +105,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 11,
     weight: 5,
     faction: 'vogon',
+    handling: ['secret'],
   },
   {
     id: 'seedstock',
@@ -99,6 +116,7 @@ export const FREIGHT: readonly FreightDef[] = [
     salvage: 6,
     weight: 8,
     faction: 'magrathea',
+    handling: ['fragile'],
   },
   {
     id: 'hitchhiker',

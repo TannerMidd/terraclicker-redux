@@ -99,15 +99,25 @@ describe('the hold', () => {
     expect(s.expedition.manifest!.uid).toBe(a!.uid);
   });
 
-  it('makes the ship heavier to fly, and only while loaded', () => {
+  it('makes the ship heavier to fly, and only while actually loaded', () => {
     const s = withWorlds(15);
     fit(s, 'cargoHold', 1);
     expect(massFactor(s.expedition)).toBe(1);
     refreshJobBoard(s);
     const job = s.expedition.jobs.find((j) => (FREIGHT_BY_ID[j.id]?.mass ?? 0) > 5);
     if (!job) return;
+
+    // Accepting is a commitment to go and fetch something. The run out to the
+    // origin is flown empty, because the cargo is still sitting at the origin.
     step(s, 0, [{ type: 'acceptJob', uid: job.uid }], OPTS);
+    expect(s.expedition.manifest?.pickedUpAtMs).toBeNull();
+    expect(massFactor(s.expedition)).toBe(1);
+
+    // Collecting it is what loads the ship.
+    step(s, 0, [{ type: 'pickUpManifest' }], OPTS);
+    expect(s.expedition.manifest?.pickedUpAtMs).not.toBeNull();
     expect(massFactor(s.expedition)).toBeGreaterThan(1);
+
     step(s, 0, [{ type: 'deliverManifest' }], OPTS);
     expect(massFactor(s.expedition)).toBe(1);
   });

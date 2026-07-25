@@ -211,7 +211,9 @@ export const saveSchema = z.object({
     boarded: z.record(z.string(), z.number().min(0)),
     salvage: z.number().min(0),
     refits: z.record(z.string(), z.number().int().min(0)),
-    manifest: jobOffer.extend({ acceptedAtMs: z.number() }).nullable(),
+    manifest: jobOffer
+      .extend({ acceptedAtMs: z.number(), pickedUpAtMs: z.number().nullable() })
+      .nullable(),
     jobs: z.array(jobOffer),
     seams: z.record(z.string(), z.number().min(0)),
     rigs: z.record(
