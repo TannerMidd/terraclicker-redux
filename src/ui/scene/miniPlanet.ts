@@ -4,7 +4,21 @@
  * entire universe of unique planets renders with one cheap material.
  * Completed planets are ALIVE — full seas, spread vegetation, warm lights.
  */
-import { BufferAttribute, Color, type BufferGeometry } from 'three/webgpu';
+import { BufferAttribute, Color, MeshStandardNodeMaterial, type BufferGeometry } from 'three/webgpu';
+import {
+  attribute,
+  clamp,
+  cross,
+  float,
+  mix,
+  mx_fractal_noise_float,
+  normalize,
+  normalLocal,
+  positionLocal,
+  smoothstep,
+  transformNormalToView,
+  vec3,
+} from 'three/tsl';
 import { createPlanetGeometry } from './planetGeometry';
 import { paletteFor } from './planetMaterial';
 import type { CompletedPlanetRecord } from '../../engine/types';
@@ -52,9 +66,58 @@ export function createMiniPlanetGeometry(
   return geo;
 }
 
-export const MINI_SIZE: Record<CompletedPlanetRecord['size'], number> = {
-  small: 0.13,
-  medium: 0.16,
-  large: 0.2,
-  huge: 0.24,
-};
+/**
+ * The material every settled world wears.
+ *
+ * The baked vertex colours give each world its own palette, but at detail 2
+ * that is 162 colour samples for a whole planet — which is exactly why a
+ * finished world used to read as a blurry ball with a few colours in it, and
+ * got worse the closer you looked. The geometry keeps carrying the identity;
+ * this adds the frequencies above it per pixel: a modulation of the baked
+ * colour so land has texture, and a derived normal so the relief is lit
+ * rather than painted.
+ *
+ * Deliberately ONE shared instance for every settled world. Per-planet
+ * materials meant a newly revealed system linked a fresh shader per world,
+ * mid-flight, which profiled as the largest single source of frame hitches.
+ * The relief pattern is therefore shared too — invisible at these sizes,
+ * because the colours underneath are all different.
+ */
+function createSettledMaterial(): MeshStandardNodeMaterial {
+  const mat = new MeshStandardNodeMaterial();
+  const baked = attribute('color', 'vec3');
+  const dir = normalize(positionLocal);
+
+  type V = Parameters<typeof mx_fractal_noise_float>[0];
+  // Landform scale, not speckle scale. These spheres are a fifth of a unit
+  // across; anything much above this and the modulation stops reading as
+  // terrain and starts reading as noise laid over the baked colours.
+  const rock = (d: ReturnType<typeof vec3>) =>
+    mx_fractal_noise_float(d.mul(13) as unknown as V, 3, 2.3, 0.55, 1)
+      .mul(0.66)
+      .add(mx_fractal_noise_float(d.mul(46) as unknown as V, 2, 2.4, 0.5, 1).mul(0.34));
+
+  const eps = 0.004;
+  const tanA = normalize(cross(dir, vec3(0, 1, 0)));
+  const tanB = normalize(cross(dir, vec3(1, 0, 0)));
+  const tan1 = normalize(mix(tanA, tanB, smoothstep(0.86, 0.99, dir.y.abs())));
+  const tan2 = normalize(cross(dir, tan1));
+
+  const hC = rock(dir as unknown as ReturnType<typeof vec3>);
+  const hU = rock(normalize(dir.add(tan1.mul(eps))) as unknown as ReturnType<typeof vec3>);
+  const hV = rock(normalize(dir.add(tan2.mul(eps))) as unknown as ReturnType<typeof vec3>);
+
+  const bump = tan1.mul(hU.sub(hC)).add(tan2.mul(hV.sub(hC))).mul(-0.012 / eps);
+
+  mat.colorNode = baked.mul(clamp(hC.mul(0.24).add(0.9), 0.6, 1.25));
+  mat.normalNode = transformNormalToView(
+    normalize(normalLocal.add(bump)),
+  ) as unknown as typeof mat.normalNode;
+  mat.roughnessNode = float(0.85) as unknown as typeof mat.roughnessNode;
+  return mat;
+}
+
+/** Shared by AssemblingSystem, FocusedSystem and the formation ceremonies. */
+export const SETTLED_MATERIAL = createSettledMaterial();
+
+export { MINI_SIZE } from './universeLayout';

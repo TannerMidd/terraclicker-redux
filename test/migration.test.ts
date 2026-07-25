@@ -4,6 +4,7 @@ import { serialize, deserialize, toSave } from '../src/engine/save/codec';
 import { C } from '../src/content/constants';
 
 import { initRng } from '../src/engine/rng';
+import { deepFieldSites } from '../src/engine/deepField';
 const OPTS = { utcDay: 3 };
 
 describe('save migrations', () => {
@@ -65,7 +66,9 @@ describe('save migrations', () => {
     raw['version'] = 3;
     delete raw['operations'];
     const rng = raw['rng'] as Record<string, unknown>;
+    // A genuine v3 save predates BOTH later streams.
     delete rng['contracts'];
+    delete rng['subetha'];
     const legacyStreams = { ...rng };
 
     const result = deserialize(JSON.stringify(raw));
@@ -119,6 +122,72 @@ describe('save migrations', () => {
     expect(legacy!.installations).toContain('researchLab');
     // A record that already carries its snapshot is left untouched.
     expect(kept!.installations).toEqual(['bioDome', 'marvin']);
+  });
+
+  it('v5 -> v6 opens an empty logbook; the sky itself needs no reconstruction', () => {
+    const current = newGame(63, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 5;
+    delete raw['expedition'];
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.version).toBe(C.SAVE_VERSION);
+    expect(result.state.expedition).toEqual({
+      discovered: {},
+      boarded: {},
+      salvage: 0,
+      refits: {},
+    });
+    // Placement is a pure function of the master seed, so an old universe
+    // gains its landmarks exactly where they would always have been.
+    expect(deepFieldSites(result.state.seed)).toEqual(deepFieldSites(63));
+  });
+
+  it('v5 -> v6 keeps a logbook that somehow already exists', () => {
+    const current = newGame(64, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 5;
+    raw['expedition'] = {
+      discovered: { sofa: 1200 },
+      boarded: { sofa: 1400 },
+      salvage: 3,
+      refits: { sensors: 1 },
+    };
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.expedition.discovered['sofa']).toBe(1200);
+    expect(result.state.expedition.salvage).toBe(3);
+    expect(result.state.expedition.refits['sensors']).toBe(1);
+  });
+
+  it('v6 -> v7 opens the channel with its own stream and an empty log', () => {
+    const current = newGame(71, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 6;
+    delete raw['subEtha'];
+    const rng = raw['rng'] as Record<string, unknown>;
+    delete rng['subetha'];
+    const legacyStreams = { ...rng };
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.version).toBe(C.SAVE_VERSION);
+    expect(result.state.subEtha.log).toEqual([]);
+    expect(result.state.rng.subetha).toBe(initRng(71).subetha);
+    // The new stream is isolated: nothing else moved.
+    expect({
+      planets: result.state.rng.planets,
+      bubbles: result.state.rng.bubbles,
+      events: result.state.rng.events,
+      vogons: result.state.rng.vogons,
+      visuals: result.state.rng.visuals,
+      contracts: result.state.rng.contracts,
+    }).toEqual(legacyStreams);
   });
 
   it('delivery snapshots the owned installations onto the record', () => {

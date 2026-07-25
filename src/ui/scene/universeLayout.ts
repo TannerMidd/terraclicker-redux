@@ -2,24 +2,99 @@
  * Deterministic placement for the accumulating universe (all positions are
  * pure functions of index + seed — the scene is derived state, engine law #2).
  *
- * Depth shells, hero planet at origin:
- *   z ≈ -7    the current system assembling (star + your finished worlds)
- *   z ≈ -16   constellation of formed systems
- *   z ≈ -34   galaxies
- *   z ≈ -95   the cosmic web (everything else; mostly dark; mostly not yours)
+ * ————— THE SCALE HIERARCHY —————
+ *
+ * Everything spatial in this file derives from the block below, and the one
+ * rule it exists to enforce is that each level must be large enough to CONTAIN
+ * the level beneath it at full size.
+ *
+ * The universe used to be a compressed diorama: a "system" was a 0.78-unit
+ * glyph and a galaxy held five of them 1.15–2.11 units apart. That works
+ * while a system is a symbol, and falls apart the moment you can fly into
+ * one — five real systems will not fit inside a galaxy two units across, and
+ * a delivered world rendered a sixth the size of the hero planet reads as a
+ * marble of the thing it used to be.
+ *
+ * So: a world is a real world, a system comfortably holds five of them, a
+ * galaxy comfortably holds five systems, and the universe holds the galaxies.
+ * Nothing here is a magic number any more; retune a level by editing its
+ * radius and everything nested inside and around it follows.
+ *
+ * The hero planet stays at radius 1. It is the ruler everything else uses.
  */
 import { Color, Euler, Vector3 } from 'three/webgpu';
 import { mulberry } from '../../engine/rng';
 import { C } from '../../content/constants';
 
-export const CURRENT_SYSTEM_ANCHOR = new Vector3(-4.9, 1.95, -7.4);
+/** Outermost orbit of a system's five worlds. A system is this across. */
+export const SYSTEM_R = 8;
+/** Outermost member seat inside a galaxy. Must comfortably clear SYSTEM_R. */
+export const GALAXY_R = 78;
+/** Radius of the shell galaxies are placed on. Must clear 2 × GALAXY_R. */
+export const UNIVERSE_R = 260;
+/** Reach of the cosmic web — the backdrop everything else sits inside. */
+export const WEB_R = 1150;
+
+/**
+ * The system currently under construction. Far enough out that its worlds,
+ * which now orbit to SYSTEM_R, never crowd the hero planet at the origin.
+ */
+export const CURRENT_SYSTEM_ANCHOR = new Vector3(-17, 6.5, -26);
 
 const GOLDEN = 2.39996; // golden angle, for tasteful orbit spacing
+
+/**
+ * On-screen radius of a settled world, by size. Lives here rather than in
+ * miniPlanet.ts because the helm needs it to build collision shells, and
+ * miniPlanet builds a node material at import time — which the flight tests
+ * have no renderer for.
+ */
+export const MINI_SIZE: Record<'small' | 'medium' | 'large' | 'huge', number> = {
+  small: 0.5,
+  medium: 0.62,
+  large: 0.78,
+  huge: 0.95,
+};
+
+export interface HeroMoon {
+  size: number;
+  orbit: number;
+  speed: number;
+  phase: number;
+  tilt: number;
+}
+
+/**
+ * The hero planet's moons. Shared between the renderer and the helm so the
+ * two cannot disagree about where they are — they were invisible to
+ * collision for a while, which meant flying straight through what is,
+ * visibly, a small planet.
+ *
+ * The draw ORDER here is load-bearing: it must match what Planet.tsx used to
+ * do inline, or every existing world's moons move.
+ */
+export function heroMoons(seed: number, isEarth: boolean): HeroMoon[] {
+  const r = mulberry(seed ^ 0xdeca);
+  const count = isEarth ? 1 : Math.floor(r() * 3.2);
+  return Array.from({ length: count }, (_, i) => ({
+    size: 0.05 + r() * 0.07,
+    orbit: 1.9 + i * 0.55 + r() * 0.3,
+    speed: (0.12 + r() * 0.18) * (r() < 0.2 ? -1 : 1),
+    phase: r() * Math.PI * 2,
+    tilt: (r() - 0.5) * 0.7,
+  }));
+}
+
+/** Live position of a moon at clock time `t` (planet-local, hero at origin). */
+export function heroMoonPosition(m: HeroMoon, t: number, out: Vector3): Vector3 {
+  const a = m.phase + t * m.speed;
+  return out.set(Math.cos(a) * m.orbit, Math.sin(a * 0.7) * m.tilt, Math.sin(a) * m.orbit);
+}
 
 /** Orbit slot for the i-th finished planet of the assembling system (0–4). */
 export function orbitSlot(i: number): { radius: number; phase: number; speed: number } {
   return {
-    radius: 1.0 + i * 0.42,
+    radius: SYSTEM_R * (0.28 + i * 0.18),
     phase: i * GOLDEN,
     speed: 0.16 / (1 + i * 0.45),
   };
@@ -55,11 +130,11 @@ export function systemGlyphPosition(i: number, masterSeed: number): Vector3 {
   const r = mulberry((masterSeed ^ (i * 0x51ed)) >>> 0);
   const t = i / 6;
   const angle = -2.5 + (i % 7) * 0.62 + r() * 0.3;
-  const radius = 13 + (i % 3) * 3.4 + r() * 1.6;
+  const radius = GALAXY_R * (0.55 + (i % 3) * 0.14 + r() * 0.07);
   return new Vector3(
-    Math.cos(angle) * radius * 0.9 - 1.5,
-    2.1 + ((i * 1.7) % 4.2) + r() * 0.8 - t,
-    -14 - (i % 4) * 2.8 - r() * 2,
+    Math.cos(angle) * radius * 0.9 - GALAXY_R * 0.06,
+    GALAXY_R * (0.1 + ((i * 1.7) % 4.2) * 0.045 + r() * 0.035 - t * 0.05),
+    -GALAXY_R * (0.72 + (i % 4) * 0.13 + r() * 0.09),
   );
 }
 
@@ -68,9 +143,9 @@ export function galaxyPosition(i: number, masterSeed: number): Vector3 {
   const r = mulberry((masterSeed ^ (i * 0x6a1a)) >>> 0);
   const angle = -2.2 + i * 1.05 + r() * 0.4;
   return new Vector3(
-    Math.cos(angle) * 20 - 2,
-    4.5 + (i % 3) * 2.4 + r() * 1.5,
-    -30 - (i % 3) * 6 - r() * 4,
+    Math.cos(angle) * UNIVERSE_R - UNIVERSE_R * 0.1,
+    UNIVERSE_R * (0.05 + (i % 3) * 0.028 + r() * 0.018),
+    -UNIVERSE_R * (0.62 + (i % 3) * 0.12 + r() * 0.08),
   );
 }
 
@@ -82,9 +157,9 @@ export function galaxyPoints(seed: number, count = 700): Float32Array {
   for (let i = 0; i < count; i++) {
     const arm = i % arms;
     const t = r();
-    const radius = 0.25 + t * 3.2;
+    const radius = GALAXY_R * (0.08 + t * 1.0);
     const angle = arm * ((Math.PI * 2) / arms) + t * 4.4 + (r() - 0.5) * (0.5 - t * 0.3);
-    const spread = (1 - t * 0.7) * 0.28;
+    const spread = (1 - t * 0.7) * 0.28 * GALAXY_R * 0.31;
     pts[i * 3] = Math.cos(angle) * radius + (r() - 0.5) * spread;
     pts[i * 3 + 1] = (r() - 0.5) * spread * 1.6;
     pts[i * 3 + 2] = Math.sin(angle) * radius + (r() - 0.5) * spread;
@@ -99,9 +174,9 @@ export function galaxyCorePoints(seed: number, count = 220): Float32Array {
   for (let i = 0; i < count; i++) {
     // Gaussian-ish via sum of uniforms, squeezed vertically.
     const g = () => (r() + r() + r()) / 3 - 0.5;
-    pts[i * 3] = g() * 1.1;
-    pts[i * 3 + 1] = g() * 0.42;
-    pts[i * 3 + 2] = g() * 1.1;
+    pts[i * 3] = g() * GALAXY_R * 0.34;
+    pts[i * 3 + 1] = g() * GALAXY_R * 0.13;
+    pts[i * 3 + 2] = g() * GALAXY_R * 0.34;
   }
   return pts;
 }
@@ -116,10 +191,10 @@ export function protoSwirlPoints(seed: number, count: number): Float32Array {
   const pts = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const a = r() * Math.PI * 2;
-    const rad = Math.sqrt(r()) * 2.6;
-    pts[i * 3] = Math.cos(a) * rad + (r() - 0.5) * 0.5;
-    pts[i * 3 + 1] = (r() - 0.5) * (1.6 - rad * 0.35);
-    pts[i * 3 + 2] = Math.sin(a) * rad + (r() - 0.5) * 0.5;
+    const rad = Math.sqrt(r()) * GALAXY_R * 0.81;
+    pts[i * 3] = Math.cos(a) * rad + (r() - 0.5) * GALAXY_R * 0.16;
+    pts[i * 3 + 1] = (r() - 0.5) * (GALAXY_R * 0.5 - rad * 0.35);
+    pts[i * 3 + 2] = Math.sin(a) * rad + (r() - 0.5) * GALAXY_R * 0.16;
   }
   return pts;
 }
@@ -141,7 +216,7 @@ export function galaxySeed(index: number, masterSeed: number): number {
 export function memberSeatLocal(slot: number, gSeed: number): Vector3 {
   const r = mulberry((gSeed ^ (slot * 0x3d1)) >>> 0);
   const angle = slot * GOLDEN * 1.9 + r() * 0.5;
-  const radius = 1.15 + slot * 0.24 + r() * 0.12;
+  const radius = GALAXY_R * (0.32 + slot * 0.17 + r() * 0.04);
   return new Vector3(Math.cos(angle) * radius, (r() - 0.5) * 0.14, Math.sin(angle) * radius);
 }
 
@@ -173,7 +248,7 @@ export function focusSeat(target: FocusRef, masterSeed: number, galaxies: number
 
 /** Orbit slot for a visited system's k-th world (FocusedSystem + CameraRig). */
 export function visitOrbit(i: number): { radius: number; phase: number; speed: number } {
-  return { radius: 0.56 + i * 0.3, phase: i * 2.39996, speed: 0.14 / (1 + i * 0.4) };
+  return { radius: SYSTEM_R * (0.28 + i * 0.18), phase: i * 2.39996, speed: 0.14 / (1 + i * 0.4) };
 }
 
 /**
@@ -212,7 +287,7 @@ export function focusFraming(
 ): void {
   const seat = focusSeat(target, masterSeed, galaxies);
   const galaxy = target.kind === 'galaxy';
-  const dist = galaxy ? (wide ? 9.8 : 11.6) : wide ? 4.35 : 5.1;
+  const dist = galaxy ? GALAXY_R * (wide ? 2.0 : 2.4) : SYSTEM_R * (wide ? 2.1 : 2.5);
   // Galaxies get a higher vantage so the disc reads as a spiral, not a blob.
   outCam
     .set(-seat.x * 0.05, galaxy ? 0.62 : 0.44, 1)
@@ -248,9 +323,9 @@ export function cosmicWeb(masterSeed: number): CosmicWebData {
   for (let i = 0; i < A; i++) {
     anchors.push(
       new Vector3(
-        (r() - 0.5) * 118,
-        -6 + r() * 42,
-        -46 - r() * 62,
+        (r() - 0.5) * WEB_R * 2,
+        WEB_R * (-0.05 + r() * 0.36),
+        -WEB_R * (0.4 + r() * 0.6),
       ),
     );
   }
@@ -282,7 +357,7 @@ export function cosmicWeb(masterSeed: number): CosmicWebData {
     for (let k = 0; k < perEdge; k++) {
       const t = (k + r() * 0.9) / perEdge;
       // Thicker mid-filament scatter, pinched at the anchor ends.
-      const pinch = 0.7 + Math.sin(t * Math.PI) * 2.1;
+      const pinch = (0.7 + Math.sin(t * Math.PI) * 2.1) * WEB_R * 0.017;
       tmp.copy(a).lerp(b, t);
       filaments[f++] = tmp.x + (r() - 0.5) * pinch;
       filaments[f++] = tmp.y + (r() - 0.5) * pinch * 0.7;
@@ -291,9 +366,9 @@ export function cosmicWeb(masterSeed: number): CosmicWebData {
       if (k % 6 === 2 && r() < 0.8) {
         tmp.copy(a).lerp(b, t);
         nodePts.push(
-          tmp.x + (r() - 0.5) * 1.4,
-          tmp.y + (r() - 0.5) * 1.0,
-          tmp.z + (r() - 0.5) * 1.4,
+          tmp.x + (r() - 0.5) * WEB_R * 0.012,
+          tmp.y + (r() - 0.5) * WEB_R * 0.009,
+          tmp.z + (r() - 0.5) * WEB_R * 0.012,
         );
       }
     }
@@ -308,7 +383,7 @@ export function cosmicWeb(masterSeed: number): CosmicWebData {
     const j = Math.floor(r() * (i + 1));
     [order[i], order[j]] = [order[j]!, order[i]!];
   }
-  const gaze = new Vector3(0, 7, -78);
+  const gaze = new Vector3(0, WEB_R * 0.06, -WEB_R * 0.68);
   const head = order.slice(0, Math.min(14, n)).sort((a, b) => {
     tmp.set(nodes[a * 3]!, nodes[a * 3 + 1]!, nodes[a * 3 + 2]!);
     const da = tmp.distanceToSquared(gaze);
@@ -349,20 +424,42 @@ interface Waypoint {
 
 // Wide (landscape) and narrow (portrait) camera scripts. Distances grow
 // roughly geometrically — each band is a power of ten in spirit.
+/**
+ * The journey, rebuilt on the scale hierarchy. Each stop frames the level it
+ * is named after — band 1 holds the assembling system in view, band 2 the
+ * constellation, band 3 the galaxies, band 4 the web — so the stops move
+ * automatically if a level is retuned. Only band 0 is hand-placed, because
+ * it frames the hero planet and the hero planet is the ruler.
+ */
+const SYS = SYSTEM_R;
+const GAL = GALAXY_R;
+const UNI = UNIVERSE_R;
+const WEB = WEB_R;
+const ANCHOR: [number, number, number] = [
+  CURRENT_SYSTEM_ANCHOR.x,
+  CURRENT_SYSTEM_ANCHOR.y,
+  CURRENT_SYSTEM_ANCHOR.z,
+];
+
 const WIDE: Waypoint[] = [
   { z: 0.0, cam: [0.4, 0.2, 6.55], look: [1.28, 0.02, 0] },
-  { z: 0.3, cam: [-1.3, 1.6, 13.8], look: [-3.7, 1.75, -7.4] },
-  { z: 0.55, cam: [-0.7, 3.6, 27.5], look: [-1.6, 2.8, -16] },
-  { z: 0.78, cam: [0.2, 5.8, 50], look: [-0.7, 4.2, -32] },
-  { z: 1.0, cam: [0.6, 10, 96], look: [0, 7, -78] },
+  { z: 0.3, cam: [ANCHOR[0] * 0.35, SYS * 0.5, SYS * 4.4], look: ANCHOR },
+  { z: 0.55, cam: [-GAL * 0.02, GAL * 0.16, GAL * 1.5], look: [-GAL * 0.06, GAL * 0.08, -GAL * 0.7] },
+  { z: 0.78, cam: [UNI * 0.01, UNI * 0.11, UNI * 1.55], look: [-UNI * 0.05, UNI * 0.05, -UNI * 0.62] },
+  { z: 1.0, cam: [WEB * 0.01, WEB * 0.1, WEB * 1.05], look: [0, WEB * 0.06, -WEB * 0.68] },
 ];
 const NARROW: Waypoint[] = [
   { z: 0.0, cam: [0.4, 0.2, 6.55], look: [0, -0.55, 0] },
-  { z: 0.3, cam: [-0.9, 2.0, 16.4], look: [-4.2, 1.15, -7.4] },
-  { z: 0.55, cam: [-0.5, 3.8, 33], look: [-1.6, 2.1, -16] },
-  { z: 0.78, cam: [0.2, 6.0, 60], look: [-0.7, 3.4, -32] },
-  { z: 1.0, cam: [0.5, 10, 112], look: [0, 6, -78] },
+  { z: 0.3, cam: [ANCHOR[0] * 0.3, SYS * 0.6, SYS * 5.3], look: ANCHOR },
+  { z: 0.55, cam: [-GAL * 0.02, GAL * 0.18, GAL * 1.8], look: [-GAL * 0.06, GAL * 0.06, -GAL * 0.7] },
+  { z: 0.78, cam: [UNI * 0.01, UNI * 0.12, UNI * 1.85], look: [-UNI * 0.05, UNI * 0.04, -UNI * 0.62] },
+  { z: 1.0, cam: [WEB * 0.01, WEB * 0.1, WEB * 1.25], look: [0, WEB * 0.05, -WEB * 0.68] },
 ];
+
+/** Camera distance from origin at each band stop — the helm mirrors these. */
+export const BAND_DISTANCES: readonly number[] = WIDE.map((w) =>
+  Math.hypot(w.cam[0], w.cam[1], w.cam[2]),
+);
 
 function smooth(t: number): number {
   return t * t * (3 - 2 * t);

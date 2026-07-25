@@ -31,6 +31,15 @@ function cloneOperations(operations: GameState['operations']): GameState['operat
   };
 }
 
+function cloneExpedition(expedition: GameState['expedition']): GameState['expedition'] {
+  return {
+    discovered: { ...expedition.discovered },
+    boarded: { ...expedition.boarded },
+    salvage: expedition.salvage,
+    refits: { ...expedition.refits },
+  };
+}
+
 /** GameState → plain JSON-safe object (Decimals as strings). */
 export function toSave(state: GameState): SaveShape {
   const aspects = (rec: Record<AspectId, Decimal>) => {
@@ -68,6 +77,12 @@ export function toSave(state: GameState): SaveShape {
     },
     prestige: { ...state.prestige, catalogue: { ...state.prestige.catalogue } },
     operations: cloneOperations(state.operations),
+    expedition: cloneExpedition(state.expedition),
+    subEtha: {
+      log: state.subEtha.log.map((e) => ({ ...e })),
+      nextBroadcastMs: state.subEtha.nextBroadcastMs,
+      recent: [...state.subEtha.recent],
+    },
     rng: { ...state.rng },
     timers: { ...state.timers },
     flags: { ...state.flags },
@@ -93,6 +108,12 @@ export function fromSave(shape: SaveShape): GameState {
     run: { ...shape.run, tuEarned: D(shape.run.tuEarned) },
     lifetime: { ...shape.lifetime, tuEarned: D(shape.lifetime.tuEarned) },
     operations: cloneOperations(shape.operations),
+    expedition: cloneExpedition(shape.expedition),
+    subEtha: {
+      log: shape.subEtha.log.map((e) => ({ ...e })),
+      nextBroadcastMs: shape.subEtha.nextBroadcastMs,
+      recent: [...shape.subEtha.recent],
+    },
   };
 }
 

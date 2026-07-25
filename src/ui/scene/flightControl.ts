@@ -13,43 +13,193 @@
  */
 import { Euler, Quaternion, Vector3, type Camera, type PerspectiveCamera } from 'three/webgpu';
 import { useUiBus } from '../fx/uiBus';
-import { useGame } from '../../state/store';
+import { actions, useGame } from '../../state/store';
 import {
+  BAND_DISTANCES,
   BAND_STOPS,
   CURRENT_SYSTEM_ANCHOR,
+  MINI_SIZE,
+  SYSTEM_R,
+  WEB_R,
   bandAt,
   focusSeat,
   galaxyPosition,
+  heroMoons,
+  orbitSlot,
+  visitOrbit,
 } from './universeLayout';
+import {
+  boardRange,
+  deepFieldSites,
+  hasJumpDrive,
+  hullShell,
+  isBoarded,
+  isDiscovered,
+  jumpStandoff,
+  scanSecondsFor,
+  sensorRange,
+  sitePositionAt,
+  thrustMult,
+  type DeepFieldSite,
+} from '../../engine/deepField';
+import { rumouredSites } from '../../engine/subEtha';
+import { C } from '../../content/constants';
 
 // ————— Tuning —————
 
-/** Journey camera distances from origin at each band stop (universeLayout). */
-const DIST_STOPS = [6.57, 13.9, 27.7, 50.3, 96.5] as const;
+/**
+ * Journey camera distances at each band stop. Derived from the layout rather
+ * than copied, so retuning the scale hierarchy cannot leave the helm mapping
+ * range onto the wrong band.
+ */
+const DIST_STOPS = BAND_DISTANCES;
 
 const BASE_CAP = 1.15; // u/s at the planet's doorstep
 const DIST_K = 0.16; // cap growth per unit of distance from origin
-const CAP_MAX = 34;
+const CAP_MAX = 90;
 const BOOST_MULT = 3.1;
-const BOOST_CAP = 46;
+const BOOST_CAP = 260;
 const RESP_THRUST = 2.4; // velocity approach rates (1/s)
 const RESP_BRAKE = 4.2;
 const RESP_COAST = 0.33; // release the keys and the runabout coasts
-const YAW_RATE_MAX = 1.5; // rad/s at full deflection
-const PITCH_RATE_MAX = 1.05;
-const RATE_RESP = 6.5;
+/**
+ * Comfort tuning. Manual flight made a tester motion-sick, and three things
+ * were doing it:
+ *
+ *  - The pointer's POSITION set a permanent turn rate, so unless the mouse
+ *    sat exactly at screen centre the ship rotated forever and there was no
+ *    way to simply fly straight. That is fixed in the input layer: steering
+ *    is now hold-to-steer with the stick centred where you pressed.
+ *  - The camera banked hard into every turn. A rolling horizon is one of the
+ *    most reliable ways to make somebody ill; the bank is now a hint.
+ *  - Turn rates were fast enough to whip the whole starfield across the view.
+ */
+const YAW_RATE_MAX = 0.85; // rad/s at full deflection (was 1.5)
+const PITCH_RATE_MAX = 0.6; // (was 1.05)
+const RATE_RESP = 5;
 const PITCH_LIMIT = 1.32; // arcade: no loops, no gimbal regret
-const ROLL_BANK = 0.42; // visual roll per rad/s of yaw
-const ROLL_RESP = 4.5;
-const STEER_DEADZONE = 0.08;
-const SOFT_WALL = 200; // beyond this, space politely pushes back
-const HARD_WALL = 260;
+const ROLL_BANK = 0.1; // visual roll per rad/s of yaw (was 0.42)
+const ROLL_RESP = 3.4; // slower in, and it self-levels the moment you let go
+const STEER_DEADZONE = 0.1;
+const SOFT_WALL = WEB_R * 1.35; // beyond this, space politely pushes back
+const HARD_WALL = WEB_R * 1.7;
 const SCAN_EVERY = 0.2; // landmark + modal sweep cadence (s)
 /** Fly this close to a formed system and its worlds materialize. */
-const SYSTEM_NEAR = 5.5;
-const SYSTEM_FAR = 7; // hysteresis so discs don't flicker at the border
+const SYSTEM_NEAR = SYSTEM_R * 3.2;
+const SYSTEM_FAR = SYSTEM_R * 4; // hysteresis so discs don't flicker at the border
 
 export const FLIGHT_FOV_BASE = 42;
+
+// ————— The Deep Field: sensors, scanning, boarding —————
+
+// ————— Solid bodies (the things you must not fly through) —————
+
+/**
+ * Flying straight through your own planet is the single loudest way to tell
+ * the player they are the size of a planet. These are the shells the
+ * runabout respects — the world at origin, the star its current system is
+ * assembling around, and every formed system's star.
+ *
+ * Galaxies are deliberately absent: they are mostly empty space and flying
+ * through one is correct.
+ */
+const HERO_SHELL = 1.14; // clear of the tallest terrain, close enough to skim it
+const ASSEMBLING_STAR_SHELL = 1.6;
+const SYSTEM_STAR_SHELL = 2.2;
+/** Collision shell of a settled world, as a multiple of its drawn radius. */
+const WORLD_SHELL = 1.35;
+/** Collision shell of a moon, as a multiple of its drawn radius. */
+const MOON_SHELL = 1.6;
+
+/**
+ * The approach governor, and the single biggest lever on how big a planet
+ * feels.
+ *
+ * Nothing communicates "you are the size of this thing" faster than crossing
+ * it in a second. At the old surface floor of 1.15 u/s you circled an entire
+ * world in under five seconds, which is a speed that makes sense only if the
+ * ship is a moon. A solo runabout should take a minute or so to cross a
+ * hemisphere, so the floor at the surface is now a crawl and the ceiling
+ * opens up quickly with height — you are back to commuting speed a couple of
+ * radii out, and nothing about long-distance travel gets slower.
+ */
+const SURFACE_CAP = 0.085;
+/**
+ * The comfort limit that actually matters near a body is not linear speed —
+ * it is how fast the surface sweeps across the view. Bound the ANGULAR rate
+ * about whatever you are closest to and the optical flow stays calm at every
+ * altitude automatically: creeping over a surface, unhurried in low orbit,
+ * and back to commuting speed once the body is far enough away to be small.
+ */
+const OMEGA_MAX = 0.16; // rad/s about the nearest body
+
+export interface FlightBody {
+  label: string;
+  /** Fixed seat, or the anchor an orbiting world circles. */
+  pos: Vector3;
+  radius: number;
+  /**
+   * Present for anything that orbits. General enough for both shapes in the
+   * scene: settled worlds (a flattened ellipse) and the hero planet's moons
+   * (a circle with a slow vertical wobble).
+   */
+  orbit: {
+    xAmp: number;
+    yAmp: number;
+    zAmp: number;
+    /** Vertical cycles per horizontal one — moons wobble at 0.7. */
+    yFreq: number;
+    phase: number;
+    speed: number;
+  } | null;
+}
+
+/** The flattened ellipse every settled world rides. */
+function worldOrbit(r: number, phase: number, speed: number): FlightBody['orbit'] {
+  return { xAmp: r, yAmp: r * 0.22, zAmp: r * 0.6, yFreq: 1, phase, speed };
+}
+
+const bodies: FlightBody[] = [];
+
+function pushBody(
+  i: number,
+  label: string,
+  p: Vector3,
+  radius: number,
+  orbit: FlightBody['orbit'] = null,
+): void {
+  const slot = bodies[i];
+  if (slot) {
+    slot.label = label;
+    slot.pos.copy(p);
+    slot.radius = radius;
+    slot.orbit = orbit;
+  } else {
+    bodies[i] = { label, pos: p.clone(), radius, orbit };
+  }
+}
+
+/** The solids the helm is currently respecting (tests and the dev hook). */
+export function flightBodies(): readonly FlightBody[] {
+  return bodies;
+}
+
+/** Where a body actually is at scene time `t`. */
+export function bodyPosition(body: FlightBody, t: number, out: Vector3): Vector3 {
+  if (!body.orbit) return out.copy(body.pos);
+  const o = body.orbit;
+  const a = o.phase + t * o.speed;
+  return out.set(
+    body.pos.x + Math.cos(a) * o.xAmp,
+    body.pos.y + Math.sin(a * o.yFreq) * o.yAmp,
+    body.pos.z + Math.sin(a) * o.zAmp,
+  );
+}
+
+/** Half-angle off boresight within which a contact can be locked (rad). */
+const LOCK_CONE = 0.3;
+/** Hold still-ish to board: above this speed the airlock declines. */
+const BOARD_SPEED = 4.5;
 
 // ————— Live state —————
 
@@ -57,6 +207,24 @@ export interface FlightNearest {
   label: string;
   kind: 'planet' | 'assembling' | 'system' | 'galaxy';
   d: number;
+}
+
+/** One Deep Field landmark as the sensors currently see it. */
+export interface FlightContact {
+  id: string;
+  /** The Sub-Etha pointed at this one — it reads at extended range. */
+  rumoured: boolean;
+  /** Resolved name, or the catalogue's pre-scan description. */
+  label: string;
+  kind: string;
+  d: number;
+  /** Radians off boresight — the HUD sorts and arrows by this. */
+  off: number;
+  scanned: boolean;
+  boarded: boolean;
+  /** Within the boarding envelope right now. */
+  inRange: boolean;
+  unreachable: boolean;
 }
 
 export const flightLive = {
@@ -84,6 +252,29 @@ export const flightLive = {
   nearest: null as FlightNearest | null,
   /** Past the soft wall, the Guide has opinions. */
   beyond: false,
+
+  // — Deep Field —
+  /** Everything the sensors hold right now, nearest first. */
+  contacts: [] as FlightContact[],
+  /** The contact currently under the reticle, if any. */
+  locked: null as FlightContact | null,
+  /** 0–1 progress of the held scan on `locked`. */
+  scanProgress: 0,
+  /** The id `scanProgress` belongs to — a new lock restarts the sweep. */
+  scanId: null as string | null,
+  /** What holding the engage key would do right now. */
+  prompt: null as { verb: 'scan' | 'board' | 'jump'; label: string } | null,
+  /** Wall-clock of the last jump, for the FX flash. */
+  jumpNonce: 0,
+  /** Sensor reach this frame (refit-derived), for the HUD. */
+  range: 22,
+  /** Nearest solid body and height above its surface — scale, made legible. */
+  altitude: Infinity,
+  altitudeOf: '' as string,
+  /** Radius of the body `altitude` is measured against — the angular cap. */
+  nearRadius: 0,
+  /** Scene clock, for evaluating orbiting bodies where they actually are. */
+  clock: 0,
 };
 
 /** Player intent, written by input handlers (or tests), read by stepFlight. */
@@ -98,6 +289,10 @@ export const flightInput = {
   steerY: 0,
   /** Wheel-set cruise throttle: a floor under `thrust`. */
   cruise: 0,
+  /** Holding the engage key: scans, then boards. */
+  engage: false,
+  /** Tapped the jump key this frame (consumed by stepFlight). */
+  jump: false,
 };
 
 const EUL = new Euler(0, 0, 0, 'YXZ');
@@ -111,8 +306,8 @@ const UP = new Vector3(0, 1, 0);
 /** Map camera distance from origin onto the journey's 0–1 zoom, so every
  * zoom-keyed fade (stars, cosmic web, captions) behaves in flight. */
 export function zoomForDistance(dist: number): number {
-  if (dist <= DIST_STOPS[0]) return 0;
-  if (dist >= DIST_STOPS[4]) return 1;
+  if (dist <= DIST_STOPS[0]!) return 0;
+  if (dist >= DIST_STOPS[DIST_STOPS.length - 1]!) return 1;
   let i = 0;
   while (i < DIST_STOPS.length - 2 && dist > DIST_STOPS[i + 1]!) i++;
   const a = DIST_STOPS[i]!;
@@ -157,7 +352,17 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.scanAt = -1;
   f.nearest = null;
   f.beyond = false;
+  f.contacts = [];
+  f.locked = null;
+  f.scanProgress = 0;
+  f.scanId = null;
+  f.prompt = null;
+  f.altitude = Infinity;
+  f.altitudeOf = '';
+  f.nearRadius = 0;
   flightInput.cruise = 0;
+  flightInput.engage = false;
+  flightInput.jump = false;
 }
 
 export function endFlight(): void {
@@ -173,6 +378,7 @@ export function endFlight(): void {
 export function stepFlight(dt: number, t: number): void {
   const f = flightLive;
   const input = flightInput;
+  f.clock = t;
   f.ramp = Math.min(1, f.ramp + dt * 2);
 
   // Housekeeping sweep: landmarks, near-system reveal, modal pause.
@@ -200,10 +406,37 @@ export function stepFlight(dt: number, t: number): void {
   FWD.set(0, 0, -1).applyQuaternion(Q);
   RIGHT.set(1, 0, 0).applyQuaternion(Q);
   const dist = f.pos.length();
-  f.cap = speedCapAt(dist);
+  const expedition = useGame.getState().s.expedition;
+  const rangeCap = speedCapAt(dist) * thrustMult(expedition);
+  /**
+   * The approach governor. Range alone set the ceiling before, so a star
+   * fifteen units from home was approached at the same speed as open space
+   * and went past in a blink — which is precisely how a planet stops feeling
+   * like a planet. Tie the ceiling to height above the nearest SURFACE and
+   * arriving somewhere becomes an arrival: you slow as it fills the glass.
+   * Boost cannot buy its way out of this one; it only lifts the range cap.
+   */
+  /**
+   * The angular limit has to RELEASE with range, or it throttles open space:
+   * a planet forty units astern is a dot, sweeping past it says nothing to
+   * the inner ear, and yet a plain `ω × distance` cap would still be holding
+   * the throttle down out there. So it only bites inside ten radii of
+   * whatever you are near, and relaxes sharply across that span — a crawl on
+   * the surface, unhurried in low orbit, and gone by the time the body is
+   * small in the window.
+   */
+  const bodyDist = Math.max(0, f.altitude) + f.nearRadius;
+  const vicinity = Math.max(1e-3, f.nearRadius * 10);
+  const near01 = Math.min(1, bodyDist / vicinity);
+  const relax = 1 + near01 * near01 * near01 * near01 * 40;
+  const approachCap = Math.max(SURFACE_CAP, OMEGA_MAX * bodyDist * relax);
+  f.cap = Math.min(rangeCap, approachCap);
   const boosting = input.boost && authority > 0;
   f.boostBlend += ((boosting ? 1 : 0) - f.boostBlend) * (1 - Math.exp(-dt * 4));
-  const cap = boosting ? Math.min(f.cap * BOOST_MULT, BOOST_CAP) : f.cap;
+  const cap = Math.min(
+    boosting ? Math.min(rangeCap * BOOST_MULT, BOOST_CAP) : rangeCap,
+    approachCap,
+  );
 
   const thrust = Math.max(input.thrust, input.cruise) * authority;
   const braking = input.brake * authority;
@@ -229,9 +462,338 @@ export function stepFlight(dt: number, t: number): void {
     }
   }
 
+  // Where the hull was before this frame's travel — the swept collision test
+  // needs the whole path, not just the endpoint.
+  PREV.copy(f.pos);
   f.pos.addScaledVector(f.vel, dt);
   if (f.pos.length() > HARD_WALL) f.pos.setLength(HARD_WALL);
   f.speed = f.vel.length();
+
+  stepDeepField(dt, FWD, authority > 0);
+}
+
+// ————— The Deep Field: lock, scan, board, jump —————
+
+let sitesCache: { seed: number; sites: DeepFieldSite[] } | null = null;
+
+function sitesForSeed(seed: number): DeepFieldSite[] {
+  if (!sitesCache || sitesCache.seed !== seed) {
+    sitesCache = { seed, sites: deepFieldSites(seed) };
+  }
+  return sitesCache.sites;
+}
+
+const SITE_POS: [number, number, number] = [0, 0, 0];
+const TO_SITE = new Vector3();
+/** Hull position at the start of this frame, for the swept collision test. */
+const PREV = new Vector3();
+
+/** Where a site is right now, from the runabout's point of view. */
+function siteVector(site: DeepFieldSite, out: Vector3): Vector3 {
+  const f = flightLive;
+  sitePositionAt(site, f.pos.x, f.pos.y, f.pos.z, SITE_POS);
+  return out.set(SITE_POS[0], SITE_POS[1], SITE_POS[2]);
+}
+
+function writeContact(
+  out: FlightContact,
+  site: DeepFieldSite,
+  d: number,
+  off: number,
+  expedition: ReturnType<typeof useGame.getState>['s']['expedition'],
+  rumoured: boolean,
+): FlightContact {
+  const scanned = isDiscovered(expedition, site.def.id);
+  out.id = site.def.id;
+  out.rumoured = rumoured;
+  out.label = scanned ? site.def.name : site.def.contact;
+  out.kind = site.def.kind;
+  out.d = d;
+  out.off = off;
+  out.scanned = scanned;
+  out.boarded = isBoarded(expedition, site.def.id);
+  out.inRange = d <= boardRange(site.def.radius);
+  out.unreachable = Boolean(site.def.unreachable);
+  return out;
+}
+
+function blankContact(): FlightContact {
+  return {
+    id: '',
+    rumoured: false,
+    label: '',
+    kind: '',
+    d: 0,
+    off: 0,
+    scanned: false,
+    boarded: false,
+    inRange: false,
+    unreachable: false,
+  };
+}
+
+/**
+ * The lock is rewritten every frame, so it gets a persistent object rather
+ * than a fresh one — sixty allocations a second is exactly the kind of thing
+ * that shows up later as a GC hitch and nowhere as a slow frame.
+ */
+const LOCKED = blankContact();
+
+/**
+ * One frame of sensor work. The contact LIST refreshes on the housekeeping
+ * cadence (it only feeds a DOM readout), but the LOCK is recomputed every
+ * frame — the reticle has to feel welded to the thing you are pointing at.
+ */
+function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
+  const f = flightLive;
+  const st = useGame.getState().s;
+  const expedition = st.expedition;
+  const sites = sitesForSeed(st.seed);
+  const range = sensorRange(expedition);
+  f.range = range;
+  // Reading the channel is worth something: a landmark the Sub-Etha has
+  // gossiped about is detectable from considerably further out, because you
+  // know roughly what you are looking for.
+  const rumoured = rumouredSites(st);
+  const rangeFor = (id: string) =>
+    rumoured.has(id) ? range * C.SUBETHA_RUMOUR_RANGE_MULT : range;
+
+  cushion(sites, dt);
+
+  // Lock: nearest contact inside the cone, preferring the one you are most
+  // squarely aimed at rather than merely the closest.
+  let best: DeepFieldSite | null = null;
+  let bestScore = Infinity;
+  let bestD = 0;
+  let bestOff = 0;
+  for (const site of sites) {
+    siteVector(site, TO_SITE).sub(f.pos);
+    const d = TO_SITE.length();
+    if (d > rangeFor(site.def.id)) continue;
+    TO_SITE.divideScalar(d || 1);
+    const off = Math.acos(Math.max(-1, Math.min(1, TO_SITE.dot(forward))));
+    // Big things forgive sloppy aim; a teapot does not.
+    const cone = LOCK_CONE + Math.atan2(site.def.radius, Math.max(d, 0.001));
+    if (off > cone) continue;
+    const score = off * 4 + d / range;
+    if (score < bestScore) {
+      bestScore = score;
+      best = site;
+      bestD = d;
+      bestOff = off;
+    }
+  }
+
+  f.locked = best
+    ? writeContact(LOCKED, best, bestD, bestOff, expedition, rumoured.has(best.def.id))
+    : null;
+
+  // Scan progress belongs to one lock. Look away and the sweep is lost.
+  if (!best || f.scanId !== best.def.id) {
+    f.scanId = best ? best.def.id : null;
+    f.scanProgress = 0;
+  }
+
+  const locked = f.locked;
+  if (locked && !locked.scanned && live && flightInput.engage && !f.paused) {
+    const seconds = Math.max(0.25, scanSecondsFor(expedition, locked.id));
+    f.scanProgress = Math.min(1, f.scanProgress + dt / seconds);
+    if (f.scanProgress >= 1) {
+      actions.scanSite(locked.id);
+      f.scanProgress = 0;
+    }
+  } else if (!flightInput.engage) {
+    // Release and the sweep decays rather than snapping to zero — the console
+    // is meant to feel like it was working on something.
+    f.scanProgress = Math.max(0, f.scanProgress - dt * 0.6);
+  }
+
+  // Boarding: close, slow, and already resolved.
+  if (
+    locked &&
+    locked.scanned &&
+    !locked.boarded &&
+    !locked.unreachable &&
+    locked.inRange &&
+    live &&
+    flightInput.engage &&
+    !f.paused &&
+    f.speed <= BOARD_SPEED
+  ) {
+    actions.boardSite(locked.id);
+  }
+
+  // The prompt: exactly one verb, so the console never offers a menu.
+  f.prompt = null;
+  if (locked) {
+    if (!locked.scanned) {
+      f.prompt = { verb: 'scan', label: 'scan' };
+    } else if (locked.unreachable) {
+      f.prompt = null;
+    } else if (!locked.boarded) {
+      f.prompt = locked.inRange
+        ? { verb: 'board', label: f.speed > BOARD_SPEED ? 'slow down to board' : 'board' }
+        : hasJumpDrive(expedition)
+          ? { verb: 'jump', label: 'jump to it' }
+          : null;
+    }
+  }
+
+  // The Improbability Drive: aim at anything already scanned and engage.
+  if (flightInput.jump) {
+    flightInput.jump = false;
+    if (locked && locked.scanned && hasJumpDrive(expedition) && !f.paused) {
+      jumpTo(sites.find((s) => s.def.id === locked.id)!);
+    }
+  }
+}
+
+/**
+ * The proximity governor.
+ *
+ * Flying through a nine-hundred-year-old hull would make it scenery, so the
+ * runabout refuses. Approach and it sheds the inward speed over a cushion,
+ * then holds station at the hull line — which conveniently leaves you slow
+ * enough and close enough to board. Phenomena are not solid and let you in,
+ * because being inside one is the entire point of an improbability shadow.
+ */
+const SEG = new Vector3();
+const CLOSEST = new Vector3();
+const OUT = new Vector3();
+
+/**
+ * One solid. Two jobs, and they are not the same job.
+ *
+ * The CUSHION bleeds an approach off smoothly so arriving somewhere feels
+ * like arriving. That alone is not a collision: a point test only sees where
+ * the ship is at the end of a frame, and at boost a frame covers 0.4 units
+ * while a settled world's shell is 0.2 — so the ship simply appeared on the
+ * far side, having never once been recorded as inside anything.
+ *
+ * So the second job is a SWEPT test against the whole path travelled this
+ * frame. Closest-approach rather than true entry point: it is stable, it is
+ * cheap, and it cannot be outrun at any speed the drive can produce.
+ *
+ * `centre` is the body's live position. Returns height above this surface.
+ */
+function repel(centre: Vector3, prev: Vector3, hull: number, dt: number): number {
+  const f = flightLive;
+
+  // — Swept: did the path this frame pass through the shell? —
+  SEG.copy(f.pos).sub(prev);
+  const segLen2 = SEG.lengthSq();
+  if (segLen2 > 1e-12) {
+    const t = Math.max(0, Math.min(1, OUT.copy(centre).sub(prev).dot(SEG) / segLen2));
+    CLOSEST.copy(prev).addScaledVector(SEG, t);
+    OUT.copy(CLOSEST).sub(centre);
+    const near = OUT.length();
+    if (near < hull) {
+      // Put the ship on the shell at its closest approach and stop the dive.
+      if (near > 1e-5) OUT.divideScalar(near);
+      else OUT.copy(SEG).normalize().negate();
+      f.pos.copy(centre).addScaledVector(OUT, hull);
+      const inward = f.vel.dot(OUT);
+      if (inward < 0) f.vel.addScaledVector(OUT, -inward);
+    }
+  }
+
+  // — Cushion: the soft deceleration that makes an approach feel like one. —
+  OUT.copy(centre).sub(f.pos);
+  const d = OUT.length();
+  if (d < 1e-5) return Infinity;
+  const soft = hull * 2.2 + 1.2;
+  if (d > soft) return d - hull;
+  OUT.divideScalar(d); // unit vector pointing at the surface
+  const closing = f.vel.dot(OUT);
+  if (closing > 0) {
+    const bite = 1 - Math.max(0, (d - hull) / (soft - hull));
+    f.vel.addScaledVector(OUT, -closing * bite * Math.min(1, dt * 7));
+  }
+  if (d < hull) {
+    f.pos.addScaledVector(OUT, d - hull);
+    const inward = f.vel.dot(OUT);
+    if (inward > 0) f.vel.addScaledVector(OUT, -inward);
+    return 0;
+  }
+  return d - hull;
+}
+
+function cushion(sites: readonly DeepFieldSite[], dt: number): void {
+  const f = flightLive;
+  let lowest = Infinity;
+  let lowestOf = '';
+  let lowestRadius = 0;
+
+  // Worlds and stars first — these are the ones whose scale you are meant to
+  // feel, and the ones it is most absurd to pass through. Orbiting worlds
+  // resolve their live position here rather than at sweep cadence, so a
+  // moving planet cannot slide through the hull between sweeps.
+  for (const body of bodies) {
+    bodyPosition(body, f.clock, TO_SITE);
+    const h = repel(TO_SITE, PREV, body.radius, dt);
+    if (h < lowest) {
+      lowest = h;
+      lowestOf = body.label;
+      lowestRadius = body.radius;
+    }
+  }
+
+  for (const site of sites) {
+    if (site.def.unreachable || site.def.kind === 'phenomenon') continue;
+    siteVector(site, TO_SITE);
+    repel(TO_SITE, PREV, hullShell(site.def.radius), dt);
+  }
+
+  f.altitude = lowest;
+  f.altitudeOf = lowestOf;
+  f.nearRadius = lowestRadius;
+  f.speed = f.vel.length();
+}
+
+/** Arrive. The journey passed through every other point on the way. */
+function jumpTo(site: DeepFieldSite): void {
+  const f = flightLive;
+  siteVector(site, TO_SITE);
+  const standoff = jumpStandoff(site.def.radius);
+  // Come out of the jump between the target and home, so the first thing in
+  // the windscreen is the landmark with your universe behind it.
+  TMP.copy(TO_SITE).normalize().multiplyScalar(-standoff);
+  f.pos.copy(TO_SITE).add(TMP);
+  f.vel.set(0, 0, 0);
+  TMP.copy(TO_SITE).sub(f.pos).normalize();
+  f.yaw = Math.atan2(-TMP.x, -TMP.z);
+  f.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, Math.asin(TMP.y)));
+  f.yawRate = 0;
+  f.pitchRate = 0;
+  f.roll = 0;
+  f.scanProgress = 0;
+  f.jumpNonce++;
+}
+
+/**
+ * Rebuild the HUD's contact list (housekeeping cadence, not per frame).
+ * Entries are recycled from a pool so a sweep costs no allocation.
+ */
+const CONTACT_POOL: FlightContact[] = [];
+const CONTACT_LIST: FlightContact[] = [];
+
+function refreshContacts(): void {
+  const f = flightLive;
+  const st = useGame.getState().s;
+  const sites = sitesForSeed(st.seed);
+  const range = sensorRange(st.expedition);
+  const rumoured = rumouredSites(st);
+  CONTACT_LIST.length = 0;
+  for (const site of sites) {
+    const d = siteVector(site, TO_SITE).sub(f.pos).length();
+    const gossiped = rumoured.has(site.def.id);
+    if (d > range * (gossiped ? C.SUBETHA_RUMOUR_RANGE_MULT : 1)) continue;
+    const slot = CONTACT_POOL[CONTACT_LIST.length] ?? blankContact();
+    CONTACT_POOL[CONTACT_LIST.length] = slot;
+    CONTACT_LIST.push(writeContact(slot, site, d, 0, st.expedition, gossiped));
+  }
+  CONTACT_LIST.sort((a, b) => a.d - b.d);
+  f.contacts = CONTACT_LIST;
 }
 
 // ————— Surroundings (HUD copy + the near-system reveal) —————
@@ -239,9 +801,11 @@ export function stepFlight(dt: number, t: number): void {
 /** Weighted nearest landmark: bigger things announce themselves from farther. */
 function scanSurroundings(): void {
   const f = flightLive;
+  // A modal holds station; so does the refit bay — you are not flying and
+  // shopping at the same time.
   f.paused =
     typeof document !== 'undefined' &&
-    document.querySelector('.modal-veil, .modal') !== null;
+    document.querySelector('.modal-veil, .modal, .fh-refit') !== null;
 
   const st = useGame.getState().s;
   let bestScore = Infinity;
@@ -284,9 +848,102 @@ function scanSurroundings(): void {
   }
   if (next === null && nearSystem >= 0 && nearSystemD <= SYSTEM_NEAR) next = nearSystem;
   if (next !== current) bus.setFlightNearSystem(next);
+
+  // The solid bodies. Seats are rebuilt on the housekeeping cadence; anything
+  // that orbits carries its ellipse and is evaluated per frame.
+  //
+  // EVERY WORLD BELONGS HERE, not just the stars. Covering the hero planet
+  // and the system stars alone left the actual planets — the ones orbiting
+  // your assembling system, the ones in a system you have flown up to —
+  // as ghosts you sailed straight through.
+  let n = 0;
+  pushBody(n++, st.planet.name, TMP.set(0, 0, 0), HERO_SHELL);
+
+  // The hero planet's moons. Small, but visibly small PLANETS — sailing
+  // through one is the same offence as sailing through the world itself.
+  for (const m of heroMoons(st.planet.seed, st.planet.lifetimeIndex === 42)) {
+    pushBody(n++, 'the moon', TMP.set(0, 0, 0), m.size * MOON_SHELL, {
+      xAmp: m.orbit,
+      yAmp: m.tilt,
+      zAmp: m.orbit,
+      yFreq: 0.7,
+      phase: m.phase,
+      speed: m.speed,
+    });
+  }
+
+  pushBody(n++, `system ${st.run.systems + 1}`, CURRENT_SYSTEM_ANCHOR, ASSEMBLING_STAR_SHELL);
+
+  const inSystem = st.run.completedPlanets.slice(st.run.systems * C.PLANETS_PER_SYSTEM);
+  for (let i = 0; i < inSystem.length; i++) {
+    const record = inSystem[i]!;
+    const o = orbitSlot(i);
+    pushBody(
+      n++,
+      record.name,
+      CURRENT_SYSTEM_ANCHOR,
+      MINI_SIZE[record.size] * WORLD_SHELL,
+      worldOrbit(o.radius, o.phase, o.speed),
+    );
+  }
+
+  for (let i = 0; i < st.run.systems; i++) {
+    pushBody(
+      n++,
+      `system ${i + 1}`,
+      focusSeat({ kind: 'system', index: i }, st.seed, st.run.galaxies),
+      SYSTEM_STAR_SHELL,
+    );
+  }
+
+  // Whichever system has its worlds on screen is solid too. This mirrors
+  // FocusedSystem's own rule exactly — proximity in flight, OR a system you
+  // visited from the map and then took the helm inside. Matching only the
+  // first left the second case as ghosts.
+  const uiBus = useUiBus.getState();
+  const focused = uiBus.focus;
+  const revealed =
+    uiBus.flightNearSystem ??
+    (focused && focused.kind !== 'galaxy'
+      ? focused.kind === 'world'
+        ? Math.floor(focused.index / C.PLANETS_PER_SYSTEM)
+        : focused.index
+      : null);
+  if (revealed !== null) {
+    const seat = focusSeat({ kind: 'system', index: revealed }, st.seed, st.run.galaxies);
+    const first = revealed * C.PLANETS_PER_SYSTEM;
+    const worlds = st.run.completedPlanets.slice(first, first + C.PLANETS_PER_SYSTEM);
+    for (let i = 0; i < worlds.length; i++) {
+      const record = worlds[i]!;
+      const o = visitOrbit(i);
+      pushBody(
+        n++,
+        record.name,
+        seat,
+        MINI_SIZE[record.size] * WORLD_SHELL,
+        worldOrbit(o.radius, o.phase, o.speed),
+      );
+    }
+  }
+  bodies.length = n;
+
+  refreshContacts();
 }
 
 // ————— Camera application (called by CameraRig's flight branch) —————
+
+/**
+ * Flight gets its own near plane. The journey's 0.1 is fine when the closest
+ * thing to the lens is six units away, but at the helm you can hold station
+ * a few centimetres off a hull or skim a mountain range — at which point 0.1
+ * clips the near surface away, backface culling removes the far one, and the
+ * planet you are standing on appears to not exist. The wall caps travel at
+ * 260, so the far plane comes in to buy the depth precision back.
+ */
+const FLIGHT_NEAR = 0.02;
+const FLIGHT_FAR = 3200;
+const JOURNEY_NEAR = 0.1;
+const JOURNEY_FAR = 4200;
 
 /** Copy the flight pose onto the camera, with the boost FOV kick. */
 export function applyFlightCamera(camera: Camera, dt: number): void {
@@ -296,20 +953,31 @@ export function applyFlightCamera(camera: Camera, dt: number): void {
   camera.quaternion.setFromEuler(EUL);
   const pcam = camera as PerspectiveCamera;
   if (typeof pcam.fov === 'number') {
-    const target =
-      FLIGHT_FOV_BASE + f.boostBlend * 7 + Math.min(1, f.speed / Math.max(f.cap, 1e-6)) * 1.5;
+    // Fixed lens. The old boost kick swung the field of view by 8 degrees,
+    // which is a classic way to make somebody queasy for very little payoff.
+    const target = FLIGHT_FOV_BASE;
+    let dirty = false;
     if (Math.abs(pcam.fov - target) > 0.02) {
       pcam.fov += (target - pcam.fov) * (1 - Math.exp(-dt * 3));
-      pcam.updateProjectionMatrix();
+      dirty = true;
     }
+    if (pcam.near !== FLIGHT_NEAR) {
+      pcam.near = FLIGHT_NEAR;
+      pcam.far = FLIGHT_FAR;
+      dirty = true;
+    }
+    if (dirty) pcam.updateProjectionMatrix();
   }
 }
 
 /** Restore the lens on the way out (the journey never touches FOV). */
 export function restoreFov(camera: Camera): void {
   const pcam = camera as PerspectiveCamera;
-  if (typeof pcam.fov === 'number' && pcam.fov !== FLIGHT_FOV_BASE) {
+  if (typeof pcam.fov !== 'number') return;
+  if (pcam.fov !== FLIGHT_FOV_BASE || pcam.near !== JOURNEY_NEAR) {
     pcam.fov = FLIGHT_FOV_BASE;
+    pcam.near = JOURNEY_NEAR;
+    pcam.far = JOURNEY_FAR;
     pcam.updateProjectionMatrix();
   }
 }
@@ -332,8 +1000,17 @@ function inputFromKeys(): void {
     (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   flightInput.vert = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') ? 1 : 0);
   flightInput.boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  flightInput.engage = keys.has('KeyE');
   if (flightInput.brake > 0) flightInput.cruise = 0;
 }
+
+/**
+ * The mouse stick. Only exists while a button is down; `x0/y0` is where the
+ * press landed and `x/y` where the pointer is now, so the HUD can draw the
+ * throw. Pixels of travel for full deflection.
+ */
+const STICK_THROW = 190;
+export const mouseSteer = { active: false, x0: 0, y0: 0, x: 0, y: 0 };
 
 /** Touch: left half steers (a drag-stick), right half is the throttle. */
 const touchSteer = { id: -1, x0: 0, y0: 0 };
@@ -342,7 +1019,9 @@ const touchThrust = { id: -1, downAt: 0, lastTap: 0 };
 function overFlightUi(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
-    target.closest('.fh-exit, .toast-stack, .modal, .modal-veil, .dock') !== null
+    target.closest(
+      '.fh-exit, .fh-sensors, .fh-refit, .fh-engage, .toast-stack, .modal, .modal-veil, .dock',
+    ) !== null
   );
 }
 
@@ -364,6 +1043,7 @@ export function attachFlightInput(): () => void {
     ) {
       e.preventDefault(); // no page scroll from the helm
     }
+    if (e.code === 'KeyJ' && !e.repeat) flightInput.jump = true;
     keys.add(e.code);
     inputFromKeys();
   };
@@ -374,6 +1054,7 @@ export function attachFlightInput(): () => void {
   const onBlur = () => {
     keys.clear();
     inputFromKeys();
+    mouseSteer.active = false;
     flightInput.steerX = 0;
     flightInput.steerY = 0;
   };
@@ -386,17 +1067,28 @@ export function attachFlightInput(): () => void {
       }
       return;
     }
-    if (overFlightUi(e.target)) {
+    // Hold to steer. The stick is centred wherever you PRESSED, not at the
+    // middle of the screen, and it does not exist at all until you press —
+    // so the neutral position is "not touching anything", which is the one
+    // thing the old scheme could not express.
+    if (!mouseSteer.active) return;
+    flightInput.steerX = Math.max(-1, Math.min(1, (e.clientX - mouseSteer.x0) / STICK_THROW));
+    flightInput.steerY = Math.max(-1, Math.min(1, (e.clientY - mouseSteer.y0) / STICK_THROW));
+    mouseSteer.x = e.clientX;
+    mouseSteer.y = e.clientY;
+  };
+
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch') {
+      if (e.button !== 0 || overFlightUi(e.target)) return;
+      mouseSteer.active = true;
+      mouseSteer.x0 = mouseSteer.x = e.clientX;
+      mouseSteer.y0 = mouseSteer.y = e.clientY;
       flightInput.steerX = 0;
       flightInput.steerY = 0;
       return;
     }
-    flightInput.steerX = (e.clientX / window.innerWidth) * 2 - 1;
-    flightInput.steerY = (e.clientY / window.innerHeight) * 2 - 1;
-  };
-
-  const onPointerDown = (e: PointerEvent) => {
-    if (e.pointerType !== 'touch' || overFlightUi(e.target)) return;
+    if (overFlightUi(e.target)) return;
     if (e.clientX < window.innerWidth * 0.45 && touchSteer.id === -1) {
       touchSteer.id = e.pointerId;
       touchSteer.x0 = e.clientX;
@@ -411,6 +1103,13 @@ export function attachFlightInput(): () => void {
   };
 
   const onPointerEnd = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch') {
+      // Let go and the ship stops turning. Immediately, every time.
+      mouseSteer.active = false;
+      flightInput.steerX = 0;
+      flightInput.steerY = 0;
+      return;
+    }
     if (e.pointerId === touchSteer.id) {
       touchSteer.id = -1;
       flightInput.steerX = 0;
@@ -453,6 +1152,9 @@ export function attachFlightInput(): () => void {
     flightInput.strafe = 0;
     flightInput.vert = 0;
     flightInput.boost = false;
+    flightInput.engage = false;
+    flightInput.jump = false;
+    mouseSteer.active = false;
     touchSteer.id = -1;
     touchThrust.id = -1;
   };
@@ -478,7 +1180,32 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       speed: flightLive.speed,
       nearest: flightLive.nearest,
       nearSystem: useUiBus.getState().flightNearSystem,
+      contacts: flightLive.contacts,
+      locked: flightLive.locked,
+      scanProgress: flightLive.scanProgress,
+      prompt: flightLive.prompt,
+      range: flightLive.range,
     }),
     input: flightInput,
+    /** Set an exact pose (headless verification of approaches and walls). */
+    pose: (x: number, y: number, z: number, yaw: number, pitch = 0) => {
+      beginFlightAt(TMP.set(x, y, z), yaw, pitch);
+      return flightLive.pos.toArray();
+    },
+    /** Park the runabout beside a landmark (headless verification). */
+    goto: (id: string) => {
+      const site = sitesForSeed(useGame.getState().s.seed).find((s) => s.def.id === id);
+      if (site) jumpTo(site);
+      return site ? flightLive.pos.toArray() : null;
+    },
+    sites: () =>
+      sitesForSeed(useGame.getState().s.seed).map((s) => ({ id: s.def.id, pos: s.pos })),
+    /** Every solid the helm is currently respecting, where it is right now. */
+    bodies: () =>
+      bodies.map((b) => ({
+        label: b.label,
+        radius: b.radius,
+        pos: bodyPosition(b, flightLive.clock, TMP).toArray(),
+      })),
   };
 }

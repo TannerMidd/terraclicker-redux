@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
@@ -7,18 +7,18 @@ import {
   Line,
   LineBasicMaterial,
   Mesh,
-  MeshStandardMaterial,
   Vector3,
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import type { CompletedPlanetRecord } from '../../../engine/types';
-import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
+import { settledGeometry, settledMaterial } from '../settledPlanet';
+import { MINI_SIZE } from '../miniPlanet';
 import { CURRENT_SYSTEM_ANCHOR, orbitSlot, starClass, starColor } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
+import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 
-const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 const TRANSIT_MS = 1900;
 
 /** The tilted, squashed orbit path a slot's world actually follows.
@@ -52,8 +52,9 @@ function MiniWorld({
 }) {
   const root = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
-  const geometry = useMemo(() => createMiniPlanetGeometry(record), [record]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  // Cached in settledPlanet.ts — do NOT dispose; other views share it.
+  const geometry = useMemo(() => settledGeometry(record, 'mini'), [record]);
+  const material = useMemo(() => settledMaterial(record), [record]);
   const born = useRef<number | null>(null);
   const o = orbitSlot(slot);
   const size = MINI_SIZE[record.size];
@@ -87,7 +88,7 @@ function MiniWorld({
       <mesh
         ref={mesh}
         geometry={geometry}
-        material={MINI_MATERIAL}
+        material={material}
         {...inspectHandlers(
           record.name,
           `${TYPE_LABEL[record.type] ?? record.type} · ${record.size} · world ${slot + 1} of ${C.PLANETS_PER_SYSTEM}`,
@@ -96,6 +97,7 @@ function MiniWorld({
         {/* Delivered means inhabited: the lights stay on out here too. */}
         <SettlementLights record={record} variant="mini" />
       </mesh>
+      <SettledAtmosphere record={record} />
       <OrbitalHardware record={record} variant="mini" />
     </group>
   );

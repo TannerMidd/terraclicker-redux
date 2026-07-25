@@ -1,5 +1,6 @@
 import type { Decimal } from './num';
 import type { RngState } from './rng';
+import type { SubEthaKind } from '../content/subEtha';
 
 export type AspectId = 'thermal' | 'atmo' | 'hydro' | 'bio';
 export const ASPECTS: readonly AspectId[] = ['thermal', 'atmo', 'hydro', 'bio'];
@@ -142,6 +143,42 @@ export interface OperationsState {
   heritageWorlds: HeritageWorldRecord[];
 }
 
+/**
+ * The Deep Field logbook. Lifetime state: it survives prestige, because the
+ * things out there were never part of the portfolio Magrathea buys.
+ */
+export interface ExpeditionState {
+  /** Landmark id → gameTimeMs the scan resolved. */
+  discovered: Record<string, number>;
+  /** Landmark id → gameTimeMs it was boarded. */
+  boarded: Record<string, number>;
+  /** Spent only on the runabout. Never on production. */
+  salvage: number;
+  /** Refit id → rank owned. */
+  refits: Record<string, number>;
+}
+
+/** One line on the Sub-Etha. `site` marks a rumour and makes it actionable. */
+export interface SubEthaEntry {
+  id: number;
+  atMs: number;
+  kind: SubEthaKind;
+  text: string;
+  /** Deep Field landmark this entry points at (rumours only). */
+  site?: string;
+}
+
+export interface SubEthaState {
+  /** Ring buffer, oldest first. Capped at C.SUBETHA_LOG_MAX. */
+  log: SubEthaEntry[];
+  nextBroadcastMs: number;
+  /**
+   * Template ids of the last few ambient lines. The channel is small enough
+   * that unguarded weighted picks visibly repeat themselves within a session.
+   */
+  recent: string[];
+}
+
 export interface GameState {
   version: number;
   seed: number;
@@ -201,6 +238,10 @@ export interface GameState {
 
 
   operations: OperationsState;
+  /** The Deep Field logbook — discoveries, salvage, and the runabout's refit. */
+  expedition: ExpeditionState;
+  /** The channel: what the universe said, including while you were out. */
+  subEtha: SubEthaState;
   buffs: BuffState[];
   bubbles: BubbleState[];
   activeEvents: ActiveEventState[];
@@ -238,10 +279,16 @@ export type Input =
   | { type: 'rerollContracts' }
   | { type: 'assignSystemSpecialty'; systemIndex: number; specialty: SystemSpecialty | null }
   | { type: 'designateHeritage'; lifetimeIndex: number }
+  /** A held scan resolved a contact into a name and a Guide entry. */
+  | { type: 'scanSite'; id: string }
+  /** The runabout reached a scanned landmark and recovered what was left. */
+  | { type: 'boardSite'; id: string }
+  /** Spend salvage on the next rank of a refit line. */
+  | { type: 'buyRefit'; id: string }
   /** Dev/testing input: grant TU and optionally set gauge fractions. */
   | { type: 'devGrant'; tu: string; gaugeFrac?: number }
   /** Dev/testing input: force a spawn. */
-  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' };
+  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -271,7 +318,10 @@ export type SimEffect =
   | { t: 'contractBoardRefreshed'; generation: number }
   | { t: 'systemSpecialtyAssigned'; systemIndex: number; specialty: SystemSpecialty | null }
   | { t: 'heritageDesignated'; lifetimeIndex: number }
-  | { t: 'heritageArchived'; lifetimeIndex: number };
+  | { t: 'heritageArchived'; lifetimeIndex: number }
+  | { t: 'siteScanned'; id: string }
+  | { t: 'siteBoarded'; id: string; salvage: number }
+  | { t: 'refitInstalled'; id: string; rank: number };
 
 /** Everything computed from state — never persisted (engine law #3). */
 export interface Derived {

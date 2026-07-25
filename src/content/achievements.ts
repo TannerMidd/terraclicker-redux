@@ -1,5 +1,6 @@
 import { D } from '../engine/num';
 import type { Derived, GameState } from '../engine/types';
+import { DEEP_FIELD } from './deepField';
 
 export interface AchievementDef {
   id: string;
@@ -193,6 +194,30 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     name: 'Repeat Customer',
     guide: 'Five commissions completed. Magrathea has upgraded you from "client" to "phenomenon".',
     cond: (s) => s.lifetime.prestiges >= 5,
+  },
+
+  // — The Deep Field —
+  {
+    id: 'first-contact',
+    name: 'Something Was Already Here',
+    guide:
+      'You resolved your first contact. It turned out to be a thing nobody built, doing nothing in particular, some distance from anywhere. The universe has been like this the whole time.',
+    cond: (s) => Object.keys(s.expedition.discovered).length >= 1,
+  },
+  {
+    id: 'deep-field-8',
+    name: 'Something Of A Habit',
+    guide:
+      'Eight landmarks filed. The Guide notes that your flight logs now contain more sightseeing than commerce, and declines to raise it with your employer.',
+    cond: (s) => Object.keys(s.expedition.discovered).length >= 8,
+  },
+  {
+    id: 'cartographer',
+    name: 'Cartographer of Other People’s Rubbish',
+    guide:
+      'Every landmark in your sky, found and filed. None of it was yours, none of it was useful, and the Guide considers the survey definitive.',
+    hidden: true,
+    cond: (s) => Object.keys(s.expedition.discovered).length >= DEEP_FIELD.length,
   },
 
   // — Towel —

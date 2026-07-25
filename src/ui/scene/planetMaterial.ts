@@ -4,17 +4,21 @@ import {
   attribute,
   cameraPosition,
   clamp,
+  cross,
   dot,
   float,
   mix,
   mx_fractal_noise_float,
   normalize,
+  normalLocal,
   normalWorld,
+  positionLocal,
   positionWorld,
   pow,
   smoothstep,
   sub,
   time,
+  transformNormalToView,
   uniform,
   vec3,
 } from 'three/tsl';
@@ -95,6 +99,65 @@ export function paletteFor(type: PlanetType, seed: number): PlanetPalette {
   }
 }
 
+// ————— Per-pixel terrain —————
+
+/**
+ * The problem this solves: elevation used to arrive as a per-VERTEX
+ * attribute. At icosphere detail 5 that is roughly ten thousand samples for
+ * an entire world — vertices about 0.035 units apart — and everything between
+ * them is linear interpolation. From orbit it passes. Fly down to it and the
+ * planet is a smeared ball with a few colours in it, because that is
+ * literally all the data there is.
+ *
+ * So the vertex attribute now carries only the BASE shape (continents, the
+ * silhouette, the thing the geometry is actually displaced by), and every
+ * frequency above it is evaluated per pixel: it costs the same at any
+ * altitude and has no resolution limit. The same field drives both the
+ * colour ramp — so coastlines are crisp and land has texture — and a normal
+ * perturbation, so the relief is genuinely lit rather than painted on.
+ *
+ * Cost is three evaluations of `fine` per pixel (one for height, two for the
+ * gradient), which is why `fine` is deliberately only two bands.
+ */
+const DETAIL_AMP = 0.045; // how much per-pixel detail shifts the colour ramp
+const EPS = 0.0016; // gradient sample offset, in sphere-direction units
+/**
+ * Relief strength as an actual SLOPE, not a raw gradient.
+ *
+ * The gradient of this field is enormous in node units (the fine band varies
+ * by ~1 over ~1/150 of a sphere direction, so d/dx ≈ 150). Feeding that
+ * straight into the normal buries the real surface normal under it and the
+ * planet comes out looking like coarse sandpaper. What we actually want is
+ * the slope the detail would have if it were real geometry: an amplitude of
+ * DETAIL_AMP × the type's displacement over that wavelength — order 0.01.
+ */
+const BUMP_SLOPE = 0.009;
+
+/** Whatever the noise builder accepts — TSL's node types are not uniform. */
+type Vec3Node = Parameters<typeof mx_fractal_noise_float>[0];
+
+/**
+ * Two bands of per-pixel relief. `close` is 0 at altitude and 1 on a low
+ * pass; it fades the finest band in as you descend, which both kills the
+ * shimmer of sampling a 150-cycle field across three pixels from orbit and
+ * gives the planet the one quality that actually sells scale — detail that
+ * keeps arriving the closer you get.
+ *
+ * Sampled three times a pixel (value + two gradient taps), so: stay lean.
+ */
+function fineDetail(dir: Vec3Node, off: Vec3Node, close: Vec3Node) {
+  const d = dir as unknown as ReturnType<typeof vec3>;
+  const o = off as unknown as ReturnType<typeof vec3>;
+  const k = close as unknown as ReturnType<typeof float>;
+  return mx_fractal_noise_float(d.mul(26).add(o) as unknown as Vec3Node, 3, 2.3, 0.55, 1)
+    .mul(0.6)
+    .add(
+      mx_fractal_noise_float(d.mul(150).add(o) as unknown as Vec3Node, 2, 2.5, 0.5, 1)
+        .mul(0.4)
+        .mul(k),
+    );
+}
+
 export interface PlanetUniforms {
   thermal: ReturnType<typeof uniform>;
   atmo: ReturnType<typeof uniform>;
@@ -117,15 +180,71 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
   const sunDir = uniform(vec3(1, 0.35, 0.6));
 
   const mat = new MeshStandardNodeMaterial();
-  const elevation = attribute('elevation', 'float');
+  const baseElevation = attribute('elevation', 'float');
   const latitude = attribute('latitude', 'float');
   const seedOff = (seed % 977) * 0.13;
 
+  // Displacement is radial, so normalising the local position recovers the
+  // ORIGINAL sphere direction exactly — the one coordinate that is stable
+  // between the vertex and fragment stages and identical for every octave.
+  const dir = normalize(positionLocal);
+  const detailOff = vec3(seedOff, seedOff * 1.7 + 3.1, seedOff * 0.34 + 7.7);
+
+  // Detail LOD: 0 seen from orbit, 1 on a low pass.
+  const camDist = cameraPosition.sub(positionWorld).length();
+  const close = smoothstep(2.4, 0.45, camDist);
+
+  const detailC = fineDetail(
+    dir as unknown as Vec3Node,
+    detailOff as unknown as Vec3Node,
+    close as unknown as Vec3Node,
+  );
+
+  // Tangent frame on the sphere. cross(dir, up) collapses at the poles, so
+  // blend to a second axis as we approach them.
+  const tanA = normalize(cross(dir, vec3(0, 1, 0)));
+  const tanB = normalize(cross(dir, vec3(1, 0, 0)));
+  const tan1 = normalize(mix(tanA, tanB, smoothstep(0.86, 0.99, abs(dir.y))));
+  const tan2 = normalize(cross(dir, tan1));
+
+  const detailU = fineDetail(
+    normalize(dir.add(tan1.mul(EPS))) as unknown as Vec3Node,
+    detailOff as unknown as Vec3Node,
+    close as unknown as Vec3Node,
+  );
+  const detailV = fineDetail(
+    normalize(dir.add(tan2.mul(EPS))) as unknown as Vec3Node,
+    detailOff as unknown as Vec3Node,
+    close as unknown as Vec3Node,
+  );
+
+  // Gradient → local-space bump. Subtracting means high ground tilts away
+  // from the slope it sits on, which is the direction that reads as relief.
+  const bump = tan1
+    .mul(detailU.sub(detailC))
+    .add(tan2.mul(detailV.sub(detailC)))
+    .mul(-BUMP_SLOPE / EPS);
+
+  /**
+   * TWO elevations, and the split matters.
+   *
+   * `elevShape` decides where things ARE — coastline, sea depth, the shore
+   * band. It takes only a whisper of detail, because a coastline is a
+   * continental feature: let the full detail field near sea level and every
+   * pixel of the planet crosses the waterline, so shore foam fires across the
+   * entire surface and a low pass turns into white static.
+   *
+   * `elevDetail` decides what things LOOK like — the land ramp, peaks, the
+   * valley shading. That wants all the detail it can get.
+   */
+  const elevShape = clamp(baseElevation.add(detailC.mul(0.018)), 0, 1);
+  const elevation = clamp(baseElevation.add(detailC.mul(DETAIL_AMP)), 0, 1);
+
   // — Water: sea level rises with hydro; coastlines genuinely move. —
   const seaLevel = float(0.3).add(hydro.mul(0.18));
-  const isWater = smoothstep(seaLevel.add(0.012), seaLevel.sub(0.012), elevation); // 1 under water
-  const shoreFoam = smoothstep(0.024, 0.0, abs(elevation.sub(seaLevel))).mul(isWater.oneMinus().add(0.4));
-  const waterDepth = smoothstep(seaLevel, seaLevel.sub(0.3), elevation);
+  const isWater = smoothstep(seaLevel.add(0.012), seaLevel.sub(0.012), elevShape); // 1 under water
+  const shoreFoam = smoothstep(0.024, 0.0, abs(elevShape.sub(seaLevel))).mul(isWater.oneMinus().add(0.4));
+  const waterDepth = smoothstep(seaLevel, seaLevel.sub(0.3), elevShape);
   const waterCol = mix(vec3(pal.shallowWater.r, pal.shallowWater.g, pal.shallowWater.b), vec3(pal.deepWater.r, pal.deepWater.g, pal.deepWater.b), waterDepth);
 
   // — Land ramp by elevation, with altitude depth-shading for contrast. —
@@ -136,8 +255,8 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
 
   // — Vegetation: a creeping frontier driven by bio. —
   const vegNoise = mx_fractal_noise_float(positionWorld.mul(2.6).add(vec3(seedOff, 0, seedOff)), 3, 2.2, 0.55, 1);
-  const vegBand = smoothstep(seaLevel.add(0.005), seaLevel.add(0.28), elevation)
-    .mul(smoothstep(0.75, 0.45, elevation));
+  const vegBand = smoothstep(seaLevel.add(0.005), seaLevel.add(0.28), elevShape)
+    .mul(smoothstep(0.75, 0.45, elevShape));
   const vegThreshold = bio.mul(1.6).sub(0.55);
   const vegMask = smoothstep(vegThreshold.sub(0.25), vegThreshold, vegNoise.mul(0.5).add(0.5).oneMinus())
     .oneMinus()
@@ -160,6 +279,11 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
     capMask.mul(0.15),
   ) as unknown as typeof mat.roughnessNode;
   mat.metalnessNode = float(0);
+
+  // Relief. Water is a surface, not a landscape — it keeps the smooth normal
+  // so the sea reads as sea instead of crumpled foil.
+  const relief = normalize(normalLocal.add(bump.mul(isWater.oneMinus())));
+  mat.normalNode = transformNormalToView(relief) as unknown as typeof mat.normalNode;
 
   // — Night side: bioluminescence, then city lights near completion. —
   const nightSide = smoothstep(0.15, -0.25, dot(normalWorld, normalize(sunDir)));

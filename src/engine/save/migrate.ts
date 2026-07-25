@@ -1,3 +1,5 @@
+import { createExpeditionState } from '../deepField';
+import { createSubEthaState } from '../subEtha';
 import { createOperationsState } from '../operations';
 import { initRng } from '../rng';
 import { deriveLegacyInstallations } from '../worldHardware';
@@ -160,6 +162,53 @@ export const MIGRATIONS: readonly Migration[] = [
             ? operations['heritageWorlds'].map(backfill)
             : [],
         },
+      };
+    },
+  },
+  {
+    // v5 -> v6: the Deep Field opens. Placement is a pure function of the
+    // master seed, so an existing universe gains its landmarks exactly where
+    // they would always have been — nothing to reconstruct, only an empty
+    // logbook to hand over. A save that somehow already carries one keeps it.
+    from: 5,
+    migrate: (raw) => {
+      const existing = raw['expedition'];
+      if (typeof existing === 'object' && existing !== null) {
+        const e = existing as Record<string, unknown>;
+        const rec = (v: unknown) =>
+          typeof v === 'object' && v !== null ? (v as Record<string, number>) : {};
+        return {
+          ...raw,
+          expedition: {
+            discovered: rec(e['discovered']),
+            boarded: rec(e['boarded']),
+            salvage: typeof e['salvage'] === 'number' ? Math.max(0, e['salvage']) : 0,
+            refits: rec(e['refits']),
+          },
+        };
+      }
+      return { ...raw, expedition: createExpeditionState() };
+    },
+  },
+  {
+    // v6 -> v7: the Sub-Etha opens. An existing universe gets its own
+    // broadcast stream (derived from the master seed, so the feed it would
+    // always have had) and an empty log — there is no honest way to invent a
+    // history of things the channel never actually said.
+    from: 6,
+    migrate: (raw) => {
+      const seed = typeof raw['seed'] === 'number' ? raw['seed'] : 1;
+      const rng =
+        typeof raw['rng'] === 'object' && raw['rng'] !== null
+          ? (raw['rng'] as Record<string, unknown>)
+          : {};
+      return {
+        ...raw,
+        rng: {
+          ...rng,
+          subetha: typeof rng['subetha'] === 'number' ? rng['subetha'] : initRng(seed).subetha,
+        },
+        subEtha: createSubEthaState(),
       };
     },
   },

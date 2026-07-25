@@ -3,6 +3,7 @@ import { ACHIEVEMENTS } from '../../content/achievements';
 import { PLANET_TYPE_BY_ID } from '../../content/planetTypes';
 import { QUIRK_BY_ID } from '../../content/quirks';
 import { SURVEY_BY_ID } from '../../content/surveys';
+import { DEEP_FIELD } from '../../content/deepField';
 import { C } from '../../content/constants';
 import type { AspectId, CompletedPlanetRecord } from '../../engine/types';
 import { formatDuration } from '../../engine/num';
@@ -79,6 +80,121 @@ function WorldMemory({
   );
 }
 
+/**
+ * The channel, newest first. This is the part of the Guide that is a record
+ * rather than a reward — it keeps filing while you are away, so returning to
+ * scroll it is the point.
+ */
+function SubEthaLog() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const log = s.subEtha.log;
+  // Relative, because a feed is about recency. Simulated time throughout, so
+  // a line filed while you were away reads the same as one filed live.
+  const ago = (atMs: number) => {
+    const delta = Math.max(0, s.gameTimeMs - atMs);
+    return delta < 60_000 ? 'just now' : `${formatDuration(delta)} ago`;
+  };
+
+  return (
+    <>
+      <div className="panel-h">The Sub-Etha</div>
+      <p className="panel-sub">
+        Open channel. Colonial traffic, editorial revisions, Vogon
+        administration, and unverified sightings. It keeps filing while you are away.
+      </p>
+      {log.length === 0 ? (
+        <p className="panel-sub df-empty">
+          The channel is open and carrying nothing. This is normal, and will not last.
+        </p>
+      ) : (
+        <div className="se-log">
+          {[...log].reverse().map((entry) => {
+            const found = entry.site && s.expedition.discovered[entry.site] !== undefined;
+            return (
+              <div key={entry.id} className={`se-row k-${entry.kind}`}>
+                <div className="se-when">{ago(entry.atMs)}</div>
+                <div className="se-body">
+                  {entry.text}
+                  {entry.site && found && <span className="se-found">found</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+const SHELL_HINT: Record<string, string> = {
+  near: 'close to home',
+  mid: 'out past the constellation',
+  far: 'deep out',
+  deep: 'a very long way out',
+};
+
+/**
+ * The only section of the Guide that is not about you. Entries here are
+ * written by going and looking — nothing unlocks them from the armchair —
+ * and they pay in salvage rather than production, so the ledger stays clean.
+ */
+function DeepFieldLog() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { expedition } = useGame.getState().s;
+  const found = Object.keys(expedition.discovered).length;
+
+  return (
+    <>
+      <div className="panel-h">
+        The Deep Field — {found}/{DEEP_FIELD.length} filed
+      </div>
+      <p className="panel-sub">
+        Things that were already out there. Take the helm (<b>F</b>), fly to a contact and hold{' '}
+        <b>E</b> to resolve it; board what will have you. Salvage refits the runabout and buys
+        nothing else — no entry here touches production.
+      </p>
+      {found === 0 ? (
+        <p className="panel-sub df-empty">
+          No contacts resolved. The sensors have been reporting unidentified returns for some time
+          and would appreciate being taken seriously.
+        </p>
+      ) : (
+        <div className="df-log">
+          {DEEP_FIELD.map((def) => {
+            const scanned = expedition.discovered[def.id] !== undefined;
+            const boarded = expedition.boarded[def.id] !== undefined;
+            return (
+              <article key={def.id} className={`df-entry ${scanned ? 'found' : 'unknown'}`}>
+                <div className="df-head">
+                  <span className="df-name">{scanned ? def.name : def.contact}</span>
+                  {boarded && <span className="df-badge">boarded</span>}
+                </div>
+                <div className="df-meta">
+                  {def.kind} · {SHELL_HINT[def.shell]}
+                  {scanned && !def.unreachable && !boarded && ` · ${def.salvage} salvage aboard`}
+                </div>
+                {scanned ? (
+                  <>
+                    <p className="df-entry-text">{def.entry}</p>
+                    {boarded && <p className="df-boarding">{def.boarding}</p>}
+                  </>
+                ) : (
+                  <p className="df-entry-text df-unwritten">
+                    Entry not yet written. The sensors hold a return and no opinion.
+                  </p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 export function GuidePanel() {
   const rev = useGame((g) => g.rev);
   void rev;
@@ -107,6 +223,11 @@ export function GuidePanel() {
         )}
         <div className="d-guide">{typeDef?.guide}</div>
       </div>
+
+      {/* Both above the atlas deliberately: the atlas runs to hundreds of
+          worlds deep in a commission, and these would never be found under it. */}
+      <SubEthaLog />
+      <DeepFieldLog />
 
       {s.run.completedPlanets.length > 0 && (
         <>

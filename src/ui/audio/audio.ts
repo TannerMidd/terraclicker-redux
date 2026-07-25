@@ -150,6 +150,18 @@ export function bubbleCatchSting(): void {
   blip(1108, 0.18, 'sine', 0.11, 0.07);
 }
 
+/**
+ * A line arriving on the Sub-Etha. Deliberately the quietest thing in the
+ * mix — two thin carrier ticks, like a channel opening and closing. A rumour
+ * gets a third tick a fifth up, so you learn to notice the ones worth flying
+ * out for without anybody explaining it.
+ */
+export function subEthaBlip(rumour: boolean): void {
+  blip(1560, 0.045, 'square', 0.028);
+  blip(1180, 0.06, 'square', 0.022, 0.05);
+  if (rumour) blip(1760, 0.1, 'sine', 0.038, 0.12);
+}
+
 let noiseBuf: AudioBuffer | null = null;
 function noiseBuffer(c: AudioContext): AudioBuffer {
   if (!noiseBuf) {

@@ -39,6 +39,46 @@ export function makeGlowSprite(color: number, opacity = 1): SpriteMaterial {
   });
 }
 
+/**
+ * Shared, cached variants of the two sprite materials.
+ *
+ * Every settled world used to build its own glow and installation materials.
+ * That is fine when the universe is a static tableau, but at the helm each
+ * newly revealed system mounts five worlds at once, and every fresh material
+ * is a shader program the renderer has to link right then — profiled at 6.9%
+ * of flight time in `getProgramParameter`, surfacing as ~400ms hitches.
+ *
+ * Only use these for materials nobody mutates. Anything animating its own
+ * opacity (the Deep Field glints, the formation ceremonies) must keep its
+ * own instance.
+ */
+const glowCache = new Map<string, SpriteMaterial>();
+
+export function sharedGlowSprite(color: number, opacity = 1): SpriteMaterial {
+  const key = `${color}:${opacity}`;
+  let mat = glowCache.get(key);
+  if (!mat) {
+    mat = makeGlowSprite(color, opacity);
+    glowCache.set(key, mat);
+  }
+  return mat;
+}
+
+const texCache = new Map<string, SpriteMaterial>();
+
+export function sharedTexSprite(
+  url: string,
+  opts: { color?: number; opacity?: number; additive?: boolean } = {},
+): SpriteMaterial {
+  const key = `${url}:${opts.color ?? ''}:${opts.opacity ?? ''}:${opts.additive ?? ''}`;
+  let mat = texCache.get(key);
+  if (!mat) {
+    mat = makeTexSprite(url, opts);
+    texCache.set(key, mat);
+  }
+  return mat;
+}
+
 /** Sprite material over an authored texture (SPRITE_MANIFEST.md art). */
 export function makeTexSprite(
   url: string,
@@ -114,8 +154,10 @@ export function focusSystemIndex(target: FocusTarget): number {
  */
 export function focusOn(target: FocusTarget): void {
   const bus = useUiBus.getState();
-  // Clicking a place from the helm hands the camera back and visits it.
-  if (bus.flightMode) bus.setFlightMode(false);
+  // Not from the helm. The left button is the steering stick now, so a press
+  // that happened to land on a planet used to fling the player out of flight
+  // mid-turn. Disembark is `esc`, deliberately and only.
+  if (bus.flightMode) return;
   const prev = bus.focus;
   if (prev && prev.kind === target.kind && prev.index === target.index) return;
   const galaxyish =

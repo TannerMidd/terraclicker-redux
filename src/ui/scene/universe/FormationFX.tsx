@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Mesh,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   PointLight,
   Sprite,
   Vector3,
@@ -11,7 +10,8 @@ import {
 import { useGame } from '../../../state/store';
 import { useUiBus, type CinematicJob } from '../../fx/uiBus';
 import { SCENE_SPRITES } from '../../assets';
-import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
+import { settledGeometry, settledMaterial } from '../settledPlanet';
+import { MINI_SIZE } from '../miniPlanet';
 import {
   CURRENT_SYSTEM_ANCHOR,
   galaxyPosition,
@@ -23,7 +23,6 @@ import { C } from '../../../content/constants';
 import * as audio from '../../audio/audio';
 import { makeGlowSprite, makeTexSprite } from './shared';
 
-const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 const P = new Vector3();
 const DIR = new Vector3();
 const Z_AXIS = new Vector3(0, 0, 1);
@@ -49,8 +48,9 @@ function SystemFormation({ job }: { job: CinematicJob }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [job.index],
   );
-  const geoms = useMemo(() => records.map((r) => createMiniPlanetGeometry(r)), [records]);
-  useEffect(() => () => geoms.forEach((g) => g.dispose()), [geoms]);
+  // Cached in settledPlanet.ts — do NOT dispose; other views share them.
+  const geoms = useMemo(() => records.map((r) => settledGeometry(r, 'mini')), [records]);
+  const mats = useMemo(() => records.map((r) => settledMaterial(r)), [records]);
 
   const star = useMemo(() => starColor(records[0]?.seed ?? s.seed), [records, s.seed]);
   const target = useMemo(() => systemGlyphPosition(job.index, s.seed), [job.index, s.seed]);
@@ -187,7 +187,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
             worlds.current[i] = el;
           }}
           geometry={geoms[i]}
-          material={MINI_MATERIAL}
+          material={mats[i]}
           raycast={() => null}
         />
       ))}

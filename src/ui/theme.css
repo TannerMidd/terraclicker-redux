@@ -1489,6 +1489,13 @@ button {
 .app.in-flight .eta-ribbon,
 .app.in-flight .planet-name-tag { display: none; }
 .app.in-flight .scene-layer { cursor: crosshair; }
+/* The canopy frame owns the corners of the screen, so the masthead stands
+   down while you have the helm. It is waiting when you disembark. */
+.app.in-flight .masthead {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms ease;
+}
 
 .flight-layer {
   position: absolute;
@@ -1693,6 +1700,423 @@ button {
 @keyframes fhRise { from { opacity: 0; transform: translateX(-50%) translateY(16px); } }
 @keyframes fhDrop { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
 
+/* ————— The Sub-Etha ticker ————— */
+
+.subetha-ticker {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(600px, 44vw);
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 13px;
+  border: 1px solid rgba(150, 182, 236, 0.12);
+  border-radius: 999px;
+  background: rgba(8, 11, 18, 0.66);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  animation: seTicker 9s ease forwards;
+}
+.se-kicker {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.se-text {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+/* A rumour is the one kind that is worth acting on, so it is the one kind
+   that is allowed to look like it. */
+.subetha-ticker.se-rumour { border-color: rgba(180, 140, 255, 0.34); }
+.subetha-ticker.se-rumour .se-kicker { color: var(--improbable); }
+.subetha-ticker.se-rumour .se-text { color: var(--ink); }
+.subetha-ticker.se-chronicle .se-kicker { color: var(--bio); }
+
+@keyframes seTicker {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  6% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  86% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-5px); }
+}
+
+/* At the helm the canopy owns the top edge; drop below the flight chip. */
+.app.in-flight .subetha-ticker { top: 72px; }
+
+/* ————— The Sub-Etha log (Guide panel) ————— */
+
+.se-log { display: flex; flex-direction: column; gap: 6px; }
+.se-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 10px;
+  border-left: 2px solid rgba(150, 182, 236, 0.16);
+  border-radius: 0 7px 7px 0;
+  background: rgba(150, 182, 236, 0.025);
+}
+.se-row.k-rumour { border-left-color: var(--improbable); }
+.se-row.k-chronicle { border-left-color: var(--bio); }
+.se-row.k-vogon { border-left-color: #7b8a4a; }
+.se-when {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+.se-body { font-size: 12.5px; line-height: 1.5; color: var(--ink-dim); }
+.se-row.k-rumour .se-body { color: var(--ink); }
+.se-found {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--bio);
+}
+
+/* ————— The Deep Field log (Guide panel) ————— */
+
+.df-empty { font-style: italic; }
+.df-log { display: flex; flex-direction: column; gap: 8px; }
+.df-entry {
+  padding: 10px 12px;
+  border: 1px solid rgba(150, 182, 236, 0.1);
+  border-left: 2px solid rgba(150, 182, 236, 0.18);
+  border-radius: 8px;
+  background: rgba(150, 182, 236, 0.025);
+}
+.df-entry.found { border-left-color: var(--improbable); }
+.df-entry.unknown { opacity: 0.62; }
+.df-head { display: flex; align-items: center; gap: 8px; }
+.df-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.df-entry.unknown .df-name { font-weight: 500; color: var(--ink-dim); font-style: italic; }
+.df-badge {
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bio);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.df-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+.df-entry-text { margin-top: 7px; font-size: 12.5px; line-height: 1.55; color: var(--ink-dim); }
+.df-unwritten { font-style: italic; color: var(--ink-faint); }
+.df-boarding {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(150, 182, 236, 0.14);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* ————— The canopy ————— */
+
+/* The frame is bolted to your head, so it does not move; what moves is the
+   universe outside it and the glare sliding across the glass. */
+.fh-canopy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 24px rgba(0, 0, 0, 0.75));
+  animation: fhIn 900ms ease;
+}
+
+.fh-glare {
+  position: absolute;
+  inset: -8%;
+  pointer-events: none;
+  opacity: 0.5;
+  background:
+    linear-gradient(112deg, transparent 38%, rgba(168, 202, 255, 0.05) 46%, transparent 54%),
+    linear-gradient(74deg, transparent 60%, rgba(120, 220, 200, 0.035) 68%, transparent 75%);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ————— The steering stick ————— */
+
+/* Hold-to-steer is invisible unless you draw it, so the ring appears where
+   you pressed and the knob follows the pointer. Release and it fades. */
+.fh-stick {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.fh-stick::before {
+  content: '';
+  position: absolute;
+  left: -46px;
+  top: -46px;
+  width: 92px;
+  height: 92px;
+  border: 1px solid rgba(150, 182, 236, 0.22);
+  border-radius: 50%;
+}
+.fh-stick i {
+  position: absolute;
+  left: -7px;
+  top: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(150, 182, 236, 0.18);
+  border: 1px solid rgba(180, 205, 245, 0.5);
+}
+
+/* ————— Sensors, target, scan ————— */
+
+.fh-scan {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 78px;
+  height: 78px;
+  transform: translate(-50%, -50%);
+  overflow: visible;
+}
+.fh-scan circle {
+  stroke: var(--improbable);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0;
+  transition: opacity 140ms linear;
+  filter: drop-shadow(0 0 6px rgba(180, 140, 255, 0.7));
+}
+
+.fh-target {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 58px);
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
+}
+.fh-target.on { opacity: 1; }
+.fh-target b {
+  display: block;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.fh-target.resolved b { color: var(--ink); }
+.fh-target span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.fh-sensors {
+  position: absolute;
+  right: 22px;
+  top: 92px;
+  width: 216px;
+  padding: 10px 12px 8px;
+  border: 1px solid rgba(150, 182, 236, 0.14);
+  border-radius: 10px;
+  background: rgba(8, 11, 18, 0.72);
+  backdrop-filter: blur(7px);
+  pointer-events: auto;
+  animation: fhIn 700ms ease 200ms backwards;
+}
+.fs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 7px;
+}
+.fs-head span { color: var(--improbable); letter-spacing: 0.04em; }
+.fs-list { display: flex; flex-direction: column; gap: 4px; }
+.fc-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.fc-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fc-row b { color: var(--ink-faint); font-weight: 500; font-variant-numeric: tabular-nums; }
+.fc-row.known span { color: var(--ink); }
+.fc-row.done span { color: var(--bio); }
+/* Gossiped about on the channel and not yet resolved — the one you came for. */
+.fc-row.rumoured span { color: var(--improbable); font-style: italic; }
+.fs-none { display: none; font-size: 12px; color: var(--ink-faint); font-style: italic; }
+.fh-sensors.empty .fs-none { display: block; }
+.fs-refit {
+  margin-top: 9px;
+  width: 100%;
+  padding: 5px 0;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  background: rgba(150, 182, 236, 0.06);
+  border: 1px solid rgba(150, 182, 236, 0.16);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.fs-refit:hover { color: var(--ink); border-color: var(--ink-faint); }
+.fs-refit kbd {
+  font: inherit;
+  font-size: 10px;
+  opacity: 0.6;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 4px;
+}
+
+.fh-engage {
+  position: absolute;
+  right: 26px;
+  bottom: 168px;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: rgba(150, 182, 236, 0.1);
+  border: 1px solid rgba(150, 182, 236, 0.3);
+  pointer-events: auto;
+}
+.fh-engage:active { background: rgba(180, 140, 255, 0.25); }
+
+/* ————— The refit bay ————— */
+
+.fh-refit {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(620px, 92vw);
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 18px 20px 16px;
+  border: 1px solid rgba(150, 182, 236, 0.2);
+  border-radius: 14px;
+  background: rgba(6, 9, 15, 0.94);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  pointer-events: auto;
+  animation: fhRefitIn 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes fhRefitIn {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.97); }
+}
+.fr-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(150, 182, 236, 0.12);
+}
+.fr-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+.fr-sub { margin-top: 3px; font-size: 12px; color: var(--ink-faint); }
+.fr-salvage { text-align: right; white-space: nowrap; }
+.fr-salvage b { display: block; font-size: 22px; color: var(--improbable); }
+.fr-salvage span {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.fr-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.fr-item {
+  padding: 10px 12px;
+  border: 1px solid rgba(150, 182, 236, 0.12);
+  border-radius: 10px;
+  background: rgba(150, 182, 236, 0.03);
+}
+.fr-item.maxed { opacity: 0.62; }
+.fr-item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fr-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.fr-rank { display: flex; gap: 3px; }
+.fr-rank i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(150, 182, 236, 0.3);
+}
+.fr-rank i.on { background: var(--improbable); border-color: var(--improbable); }
+.fr-effect { margin-top: 5px; font-size: 12px; color: var(--bio); }
+.fr-guide { margin-top: 5px; font-size: 11.5px; line-height: 1.45; color: var(--ink-faint); }
+.fr-buy {
+  margin-top: 9px;
+  width: 100%;
+  padding: 5px 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: rgba(180, 140, 255, 0.12);
+  border: 1px solid rgba(180, 140, 255, 0.3);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.fr-buy:disabled { opacity: 0.4; cursor: default; }
+.fr-buy:not(:disabled):hover { background: rgba(180, 140, 255, 0.22); }
+.fr-close {
+  width: 100%;
+  padding: 7px 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-dim);
+  background: none;
+  border: 1px solid rgba(150, 182, 236, 0.16);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.fr-close:hover { color: var(--ink); }
+.fr-close kbd {
+  font: inherit;
+  font-size: 10px;
+  opacity: 0.6;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  padding: 0 3px;
+  margin-left: 4px;
+}
+
 /* ————— Mobile ————— */
 
 @media (max-width: 900px) {
@@ -1727,6 +2151,17 @@ button {
   .fh-panic { width: 54px; }
   .fh-legend { bottom: 96px; font-size: 11px; white-space: normal; text-align: center; width: 90vw; }
   .fh-top { top: 12px; }
+  /* Phones: the sensor slate goes wide and low so thumbs keep the screen. */
+  .fh-sensors { right: 10px; top: 76px; width: 172px; padding: 8px 10px 6px; }
+  .fh-sensors .fs-refit { display: none; }
+  .fh-target { top: calc(50% + 46px); }
+  .fh-refit { width: 94vw; padding: 14px 14px 12px; }
+  .fr-list { grid-template-columns: minmax(0, 1fr); }
+  .fh-engage { right: 14px; bottom: 150px; width: 72px; height: 72px; font-size: 11px; }
+  /* No room: masthead, gauges, caption, buffs, toasts and a 46vh dock sheet
+     already share this screen. The Guide's log carries the feed on phones. */
+  .subetha-ticker { display: none; }
+  .se-row { grid-template-columns: 52px minmax(0, 1fr); gap: 8px; }
 }
 
 @media (max-width: 360px) {

@@ -16,6 +16,7 @@ import { ASPECTS, type AspectId } from '../../engine/types';
 import { format } from '../../engine/num';
 import { mulberry } from '../../engine/rng';
 import { createPlanetGeometry } from './planetGeometry';
+import { heroMoonPosition, heroMoons } from './universeLayout';
 import {
   createAtmosphereMaterial,
   createCloudMaterial,
@@ -68,15 +69,12 @@ export function Planet({ detail }: { detail: number }) {
   const clouds = useMemo(() => createCloudMaterial(seed), [seed]);
 
   const decor = useMemo(() => {
+    // Moons come from universeLayout so the helm collides with them exactly
+    // where they are drawn; the ring roll must follow the same stream.
+    const moons = heroMoons(seed, isEarth);
     const r = mulberry(seed ^ 0xdeca);
-    const moonCount = isEarth ? 1 : Math.floor(r() * 3.2);
-    const moons = Array.from({ length: moonCount }, (_, i) => ({
-      size: 0.05 + r() * 0.07,
-      orbit: 1.9 + i * 0.55 + r() * 0.3,
-      speed: (0.12 + r() * 0.18) * (r() < 0.2 ? -1 : 1),
-      phase: r() * Math.PI * 2,
-      tilt: (r() - 0.5) * 0.7,
-    }));
+    if (!isEarth) r();
+    for (let i = 0; i < moons.length * 5; i++) r();
     return { moons, hasRing: ringed || r() < 0.24 };
   }, [seed, isEarth, ringed]);
 
@@ -174,8 +172,7 @@ export function Planet({ detail }: { detail: number }) {
     decor.moons.forEach((m, i) => {
       const mesh = moonRefs.current[i];
       if (!mesh) return;
-      const a = m.phase + t * m.speed;
-      mesh.position.set(Math.cos(a) * m.orbit, Math.sin(a * 0.7) * m.tilt, Math.sin(a) * m.orbit);
+      heroMoonPosition(m, t, mesh.position);
     });
   });
 

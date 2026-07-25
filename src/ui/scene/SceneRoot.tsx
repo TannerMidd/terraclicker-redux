@@ -9,10 +9,14 @@ import { VogonFleet } from './VogonFleet';
 import { Infrastructure } from './Infrastructure';
 import { Universe } from './Universe';
 import { Traffic } from './Traffic';
+import { RunaboutLamp } from './RunaboutLamp';
+import { RunaboutHull } from './RunaboutHull';
+import { ShaderWarmup } from './ShaderWarmup';
 import { EventFX } from './EventFX';
 import { stepFocusOut } from './universe/shared';
 import { clickSuppressed, resetOrbit } from './navControl';
 import { useSettings } from '../settings';
+import { useUiBus } from '../fx/uiBus';
 
 // Register the three/webgpu namespace for R3F JSX intrinsics.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,6 +43,8 @@ const TIER_CONFIG: Record<Tier, { detail: number; stars: number; dpr: [number, n
 /** Empty-space clicks step out; a quick double-click recenters the orbit. */
 let lastMissAt = 0;
 function onMissed(): void {
+  // At the helm an empty-space click is the steering stick being released.
+  if (useUiBus.getState().flightMode) return;
   if (clickSuppressed()) return; // that was the end of a camera drag
   const now = performance.now();
   if (now - lastMissAt < 340) resetOrbit();
@@ -57,7 +63,7 @@ export default function SceneRoot() {
   return (
     <Canvas
       dpr={cfg.dpr}
-      camera={{ position: [1.85, 0.25, 6.4], fov: 42, near: 0.1, far: 650 }}
+      camera={{ position: [1.85, 0.25, 6.4], fov: 42, near: 0.1, far: 4200 }}
       onPointerMissed={onMissed}
       gl={async (props) => {
         const renderer = new THREE.WebGPURenderer({
@@ -76,6 +82,8 @@ export default function SceneRoot() {
       <directionalLight position={SUN_DIR} intensity={3.1} color={0xfff2dc} />
       {/* Cool fill so the night side reads as form, not absence. */}
       <directionalLight position={[-4.5, -1, -3]} intensity={0.4} color={0x3a5a8e} />
+      {/* At the helm the ship brings its own light; out there, nothing else does. */}
+      <RunaboutLamp />
       <Stars count={cfg.stars} />
       <Planet detail={cfg.detail} />
       <Infrastructure />
@@ -85,6 +93,11 @@ export default function SceneRoot() {
       <Bubbles />
       <VogonFleet />
       <CameraRig />
+      {/* AFTER CameraRig, deliberately: R3F runs useFrame callbacks in mount
+          order, so the hull has to be subscribed later than the rig or it
+          poses itself against last frame's camera and visibly swims. */}
+      <RunaboutHull />
+      <ShaderWarmup />
     </Canvas>
   );
 }

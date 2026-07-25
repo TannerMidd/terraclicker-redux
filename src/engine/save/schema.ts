@@ -80,6 +80,7 @@ export const saveSchema = z.object({
     vogons: z.number(),
     visuals: z.number(),
     contracts: z.number(),
+    subetha: z.number(),
   }),
   gameTimeMs: z.number().min(0),
   createdAtWall: z.number(),
@@ -170,6 +171,25 @@ export const saveSchema = z.object({
         preservedAtGameMs: z.number().min(0),
       }),
     ),
+  }),
+  expedition: z.object({
+    discovered: z.record(z.string(), z.number().min(0)),
+    boarded: z.record(z.string(), z.number().min(0)),
+    salvage: z.number().min(0),
+    refits: z.record(z.string(), z.number().int().min(0)),
+  }),
+  subEtha: z.object({
+    log: z.array(
+      z.object({
+        id: z.number(),
+        atMs: z.number().min(0),
+        kind: z.enum(['colony', 'guide', 'vogon', 'trade', 'hitchhiker', 'rumour', 'chronicle']),
+        text: z.string(),
+        site: z.string().optional(),
+      }),
+    ),
+    nextBroadcastMs: z.number(),
+    recent: z.array(z.string()),
   }),
   buffs: z.array(
     z.object({

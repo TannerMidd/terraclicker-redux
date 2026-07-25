@@ -6,6 +6,7 @@ import { CosmicWeb } from './universe/CosmicWeb';
 import { FormationFX } from './universe/FormationFX';
 import { FocusedSystem } from './universe/FocusedSystem';
 import { GalaxyTradeLanes } from './universe/LivingLanes';
+import { DeepField } from './universe/DeepField';
 
 /**
  * The universe you have built, all of it visible and none of it faked:
@@ -15,6 +16,8 @@ import { GalaxyTradeLanes } from './universe/LivingLanes';
  * lit forever. Scroll out to take perspective (CameraRig owns the journey;
  * FormationFX owns the ceremonies), or click a galaxy or system to fly
  * there and inspect the worlds you actually made (FocusedSystem).
+ *
+ * And then there is the Deep Field — the only things here you did not build.
  */
 export function Universe() {
   return (
@@ -27,6 +30,7 @@ export function Universe() {
       <FormationFX />
       <FocusedSystem />
       <GalaxyTradeLanes />
+      <DeepField />
     </group>
   );
 }

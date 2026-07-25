@@ -12,7 +12,7 @@ import { Group, Sprite, Vector3 } from 'three/webgpu';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { mulberry } from '../../../engine/rng';
 import { SCENE_SPRITES } from '../../assets';
-import { makeGlowSprite, makeTexSprite } from './shared';
+import { sharedGlowSprite, sharedTexSprite } from './shared';
 import { universeMotion } from './operationsVisual';
 
 export type CivilizationVariant = 'mini' | 'visit' | 'closeup';
@@ -90,8 +90,8 @@ export function SettlementLights({
   variant: CivilizationVariant;
 }) {
   const spots = useMemo(() => settlementSpots(record, variant), [record, variant]);
-  const warmMat = useMemo(() => makeGlowSprite(WARM, 0.85), []);
-  const coolMat = useMemo(() => makeGlowSprite(COOL, 0.8), []);
+  const warmMat = useMemo(() => sharedGlowSprite(WARM, 0.85), []);
+  const coolMat = useMemo(() => sharedGlowSprite(COOL, 0.8), []);
   useEffect(
     () => () => {
       warmMat.dispose();
@@ -165,7 +165,7 @@ export function OrbitalHardware({
     }));
   }, [ids, record.seed, variant]);
   const mats = useMemo(
-    () => ids.map((id) => makeTexSprite(SCENE_SPRITES.installation(id))),
+    () => ids.map((id) => sharedTexSprite(SCENE_SPRITES.installation(id))),
     [ids],
   );
   useEffect(() => () => mats.forEach((m) => m.dispose()), [mats]);
@@ -223,9 +223,9 @@ export function CloseupLife({ record }: { record: CompletedPlanetRecord }) {
     };
     return { a: site(), b: site(), period: 10 + r() * 5, phase: r() * 20 };
   }, [record.seed]);
-  const shuttleMat = useMemo(() => makeTexSprite(SCENE_SPRITES.traffic.courier), []);
-  const beaconMat = useMemo(() => makeGlowSprite(0xaef2c8, 0.9), []);
-  const petMat = useMemo(() => makeTexSprite(SCENE_SPRITES.misc.petAsteroid), []);
+  const shuttleMat = useMemo(() => sharedTexSprite(SCENE_SPRITES.traffic.courier), []);
+  const beaconMat = useMemo(() => sharedGlowSprite(0xaef2c8, 0.9), []);
+  const petMat = useMemo(() => sharedTexSprite(SCENE_SPRITES.misc.petAsteroid), []);
   useEffect(
     () => () => {
       shuttleMat.dispose();
@@ -330,7 +330,7 @@ export function SystemShuttles({ spec }: { spec: ShuttleLaneSpec }) {
       };
     });
   }, [spec.seed, spec.ships, spec.worldCount]);
-  const mats = useMemo(() => routes.map((route) => makeTexSprite(route.tex)), [routes]);
+  const mats = useMemo(() => routes.map((route) => sharedTexSprite(route.tex)), [routes]);
   useEffect(() => () => mats.forEach((m) => m.dispose()), [mats]);
   const sprites = useRef<(Sprite | null)[]>([]);
   const A = useMemo(() => new Vector3(), []);

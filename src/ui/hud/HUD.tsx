@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../../state/store';
 import { heroScreen, useUiBus } from '../fx/uiBus';
 import { UniverseHUD } from './UniverseHUD';
+import { SubEthaTicker } from './SubEthaTicker';
 import { Num, useSmoothTu } from '../bits';
 import { format, formatDuration } from '../../engine/num';
 import { ASPECTS, type AspectId } from '../../engine/types';
@@ -312,6 +313,7 @@ export function HUD() {
       </div>
       <Gauges />
       <UniverseHUD />
+      <SubEthaTicker />
       <EtaRibbon />
       <BuffRow />
       <VogonBanner />

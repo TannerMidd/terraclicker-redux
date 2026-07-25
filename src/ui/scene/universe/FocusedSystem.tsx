@@ -10,14 +10,15 @@ import {
   LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   RingGeometry,
   Vector3,
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import type { CompletedPlanetRecord } from '../../../engine/types';
-import { createMiniPlanetGeometry, MINI_SIZE } from '../miniPlanet';
+import { settledGeometry, settledMaterial } from '../settledPlanet';
+import { MINI_SIZE } from '../miniPlanet';
+import { SettledAtmosphere } from './SettledAtmosphere';
 import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { worldAnchors } from '../navControl';
@@ -36,7 +37,6 @@ import {
   type SystemSpecialty,
 } from './operationsVisual';
 
-const MINI_MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
 const HERITAGE_RING_GEO = new RingGeometry(1.23, 1.3, 56);
 const HERITAGE_RING_MAT = new MeshBasicMaterial({
   color: 0xf5c84c,
@@ -133,8 +133,12 @@ function VisitWorld({
     (b) => b.focus?.kind === 'world' && b.focus.index === globalIndex,
   );
   // Detail 3: these are the worlds you came to look at — give them curvature.
-  const geometry = useMemo(() => createMiniPlanetGeometry(record, 3), [record]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  // Hero-grade now, and cached — do NOT dispose; other views share it.
+  const geometry = useMemo(
+    () => settledGeometry(record, isCloseup ? 'closeup' : 'visit'),
+    [record, isCloseup],
+  );
+  const material = useMemo(() => settledMaterial(record), [record]);
   // Publish this world's exact position for the camera to descend onto.
   useEffect(() => {
     worldAnchors.set(globalIndex, new Vector3());
@@ -174,7 +178,7 @@ function VisitWorld({
       <mesh
         ref={planet}
         geometry={geometry}
-        material={MINI_MATERIAL}
+        material={material}
         {...visitHandlers(
           record.name,
           memorySummary(record, slot, heritage),
@@ -188,6 +192,7 @@ function VisitWorld({
         {/* Settlements ride the surface, turning with the world. */}
         <SettlementLights record={record} variant={isCloseup ? 'closeup' : 'visit'} />
       </mesh>
+      <SettledAtmosphere record={record} />
       {/* The hardware recorded at delivery, still on station. */}
       <OrbitalHardware record={record} variant={isCloseup ? 'closeup' : 'visit'} />
       {isCloseup && <CloseupLife record={record} />}

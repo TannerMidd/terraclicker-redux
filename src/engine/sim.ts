@@ -40,6 +40,11 @@ import {
   rerollContracts,
 } from './operations';
 import { deriveLegacyInstallations, snapshotInstallations } from './worldHardware';
+import { createExpeditionState, isBoarded, isDiscovered, refitCost } from './deepField';
+import { createSubEthaState, fileBroadcast, stepSubEtha } from './subEtha';
+import { DEEP_FIELD_BY_ID } from '../content/deepField';
+import { CHRONICLE } from '../content/subEtha';
+import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
   type AspectId,
@@ -99,6 +104,8 @@ export function newGame(seed: number, nowWall: number): GameState {
     },
     prestige: { bp: 0, bpEarned: 0, catalogue: {} },
     operations: createOperationsState(),
+    expedition: createExpeditionState(),
+    subEtha: createSubEthaState(),
     buffs: [],
     bubbles: [],
     activeEvents: [],
@@ -243,6 +250,42 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     case 'designateHeritage':
       designateHeritage(state, input.lifetimeIndex, effects);
       break;
+    case 'scanSite': {
+      // The helm decides *when* a scan completes; the engine decides whether
+      // it counts. Re-scanning an already-filed landmark is a no-op.
+      const def = DEEP_FIELD_BY_ID[input.id];
+      if (!def || isDiscovered(state.expedition, input.id)) return;
+      state.expedition.discovered[input.id] = state.gameTimeMs;
+      effects.push({ t: 'siteScanned', id: input.id });
+      break;
+    }
+    case 'boardSite': {
+      const def = DEEP_FIELD_BY_ID[input.id];
+      if (!def || def.unreachable) return;
+      // Boarding something you never resolved files the entry too — you have,
+      // after all, now had a very good look at it.
+      if (!isDiscovered(state.expedition, input.id)) {
+        state.expedition.discovered[input.id] = state.gameTimeMs;
+        effects.push({ t: 'siteScanned', id: input.id });
+      }
+      if (isBoarded(state.expedition, input.id)) return;
+      state.expedition.boarded[input.id] = state.gameTimeMs;
+      state.expedition.salvage += def.salvage;
+      if (def.flag) state.flags[def.flag] = true;
+      effects.push({ t: 'siteBoarded', id: input.id, salvage: def.salvage });
+      break;
+    }
+    case 'buyRefit': {
+      const def = REFIT_BY_ID[input.id];
+      if (!def) return;
+      const cost = refitCost(state.expedition, input.id);
+      if (cost === null || state.expedition.salvage < cost) return;
+      state.expedition.salvage -= cost;
+      const rank = (state.expedition.refits[input.id] ?? 0) + 1;
+      state.expedition.refits[input.id] = rank;
+      effects.push({ t: 'refitInstalled', id: input.id, rank });
+      break;
+    }
     case 'devGrant': {
       addTu(state, D(input.tu));
       if (input.gaugeFrac !== undefined) {
@@ -255,7 +298,11 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     case 'devSpawn': {
       if (input.what === 'vogon') spawnVogons(state, derived, effects, false, true);
       else if (input.what === 'bubble') spawnBubble(state, derived, effects);
-      else spawnEvent(state, derived, effects);
+      else if (input.what === 'broadcast') {
+        // Force the channel's next line immediately (headless verification).
+        state.subEtha.nextBroadcastMs = 0;
+        stepSubEtha(state);
+      } else spawnEvent(state, derived, effects);
       break;
     }
   }
@@ -397,6 +444,84 @@ function completePlanet(
   if (state.planet.surveyOptions) effects.push({ t: 'surveyOffered' });
 }
 
+// ————————————————— The chronicle —————————————————
+
+/**
+ * Turn a notable effect into a line on the Sub-Etha.
+ *
+ * Called from inside the tick loop rather than once at the end of `step`,
+ * because an entry's timestamp is `gameTimeMs` — chronicling in a batch would
+ * stamp every entry of a two-hour catch-up with the same moment, and one
+ * 2-hour step would stop matching 120 one-minute steps (engine law #1).
+ */
+function chronicleEffect(state: GameState, effect: SimEffect): void {
+  switch (effect.t) {
+    case 'planetComplete':
+      fileBroadcast(state, 'chronicle', CHRONICLE.planetDelivered(effect.name));
+      break;
+    case 'systemFormed':
+      fileBroadcast(state, 'chronicle', CHRONICLE.systemFormed(effect.count));
+      break;
+    case 'galaxyFormed':
+      fileBroadcast(state, 'chronicle', CHRONICLE.galaxyFormed(effect.count));
+      break;
+    case 'researchDone':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.researchDone(RESEARCH_BY_ID[effect.id]?.name ?? effect.id),
+      );
+      break;
+    case 'contractCompleted':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.contractCompleted(FACTION_LABEL[effect.faction] ?? 'The client'),
+      );
+      break;
+    case 'contractFailed':
+      // An abandonment is your own doing and does not need announcing.
+      if (effect.reason !== 'abandoned') {
+        fileBroadcast(state, 'chronicle', CHRONICLE.contractFailed('The filing office'));
+      }
+      break;
+    case 'siteScanned':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.siteScanned(DEEP_FIELD_BY_ID[effect.id]?.name ?? effect.id),
+      );
+      break;
+    case 'siteBoarded':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.siteBoarded(DEEP_FIELD_BY_ID[effect.id]?.name ?? effect.id, effect.salvage),
+      );
+      break;
+    case 'prestiged':
+      fileBroadcast(state, 'chronicle', CHRONICLE.prestiged());
+      break;
+    case 'vogonStart':
+      fileBroadcast(state, 'chronicle', CHRONICLE.vogonStart());
+      break;
+    default:
+      break; // clicks, bubbles, achievements — the channel has standards
+  }
+}
+
+const FACTION_LABEL: Record<string, string> = {
+  magrathea: 'Magrathea',
+  mice: 'The mice',
+  vogon: 'The Vogon clerks',
+};
+
+/** Chronicle everything appended to `effects` since index `from`. */
+function chronicleSince(state: GameState, effects: SimEffect[], from: number): void {
+  const to = effects.length;
+  for (let i = from; i < to; i++) chronicleEffect(state, effects[i]!);
+}
+
 // ————————————————— Time integration —————————————————
 
 /**
@@ -469,6 +594,7 @@ export function step(
   expireContract(state, effects);
 
   let completionBottleneck = lowestGauge(state.planet);
+  const beforeInputs = effects.length;
   for (const input of inputs) {
     if (input.type === 'click' || input.type === 'devGrant') completionBottleneck = lowestGauge(state.planet);
     handleInput(state, input, effects, opts);
@@ -476,6 +602,7 @@ export function step(
   if (planetComplete(state.planet)) {
     completePlanet(state, computeDerived(state, opts), effects, completionBottleneck);
   }
+  chronicleSince(state, effects, beforeInputs);
 
   state.timers.tickCarryMs += dtMs;
   let ticks = Math.floor(state.timers.tickCarryMs / TICK);
@@ -491,6 +618,7 @@ export function step(
       dirty = false;
     }
     const { derived } = rates;
+    const beforeTick = effects.length;
 
     // 1) Accrue one tick of production.
     const tickBottleneck = lowestGauge(state.planet);
@@ -567,6 +695,12 @@ export function step(
     // 5) Achievements each tick — their +1% bonus must land at the same
     //    tick regardless of how the caller chunks time.
     if (checkAchievements(state, derived, effects)) dirty = true;
+
+    // 6) The Sub-Etha. Unlike spawns this runs OFFLINE TOO: it is a record,
+    //    not a reward, and coming back to read what the universe said while
+    //    you were out is the entire point of the channel.
+    stepSubEtha(state);
+    chronicleSince(state, effects, beforeTick);
   }
 
   // Inputs can also unlock achievements with no time passing.

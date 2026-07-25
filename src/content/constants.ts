@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 5,
+  SAVE_VERSION: 7,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -87,6 +87,17 @@ export const C = {
   SYSTEM_SPECIALTY_PRODUCTION_MULT: 1.04,
   HERITAGE_ACTIVE_LIMIT: 8,
   HERITAGE_ASPECT_MULT: 1.01,
+
+  // Sub-Etha (the channel keeps filing offline — see engine/subEtha.ts)
+  SUBETHA_FIRST_MS: 90_000,
+  SUBETHA_MIN_GAP_MS: 75_000,
+  SUBETHA_MAX_GAP_MS: 150_000,
+  /** Ring buffer: an 8-hour absence would otherwise file hundreds of lines. */
+  SUBETHA_LOG_MAX: 60,
+  /** Odds an ambient broadcast is a rumour pointing at an unfound landmark. */
+  SUBETHA_RUMOUR_ODDS: 0.22,
+  /** Sensor range multiplier for a landmark the channel has gossiped about. */
+  SUBETHA_RUMOUR_RANGE_MULT: 1.7,
 
   // Achievements: +1% production per Guide entry
   ACHIEVEMENT_BONUS: 0.01,

@@ -9,7 +9,9 @@
  * wheel:x,y,dy (real wheel at coords — cursor zoom / focus dolly ladder) |
  * drag:x0,y0,x1,y1 (real mouse drag — orbit) | cine:cancel (skip ceremonies) |
  * flight:on|off (take/leave the helm) | move:x,y (park the mouse — steering) |
- * flykeys:w+shift,1200 (hold real flight keys for ms) | flystate (log pose).
+ * flykeys:w+shift,1200 (hold real flight keys for ms) | flystate (log pose) |
+ * goto:id (park beside a Deep Field landmark) | sites (log landmark placement) |
+ * refit:id (install the next rank of a runabout refit).
  * Prints console errors and the active render backend.
  */
 import { chromium } from 'playwright';
@@ -52,8 +54,11 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
       [tu, frac],
     );
   } else if (kind === 'scroll') {
-    await page.mouse.move(500, 420);
-    await page.mouse.wheel(0, Number(arg));
+    // scroll:dy — the scene (journey zoom). scroll:dy,x,y — scroll whatever
+    // is under that point instead (the dock panel, for one).
+    const [dy, sx, sy] = arg.split(',').map(Number);
+    await page.mouse.move(sx ?? 500, sy ?? 420);
+    await page.mouse.wheel(0, dy);
     await page.waitForTimeout(900);
   } else if (kind === 'spawn') {
     await page.evaluate((what) => window.__tc?.dispatch({ type: 'devSpawn', what }), arg);
@@ -148,6 +153,24 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'flystate') {
     const st = await page.evaluate(() => window.__tcFlight?.state());
     console.log('flystate:', JSON.stringify(st));
+  } else if (kind === 'pose') {
+    // pose:x,y,z,yaw[,pitch] — exact helm pose for approach/wall checks.
+    const [px, py, pz, yaw, pitch] = arg.split(',').map(Number);
+    await page.evaluate(
+      ([a, b, c, d, e]) => window.__tcFlight?.pose(a, b, c, d, e ?? 0),
+      [px, py, pz, yaw, pitch],
+    );
+    await page.waitForTimeout(300);
+  } else if (kind === 'goto') {
+    // Park the runabout beside a Deep Field landmark (uses the jump path).
+    const p = await page.evaluate((id) => window.__tcFlight?.goto(id), arg);
+    if (!p) errors.push(`goto: no landmark "${arg}"`);
+    await page.waitForTimeout(700);
+  } else if (kind === 'sites') {
+    const list = await page.evaluate(() => window.__tcFlight?.sites());
+    console.log('sites:', JSON.stringify(list));
+  } else if (kind === 'refit') {
+    await page.evaluate((id) => window.__tc.dispatch({ type: 'buyRefit', id }), arg);
   } else if (kind === 'dispatch') {
     await page.evaluate((json) => window.__tc.dispatch(JSON.parse(json)), arg);
   } else if (kind === 'save') {
