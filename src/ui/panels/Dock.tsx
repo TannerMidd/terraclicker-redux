@@ -7,11 +7,12 @@ import { ResearchPanel } from './ResearchPanel';
 import { OperationsPanel } from './OperationsPanel';
 import { GuidePanel } from './GuidePanel';
 import { VortexPanel } from './VortexPanel';
+import { ChartPanel } from './ChartPanel';
 import { MagratheaPanel } from './MagratheaPanel';
 import { SettingsPanel } from './SettingsPanel';
 
 const SETTINGS_TAB = 'Settings' as const;
-const TABS = ['Shop', 'Research', 'Operations', 'Guide', 'Vortex', 'Magrathea', SETTINGS_TAB] as const;
+const TABS = ['Shop', 'Research', 'Operations', 'Chart', 'Guide', 'Vortex', 'Magrathea', SETTINGS_TAB] as const;
 type Tab = (typeof TABS)[number];
 
 export function Dock() {
@@ -33,6 +34,9 @@ export function Dock() {
         return s.lifetime.planetsCompleted > 0;
       case 'Vortex':
         return s.lifetime.planetsCompleted > 0;
+      // The chart is worth having the moment there is more than one place.
+      case 'Chart':
+        return s.lifetime.planetsCompleted > 0 || Object.keys(s.expedition.discovered).length > 0;
       case 'Magrathea':
         return s.lifetime.prestiges > 0 || s.run.systems > 0
           || s.run.tuEarned.gte(C.PRESTIGE_TU_DIVISOR * 0.1);
@@ -83,6 +87,7 @@ export function Dock() {
         {tab === 'Research' && <ResearchPanel />}
         {tab === 'Guide' && <GuidePanel />}
         {tab === 'Vortex' && <VortexPanel />}
+        {tab === 'Chart' && <ChartPanel />}
         {tab === 'Operations' && <OperationsPanel />}
         {tab === 'Magrathea' && <MagratheaPanel />}
         {tab === SETTINGS_TAB && <SettingsPanel />}

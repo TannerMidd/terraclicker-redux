@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
 import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flightControl';
+import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
@@ -90,6 +91,75 @@ function InterdictionBanner() {
           <i style={{ width: `${Math.min(100, interdiction.dispersal * 100)}%` }} />
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Civil Navigation, Provisional — the bearing ribbon.
+ *
+ * The cockpit could always tell you what was near. It could never tell you
+ * which way the thing you actually care about is, which is the question a
+ * pilot asks roughly once a second. The ribbon is a horizon-relative strip:
+ * the marker slides to port or starboard by the bearing, and the readout
+ * underneath carries distance, ETA, and a warning when there is no longer
+ * enough room to stop.
+ *
+ * Updated from `flightLive` at rAF speed rather than through React state, the
+ * same pattern as the rest of this file — a HUD that re-renders sixty times a
+ * second is a HUD that costs more than the scene it sits on.
+ */
+function NavRibbon() {
+  const wrap = useRef<HTMLDivElement>(null);
+  const marker = useRef<HTMLDivElement>(null);
+  const name = useRef<HTMLElement>(null);
+  const readout = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    let raf = 0;
+    const tick = () => {
+      raf = requestAnimationFrame(tick);
+      const nav = flightLive.nav;
+      const el = wrap.current;
+      if (!el) return;
+
+      if (!nav) {
+        if (el.classList.contains('on')) el.classList.remove('on');
+        return;
+      }
+      if (!el.classList.contains('on')) el.classList.add('on');
+
+      // Bearing is signed with port negative, so it maps straight onto x.
+      // Clamped to the strip: something directly behind pins to an edge and
+      // stays there, which reads as "turn around" without any extra chrome.
+      const clamped = Math.max(-1, Math.min(1, nav.bearing / (Math.PI * 0.6)));
+      if (marker.current) {
+        marker.current.style.transform = `translateX(${(clamped * 50).toFixed(2)}%)`;
+        marker.current.classList.toggle('astern', Math.abs(nav.bearing) > Math.PI * 0.6);
+      }
+      if (name.current && name.current.textContent !== flightLive.navLabel) {
+        name.current.textContent = flightLive.navLabel;
+      }
+      if (readout.current) {
+        const text = nav.overshooting
+          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · too fast to stop`
+          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${etaLabel(nav.etaSeconds)}`;
+        if (readout.current.textContent !== text) readout.current.textContent = text;
+      }
+      el.classList.toggle('hot', nav.overshooting);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <div ref={wrap} className="fh-nav" aria-live="polite">
+      <div className="fn-strip" aria-hidden>
+        <i className="fn-centre" />
+        <div ref={marker} className="fn-marker" />
+      </div>
+      <b ref={name} />
+      <span ref={readout} />
     </div>
   );
 }
@@ -449,6 +519,8 @@ function FlightHUDInner() {
         <b ref={targetName} />
         <span ref={targetSub} />
       </div>
+
+      <NavRibbon />
 
       <div className="fh-top">
         <span className="fh-chip">manual flight · the company runabout</span>

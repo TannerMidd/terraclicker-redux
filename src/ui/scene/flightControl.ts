@@ -54,6 +54,8 @@ import {
 } from '../../engine/freight';
 import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
+import { pinnedWaypoint, type WaypointRef } from '../../engine/waypoints';
+import { solveNav, type NavSolution } from '../../engine/navigation';
 import { C } from '../../content/constants';
 
 // ————— Tuning —————
@@ -286,6 +288,18 @@ export const flightLive = {
   nearRadius: 0,
   /** Scene clock, for evaluating orbiting bodies where they actually are. */
   clock: 0,
+
+  // — Civil Navigation, Provisional —
+  /**
+   * The pinned waypoint solved against the current pose, or null when nothing
+   * is pinned (or the pin has gone stale, which the registry handles by
+   * resolving to nothing rather than by pointing at a hole).
+   */
+  nav: null as NavSolution | null,
+  /** Label of whatever `nav` refers to, for the cockpit readout. */
+  navLabel: '',
+  /** Course-hold: steer toward the pin without the pilot holding a heading. */
+  courseHold: false,
 };
 
 /** Player intent, written by input handlers (or tests), read by stepFlight. */
@@ -399,6 +413,7 @@ export function stepFlight(dt: number, t: number): void {
     f.scanAt = t;
     scanSurroundings();
   }
+  solveNavThisFrame();
 
   const authority = f.ramp * (f.paused ? 0 : 1);
 
@@ -991,6 +1006,125 @@ function scanSurroundings(): void {
   refreshContacts();
   stepManifest(st);
   stepInterdiction(st);
+  resolveNavTarget(st);
+}
+
+const NAV_POS = new Vector3();
+/** Reused tuples so a per-frame solve allocates nothing. */
+const NAV_POS_T: [number, number, number] = [0, 0, 0];
+const NAV_SELF_POS: [number, number, number] = [0, 0, 0];
+const NAV_SELF_VEL: [number, number, number] = [0, 0, 0];
+let navTargetValid = false;
+let navBrakeRate = RESP_BRAKE;
+
+/**
+ * Where the pinned waypoint currently is, refreshed on the housekeeping sweep.
+ *
+ * The registry says *what* is addressable; this is the half that knows where
+ * things are, which is why it lives in the scene and not in the engine. A ref
+ * that cannot be placed — a world in a system this commission no longer holds,
+ * a landmark from another seed — resolves to nothing and the ribbon simply
+ * does not draw, which is the correct behaviour for a chart that is honest
+ * about being provisional.
+ *
+ * Resolution runs at the 5Hz sweep because orbits crawl; the *bearing* is
+ * solved every frame in stepFlight, because it has to track the ship's own
+ * rotation and a compass that updates five times a second is worse than none.
+ */
+function resolveNavTarget(st: ReturnType<typeof useGame.getState>['s']): void {
+  const f = flightLive;
+  const pin = pinnedWaypoint(st);
+  if (!pin || !resolveWaypoint(st, pin.ref, NAV_POS)) {
+    navTargetValid = false;
+    f.navLabel = '';
+    f.nav = null;
+    return;
+  }
+  navTargetValid = true;
+  f.navLabel = pin.label;
+  navBrakeRate = RESP_BRAKE / massFactor(st.expedition);
+}
+
+/** Solve the cockpit readout against the cached target. Called every frame. */
+function solveNavThisFrame(): void {
+  const f = flightLive;
+  if (!navTargetValid) {
+    f.nav = null;
+    return;
+  }
+  NAV_POS_T[0] = NAV_POS.x;
+  NAV_POS_T[1] = NAV_POS.y;
+  NAV_POS_T[2] = NAV_POS.z;
+  NAV_SELF_POS[0] = f.pos.x;
+  NAV_SELF_POS[1] = f.pos.y;
+  NAV_SELF_POS[2] = f.pos.z;
+  NAV_SELF_VEL[0] = f.vel.x;
+  NAV_SELF_VEL[1] = f.vel.y;
+  NAV_SELF_VEL[2] = f.vel.z;
+  f.nav = solveNav(
+    {
+      pos: NAV_SELF_POS,
+      vel: NAV_SELF_VEL,
+      yaw: f.yaw,
+      pitch: f.pitch,
+      // The rig sheds speed exponentially, and a loaded hold divides the
+      // response — so the room needed to stop grows with the cargo, which is
+      // the whole point of hauling anything.
+      brakeRate: navBrakeRate,
+    },
+    NAV_POS_T,
+  );
+}
+
+/** Turn a structural `WaypointRef` into a position in flight space. */
+function resolveWaypoint(
+  st: ReturnType<typeof useGame.getState>['s'],
+  ref: WaypointRef,
+  out: Vector3,
+): boolean {
+  if (ref.at === 'home') {
+    out.set(0, 0, 0);
+    return true;
+  }
+  if (ref.at === 'site') {
+    const site = sitesForSeed(st.seed).find((s) => s.def.id === ref.id);
+    if (!site) return false;
+    out.set(site.pos[0], site.pos[1], site.pos[2]);
+    return true;
+  }
+  if (ref.kind === 'galaxy') {
+    out.copy(galaxyPosition(ref.index, st.seed));
+    return true;
+  }
+  if (ref.kind === 'system') {
+    out.copy(focusSeat({ kind: 'system', index: ref.index }, st.seed, st.run.galaxies));
+    return true;
+  }
+
+  // A world: its parent system's seat, plus where it is in its orbit now. The
+  // orbit matters — a world half a lap away is a different bearing entirely.
+  const systemIndex = Math.floor(ref.index / C.PLANETS_PER_SYSTEM);
+  const slot = ref.index % C.PLANETS_PER_SYSTEM;
+  if (systemIndex >= st.run.systems) {
+    // Still assembling: it rides the current anchor rather than a formed seat.
+    out.copy(CURRENT_SYSTEM_ANCHOR);
+    const o = orbitSlot(slot);
+    applyOrbit(out, worldOrbit(o.radius, o.phase, o.speed), flightLive.clock);
+    return true;
+  }
+  out.copy(focusSeat({ kind: 'system', index: systemIndex }, st.seed, st.run.galaxies));
+  const o = visitOrbit(slot);
+  applyOrbit(out, worldOrbit(o.radius, o.phase, o.speed), flightLive.clock);
+  return true;
+}
+
+/** Offset a seat by an orbit, matching `bodyPosition`'s own arithmetic. */
+function applyOrbit(out: Vector3, orbit: FlightBody['orbit'], t: number): void {
+  if (!orbit) return;
+  const a = t * orbit.speed + orbit.phase;
+  out.x += Math.cos(a) * orbit.xAmp;
+  out.y += Math.sin(a * orbit.yFreq) * orbit.yAmp;
+  out.z += Math.sin(a) * orbit.zAmp;
 }
 
 /** How close counts as arrived at a destination world. */
@@ -1358,6 +1492,8 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       locked: flightLive.locked,
       scanProgress: flightLive.scanProgress,
       prompt: flightLive.prompt,
+      nav: flightLive.nav,
+      navLabel: flightLive.navLabel,
       range: flightLive.range,
     }),
     input: flightInput,

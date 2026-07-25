@@ -29,11 +29,13 @@ describe('the waypoint registry', () => {
     const s = withWorlds(6);
     const list = waypoints(s);
 
-    for (const world of s.run.completedPlanets) {
+    for (const [index, world] of s.run.completedPlanets.entries()) {
       const entry = list.find((w) => w.id === waypointId('world', world.lifetimeIndex));
       expect(entry, `no waypoint for ${world.name}`).toBeDefined();
       expect(entry!.label).toBe(world.name);
-      expect(entry!.ref).toEqual({ at: 'focus', kind: 'world', index: world.lifetimeIndex - 1 });
+      // The ref is the position in this commission, which is what focusSeat
+      // divides to find the parent system — not the lifetime index.
+      expect(entry!.ref).toEqual({ at: 'focus', kind: 'world', index });
     }
     expect(list.filter((w) => w.kind === 'system').length).toBe(s.run.systems);
   }, 60_000);

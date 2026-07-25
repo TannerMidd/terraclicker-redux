@@ -82,13 +82,18 @@ export function waypoints(state: GameState): Waypoint[] {
     known: true,
   });
 
-  for (const world of state.run.completedPlanets) {
+  // The id is keyed on lifetimeIndex, which is stable forever; the *ref* uses
+  // the position within this commission, because that is what `focusSeat`
+  // divides by PLANETS_PER_SYSTEM to find a world's parent system. The two
+  // coincide only during run 1, which is precisely the kind of coincidence
+  // that ships and then breaks on somebody's second commission.
+  for (const [index, world] of state.run.completedPlanets.entries()) {
     list.push({
       id: waypointId('world', world.lifetimeIndex),
       kind: 'world',
       label: world.name,
       detail: `${world.type} · delivered`,
-      ref: { at: 'focus', kind: 'world', index: world.lifetimeIndex - 1 },
+      ref: { at: 'focus', kind: 'world', index },
       known: true,
     });
   }

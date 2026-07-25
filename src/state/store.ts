@@ -258,6 +258,8 @@ export const actions = {
   startMegaproject: (id: string) => dispatch({ type: 'startMegaproject', id }),
   resolveInterdiction: (outcome: 'outrun' | 'complied' | 'deterred') =>
     dispatch({ type: 'resolveInterdiction', outcome }),
+  /** Point the helm at a chart waypoint, or null to clear it. */
+  setWaypoint: (id: string | null) => dispatch({ type: 'setWaypoint', id }),
 };
 
 // Dev hook for headless verification and manual poking.

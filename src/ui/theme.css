@@ -2393,3 +2393,163 @@ button {
 .fh-interdiction .fi-line { font-size: 13px; margin-top: 3px; line-height: 1.45; }
 .fh-interdiction .fi-bar { height: 3px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 7px; overflow: hidden; }
 .fh-interdiction .fi-bar i { display: block; height: 100%; background: #eda893; }
+
+/* ————— Civil Navigation, Provisional ————— */
+
+/*
+ * The bearing ribbon. Sits above the reticle rather than below it, so it does
+ * not fight the target readout for the same strip of canopy, and fades out
+ * entirely when nothing is pinned — an empty compass is worse than no compass.
+ */
+.fh-nav {
+  position: absolute;
+  left: 50%;
+  top: calc(50% - 118px);
+  transform: translateX(-50%);
+  width: min(420px, 52vw);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
+}
+.fh-nav.on { opacity: 1; }
+
+.fn-strip {
+  position: relative;
+  height: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--ink-faint) 45%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-right: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+}
+.fn-centre {
+  position: absolute;
+  left: 50%;
+  top: -1px;
+  width: 1px;
+  height: 7px;
+  background: var(--ink-faint);
+}
+.fn-marker {
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4.5px;
+  background: var(--magrathea, #7fd1c8);
+  clip-path: polygon(50% 100%, 0 0, 100% 0);
+  transition: transform 90ms linear;
+}
+/* Past the strip's reach the marker pins to an edge and hollows out: the
+   waypoint is behind you, and the ribbon says so without extra chrome. */
+.fn-marker.astern { opacity: 0.55; }
+
+.fh-nav b {
+  display: block;
+  margin-top: 5px;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.fh-nav span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.fh-nav.hot span { color: var(--warn, #e8b26a); }
+.fh-nav.hot .fn-marker { background: var(--warn, #e8b26a); }
+
+/* ————— The chart panel ————— */
+
+.cp-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0 12px;
+}
+.cp-groups { display: flex; flex-wrap: wrap; gap: 4px; }
+.cp-group {
+  padding: 3px 9px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 30%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cp-group:hover { color: var(--ink-dim); }
+.cp-group.on {
+  color: var(--bg, #0b0e14);
+  background: var(--ink-dim);
+  border-color: var(--ink-dim);
+}
+.cp-search {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink-faint) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 4px;
+}
+
+.cp-list { display: flex; flex-direction: column; gap: 2px; }
+.cp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  cursor: pointer;
+  color: inherit;
+}
+.cp-row:hover { background: color-mix(in srgb, var(--ink-faint) 8%, transparent); }
+.cp-row.pinned {
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 10%, transparent);
+}
+.cp-main { flex: 1; min-width: 0; }
+.cp-main b {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-main em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.cp-kind {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+.cp-pin {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-faint);
+  min-width: 40px;
+  text-align: right;
+}
+.cp-row.pinned .cp-pin { color: var(--magrathea, #7fd1c8); }
