@@ -62,13 +62,9 @@ import {
   placeRig,
   prospectSeam,
   refreshJobBoard,
-  stepRigs,
 } from './freight';
-import {
-  startMegaproject,
-  stepMegaprojectSalvage,
-  stepMegaprojects,
-} from './megaprojects';
+import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
+import { creditDeferredWork } from './deferred';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -766,14 +762,16 @@ export function step(
       }
     }
 
-    // 2b) The two systems that deliberately keep working while nobody is
-    //     watching. A rig was left behind precisely so it would, and a
-    //     megaproject's whole point is being what happened while you were
-    //     gone — see engine/megaprojects.ts for why it also ignores
-    //     offline efficiency.
-    if (stepRigs(state, TICK)) dirty = true;
+    // 2b) Work that keeps happening while nobody is watching. This credits
+    //     only the span the simulation actually ran; `stepOffline` credits the
+    //     remainder the offline cap withheld, so the total is always the real
+    //     elapsed time. See engine/deferred.ts for the contract.
+    //
+    //     Salvage is not deferred work: the structure is a construction
+    //     contract and finishes on wall-clock time, but the salvage it yields
+    //     afterwards is unbounded income and stays capped like TU.
     stepMegaprojectSalvage(state, TICK);
-    if (stepMegaprojects(state, effects, TICK)) dirty = true;
+    if (creditDeferredWork(state, TICK, effects)) dirty = true;
 
     // 3) Spawns (suppressed offline; the universe waits for an audience).
     if (!offline) {
@@ -850,7 +848,9 @@ export function step(
 
 /**
  * Offline catch-up: same physics, chunked for responsiveness, spawns
- * suppressed, efficiency and cap applied. Returns the simulated ms.
+ * suppressed, efficiency and cap applied to *production*. Returns the
+ * simulated ms — which is not the elapsed ms, and the difference is the point
+ * of the second half of this function.
  */
 export function stepOffline(state: GameState, elapsedWallMs: number, opts: StepOptions = {}): {
   simulatedMs: number;
@@ -868,6 +868,14 @@ export function stepOffline(state: GameState, elapsedWallMs: number, opts: StepO
     effects.push(...r.effects);
     remaining -= chunk;
   }
+
+  // The loop above credited deferred work for `simulatedMs` along with
+  // everything else. Deferred work is not subject to the cap, so it is owed
+  // the rest of the absence: a monument that takes eighteen hours has to be
+  // finishable by eighteen hours away, not by eighteen hours of the eight the
+  // cap was willing to simulate.
+  creditDeferredWork(state, elapsedWallMs - simulatedMs, effects);
+
   return { simulatedMs, tuGained: state.tu.sub(tuBefore), effects };
 }
 

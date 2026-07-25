@@ -173,10 +173,33 @@ Nothing else is meaningful until the numbers survive Thursday.
 - **0.6 Measure the frame budget.** Numbers land back in this file as the gate
   on Phases 3–4.
 
+### After 0.4 (deferred work exists)
+
+`engine/deferred.ts` is the first substrate to land, and it arrived early
+because a Phase 0 bug turned out to be its first customer. Contract: creditors
+are paid in **real elapsed milliseconds**, ignore the offline cap and offline
+efficiency, must be pure linear functions of time (clamping allowed), and must
+not read production, rng or player presence. That last rule is the load-bearing
+one — if the work done depends on how rich you are, it is income, and income
+belongs in the ordinary simulation where the cap can reach it.
+
+The split is the trick: the tick loop credits the span the simulation actually
+ran, `stepOffline` credits the remainder the cap withheld, and the sum is
+always true elapsed time however the absence was chunked.
+
+Current creditors: **megaprojects** (the documented bug) and **rigs** (same bug,
+same claim in the comments, and bounded by `def.cap` so they saturate rather
+than run away). Megaproject **salvage** was deliberately left out under rule 3.
+
+Later consumers, per the substrate table: flight infrastructure construction
+and biography follow-ups. Tests: 159.
+
 ## Phase 1 — Substrates
 
 Built once, with every consumer listed above in mind. Save-schema changes go
 through `engine/save/schema.ts` with migrations and determinism intact.
+
+Note that the deferred-work queue is already done — see 0.4 above.
 
 ## Phase 2 — Make repetition pleasant
 

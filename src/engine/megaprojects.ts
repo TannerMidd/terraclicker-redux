@@ -11,6 +11,15 @@
  *    were gone. It also ignores `offlineEfficiency` — a construction crew
  *    does not work at 60% because nobody is looking at them.
  *
+ *    This was documented here long before it was true. `stepMegaprojects` ran
+ *    only inside `step()`, and `stepOffline` capped the span it simulated at
+ *    eight hours, so an eighteen-hour monument could not be finished by an
+ *    eighteen-hour absence however patient the player was. Construction is now
+ *    credited through engine/deferred.ts, which is paid in real elapsed time
+ *    and answers to neither the cap nor the efficiency multiplier. The salvage
+ *    a finished project yields is *not* routed there: that is unbounded income
+ *    and stays capped like TU.
+ *
  * 2. **They survive prestige.** `state.megaprojects` deliberately sits
  *    outside `run`. Magrathea buys the portfolio; it does not buy the
  *    monuments. This is the only permanent thing a player can build, which is
