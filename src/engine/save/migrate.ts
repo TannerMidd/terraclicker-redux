@@ -2,6 +2,7 @@ import { createExpeditionState } from '../deepField';
 import { createFreightState } from '../freight';
 import { createSubEthaState } from '../subEtha';
 import { createOperationsState } from '../operations';
+import { createStandingOrders } from '../standingOrders';
 import { initRng } from '../rng';
 import { deriveLegacyInstallations } from '../worldHardware';
 import { C } from '../../content/constants';
@@ -406,6 +407,15 @@ export const MIGRATIONS: readonly Migration[] = [
       }
       return { ...raw, megaprojects: out };
     },
+  },
+  {
+    // v13 → v14: Standing Orders. Everything arrives off. Automation is a
+    // thing the player writes down, and an existing save has written nothing
+    // down yet — switching any of it on for them would be the automation
+    // playing the game, which is the exact failure this system is shaped to
+    // avoid.
+    from: 13,
+    migrate: (raw) => ({ ...raw, standingOrders: createStandingOrders() }),
   },
 ];
 

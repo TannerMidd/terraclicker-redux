@@ -2737,3 +2737,93 @@ button {
 .mc-list li.mc-built span { color: var(--ink); }
 .mc-list li.mc-asking span { color: var(--ink); }
 .mc-list li.mc-rumour span { color: var(--ink-faint); font-style: italic; }
+
+/* ————— Standing Orders (a form, not a dashboard) ————— */
+
+.so-master {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 12px 0 4px;
+  padding: 9px 11px;
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--magrathea, #7fd1c8) 32%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.so-master input { margin-top: 3px; flex: none; }
+.so-master b { display: block; font-size: 13px; color: var(--ink); }
+.so-master em,
+.so-toggle em,
+.so-slider em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+
+.so-block {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--ink-faint) 18%, transparent);
+}
+.so-head {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 8px;
+}
+.so-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 9px;
+  cursor: pointer;
+}
+.so-toggle input { margin-top: 3px; flex: none; }
+.so-toggle b { display: block; font-size: 12px; color: var(--ink); }
+
+.so-slider { margin: 10px 0; }
+.so-slider label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink); }
+.so-slider label span { color: var(--magrathea, #7fd1c8); font-variant-numeric: tabular-nums; }
+.so-slider input[type='range'] { width: 100%; margin: 4px 0 2px; }
+
+.so-list-head {
+  margin: 10px 0 6px;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+.so-list-head i { color: var(--ink-faint); font-style: normal; }
+.so-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.so-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.so-chip:hover { color: var(--ink-dim); }
+.so-chip.on {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 10%, transparent);
+}
+.so-chip b {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  font-size: 9px;
+  border-radius: 50%;
+  color: var(--bg, #0b0e14);
+  background: var(--magrathea, #7fd1c8);
+}
+.so-chip.done { opacity: 0.45; text-decoration: line-through; }

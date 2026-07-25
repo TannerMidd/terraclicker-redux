@@ -67,6 +67,12 @@ import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
+import {
+  createStandingOrders,
+  sanitizeOrders,
+  standingOrderInputs,
+  standingOrdersUnlocked,
+} from './standingOrders';
 import { SORTIE_FLAG } from '../content/firstSortie';
 import { REFIT_BY_ID } from '../content/refit';
 import {
@@ -81,6 +87,10 @@ import {
 } from './types';
 
 const EARTH_NOTICE_DELAY_MS = 600_000; // 10 real minutes after Earth completes
+
+/** How often Standing Orders may act. Roughly twice a second, by hand. */
+const STANDING_ORDER_EVERY_MS = 500;
+let standingOrderTickMs = 0;
 
 /** Flags the UI is allowed to set. See the `setFlag` input. */
 const SETTABLE_FLAGS = new Set([SORTIE_FLAG]);
@@ -141,6 +151,7 @@ export function newGame(seed: number, nowWall: number): GameState {
     expedition: createExpeditionState(),
     megaprojects: {},
     worldRecords: {},
+    standingOrders: createStandingOrders(),
     subEtha: createSubEthaState(),
     buffs: [],
     bubbles: [],
@@ -388,6 +399,13 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       // An allowlist, so a flag is a thing the engine agreed to remember
       // rather than anything the UI felt like writing into the save.
       if (SETTABLE_FLAGS.has(input.id)) state.flags[input.id] = input.value;
+      break;
+    }
+    case 'setStandingOrders': {
+      // Sanitized on the way in: a queue full of ids the game does not have
+      // is a queue that silently does nothing, which is worse than a rejected
+      // edit because it looks like it worked.
+      if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
       break;
     }
     case 'resolveInterdiction': {
@@ -810,6 +828,22 @@ export function step(
     //     afterwards is unbounded income and stays capped like TU.
     stepMegaprojectSalvage(state, TICK);
     if (creditDeferredWork(state, TICK, effects)) dirty = true;
+
+    // 2c) Standing Orders. Foreground only, and at a deliberately human
+    //     cadence: automation that spends the bank inside one frame is
+    //     indistinguishable from a bug, and a slow hand stays interruptible.
+    //     It emits the same Inputs a click does, so it can do nothing a player
+    //     could not, and every affordability and unlock rule already applies.
+    if (!offline && state.standingOrders.enabled) {
+      standingOrderTickMs += TICK;
+      if (standingOrderTickMs >= STANDING_ORDER_EVERY_MS) {
+        standingOrderTickMs = 0;
+        for (const auto of standingOrderInputs(state, derived, state.standingOrders)) {
+          handleInput(state, auto, effects, opts);
+          dirty = true;
+        }
+      }
+    }
 
     // 3) Spawns (suppressed offline; the universe waits for an audience).
     if (!offline) {

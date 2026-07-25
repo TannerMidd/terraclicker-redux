@@ -2,6 +2,8 @@ import type { Decimal } from './num';
 import type { RngState } from './rng';
 import type { SituationInstance } from './situations';
 import type { SubEthaKind } from '../content/subEtha';
+import type { StandingOrders } from './standingOrders';
+export type { StandingOrders };
 
 export type AspectId = 'thermal' | 'atmo' | 'hydro' | 'bio';
 export const ASPECTS: readonly AspectId[] = ['thermal', 'atmo', 'hydro', 'bio'];
@@ -347,6 +349,8 @@ export interface GameState {
    * deliberately: the portfolio sells, the memory does not.
    */
   worldRecords: Record<string, WorldRecord>;
+  /** Player-written automation policies. See engine/standingOrders.ts. */
+  standingOrders: StandingOrders;
 
   lifetime: {
     tuEarned: Decimal;
@@ -456,7 +460,8 @@ export type Input =
    * Set a narrative flag. Deliberately narrow: only ids the engine already
    * knows about are accepted, so the UI cannot invent save state.
    */
-  | { type: 'setFlag'; id: string; value: number };
+  | { type: 'setFlag'; id: string; value: number }
+  | { type: 'setStandingOrders'; orders: StandingOrders };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }

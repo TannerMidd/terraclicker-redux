@@ -260,6 +260,16 @@ export const saveSchema = z.object({
       ),
     }),
   ),
+  standingOrders: z.object({
+    enabled: z.boolean(),
+    reserveSeconds: z.number().min(0),
+    autoBuild: z.boolean(),
+    buildPriority: z.array(z.string()),
+    autoUpgrade: z.boolean(),
+    autoResearch: z.boolean(),
+    researchQueue: z.array(z.string()),
+    pauseOnSituation: z.boolean(),
+  }),
   subEtha: z.object({
     log: z.array(
       z.object({

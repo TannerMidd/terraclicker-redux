@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { computeDerived, newGame, step, stepOffline } from '../engine/sim';
 import { buildCircular, type CircularItem } from '../engine/circular';
+import type { StandingOrders } from '../engine/standingOrders';
 import { deserialize, exportSave, importSave, serialize } from '../engine/save/codec';
 import type { Decimal } from '../engine/num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type Input, type SimEffect, type SystemSpecialty } from '../engine/types';
@@ -269,6 +270,7 @@ export const actions = {
   setWaypoint: (id: string | null) => dispatch({ type: 'setWaypoint', id }),
   markVisited: (id: string) => dispatch({ type: 'markVisited', id }),
   setFlag: (id: string, value: number) => dispatch({ type: 'setFlag', id, value }),
+  setStandingOrders: (orders: StandingOrders) => dispatch({ type: 'setStandingOrders', orders }),
 };
 
 // Dev hook for headless verification and manual poking.
