@@ -65,6 +65,7 @@ import {
 } from './freight';
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
+import { createWorldRecord } from './worldRecords';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -134,6 +135,7 @@ export function newGame(seed: number, nowWall: number): GameState {
     operations: createOperationsState(),
     expedition: createExpeditionState(),
     megaprojects: {},
+    worldRecords: {},
     subEtha: createSubEthaState(),
     buffs: [],
     bubbles: [],
@@ -490,6 +492,13 @@ function completePlanet(
     bonus,
   });
   state.run.completedPlanets.push(completed);
+  // The world starts having a life after delivery. Outside `run`, so selling
+  // the portfolio loses the world without un-remembering it.
+  state.worldRecords[String(completed.lifetimeIndex)] = createWorldRecord(
+    completed,
+    state.run.number,
+    state.gameTimeMs,
+  );
   progressContractOnPlanet(state, completed, derived.totalBuildings, effects);
 
   // Earth setpiece: ten minutes after Earth completes, a demolition notice arrives.

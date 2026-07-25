@@ -230,6 +230,33 @@ export const saveSchema = z.object({
       done: z.boolean(),
     }),
   ),
+  worldRecords: z.record(
+    z.string(),
+    z.object({
+      lifetimeIndex: z.number().int().min(1),
+      name: z.string(),
+      type: z.enum(['terrestrial', 'ice', 'desert', 'volcanic', 'ocean', 'gasgiant']),
+      bottleneck: aspectId,
+      commissionNumber: z.number().int().min(1),
+      deliveredAtGameMs: z.number().min(0),
+      installationCount: z.number().int().min(0),
+      quirkCount: z.number().int().min(0),
+      survey: z.string().nullable(),
+      history: z.array(
+        z.object({
+          kind: z.enum([
+            'petitionAnswered',
+            'petitionIgnored',
+            'situationResolved',
+            'visited',
+            'charter',
+          ]),
+          id: z.string(),
+          atGameMs: z.number().min(0),
+        }),
+      ),
+    }),
+  ),
   subEtha: z.object({
     log: z.array(
       z.object({

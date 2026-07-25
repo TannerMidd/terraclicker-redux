@@ -299,6 +299,66 @@ export const MIGRATIONS: readonly Migration[] = [
       };
     },
   },
+  {
+    // v9 → v10: worlds get a life after delivery (engine/worldRecords.ts).
+    //
+    // Records are reconstructed for every world this save can still see — the
+    // current portfolio and the Heritage archive — because the delivery facts
+    // traits are derived from are all present on those records already. Worlds
+    // sold in earlier commissions are genuinely gone from the save and cannot
+    // be recovered; they get no record rather than a fabricated one. The Guide
+    // files this under "the archive begins today".
+    //
+    // Every reconstructed world starts with an empty history. Nothing has
+    // happened to them yet as far as this system is concerned, which is true.
+    from: 9,
+    migrate: (raw) => {
+      const obj = (k: string): Record<string, unknown> =>
+        typeof raw[k] === 'object' && raw[k] !== null ? (raw[k] as Record<string, unknown>) : {};
+      const run = obj('run');
+      const operations = obj('operations');
+      const arr = (v: unknown): Record<string, unknown>[] =>
+        Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
+
+      const commissionNumber = typeof run['number'] === 'number' ? (run['number'] as number) : 1;
+      const worldRecords: Record<string, unknown> = {};
+
+      const add = (world: Record<string, unknown>, commission: number) => {
+        const lifetimeIndex = world['lifetimeIndex'];
+        if (typeof lifetimeIndex !== 'number') return;
+        const key = String(lifetimeIndex);
+        if (worldRecords[key]) return;
+        const installations = Array.isArray(world['installations']) ? world['installations'] : [];
+        const quirks = Array.isArray(world['quirks']) ? world['quirks'] : [];
+        worldRecords[key] = {
+          lifetimeIndex,
+          name: typeof world['name'] === 'string' ? world['name'] : `World ${lifetimeIndex}`,
+          type: typeof world['type'] === 'string' ? world['type'] : 'terrestrial',
+          bottleneck: typeof world['bottleneck'] === 'string' ? world['bottleneck'] : 'thermal',
+          commissionNumber: commission,
+          deliveredAtGameMs: 0,
+          installationCount: installations.length,
+          quirkCount: quirks.length,
+          survey: typeof world['survey'] === 'string' ? world['survey'] : null,
+          history: [],
+        };
+      };
+
+      // Heritage first: it carries its own commissionNumber, which is better
+      // information than the current run's.
+      for (const world of arr(operations['heritageWorlds'])) {
+        add(
+          world,
+          typeof world['commissionNumber'] === 'number'
+            ? (world['commissionNumber'] as number)
+            : commissionNumber,
+        );
+      }
+      for (const world of arr(run['completedPlanets'])) add(world, commissionNumber);
+
+      return { ...raw, worldRecords };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

@@ -290,6 +290,33 @@ through `engine/save/schema.ts` with migrations and determinism intact.
 
 Note that the deferred-work queue is already done — see 0.4 above.
 
+### World record store — done
+
+`engine/worldRecords.ts`, save v9 → v10. Keyed by `lifetimeIndex`, which is
+unique across every commission and never reset.
+
+The decision worth recording: **records live outside `run`.**
+`run.completedPlanets` is sold at prestige and that is correct — Magrathea buys
+the portfolio, and a commission that left nothing behind would make the sale
+meaningless. But "worlds become places you remember" cannot survive a store
+that empties every few hours. So the portfolio still sells and the archive
+persists: `activeWorldRecords()` is the live set, `allWorldRecords()` is
+everything the Guide still remembers. Selling a commission loses the worlds
+without un-remembering them.
+
+Traits are **derived, never stored** — from the world's own delivery facts plus
+its recorded history, consuming no rng. A trait is a consequence, not a roll,
+which means the derivation can improve later without a migration.
+
+The v9 → v10 migration reconstructs records for the current portfolio and the
+Heritage archive, which is everything a v9 save can still see. Worlds sold in
+earlier commissions are genuinely gone and get no record rather than a
+fabricated one. Tests: 170.
+
+Consumers still to come: biographies (Phase 3), Charters (Phase 3),
+two-resolution petitions (Phase 3), passenger sourcing (Phase 3), statutes
+(Phase 5), Morning Circular (Phase 2).
+
 ## Phase 2 — Make repetition pleasant
 
 Civil Navigation and the first sortie; Standing Orders; the Morning Circular

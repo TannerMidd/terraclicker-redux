@@ -132,6 +132,40 @@ export interface HeritageWorldRecord extends CompletedPlanetRecord {
   preservedAtGameMs: number;
 }
 
+/** Something that happened to a world after it was delivered. */
+export interface WorldRecordEvent {
+  kind:
+    | 'petitionAnswered'
+    | 'petitionIgnored'
+    | 'situationResolved'
+    | 'visited'
+    | 'charter';
+  /** Content id of whatever caused it, where there is one. */
+  id: string;
+  atGameMs: number;
+}
+
+/**
+ * A world's life after delivery. Keyed by `lifetimeIndex`, which is unique
+ * across every commission and never reset, and stored outside `run` so that
+ * selling a portfolio loses the worlds without un-remembering them.
+ * See engine/worldRecords.ts.
+ */
+export interface WorldRecord {
+  lifetimeIndex: number;
+  name: string;
+  type: PlanetType;
+  bottleneck: AspectId;
+  /** Which commission delivered it. */
+  commissionNumber: number;
+  deliveredAtGameMs: number;
+  /** Delivery facts that traits are derived from, kept so traits stay pure. */
+  installationCount: number;
+  quirkCount: number;
+  survey: string | null;
+  history: WorldRecordEvent[];
+}
+
 export interface OperationsState {
   offers: ContractOffer[];
   active: ActiveContract | null;
@@ -285,6 +319,11 @@ export interface GameState {
    * follows, which makes it the only permanent thing the player can build.
    */
   megaprojects: Record<string, MegaprojectState>;
+  /**
+   * lifetimeIndex → what that world has been doing since. Outside `run`
+   * deliberately: the portfolio sells, the memory does not.
+   */
+  worldRecords: Record<string, WorldRecord>;
 
   lifetime: {
     tuEarned: Decimal;
