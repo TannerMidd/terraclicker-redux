@@ -98,22 +98,40 @@ The four bots that never prestige are **identical to baseline**, because
 `bpEarned` is 0 for all of them and the BP line was 1.0 under either curve. The
 first ninety minutes of a first run is untouched by this change. Tests: 150.
 
-Two findings worth carrying forward:
+**No harness bot had ever spent a Blueprint.** DESIGN.md M3's acceptance
+criterion — "run 2 ≥45% faster to prior peak" — was therefore never exercised
+in CI. Measured now: 26.4% on passive BP alone, **43.1%** once perks are bought,
+and three of the nine perks a naive spender buys are offline-only, so they
+contribute nothing to a foreground measurement. A `catalogue-spender` bot now
+lives in the harness so this stays visible. Turning the band into a CI
+assertion belongs to 0.5.
 
-- **The Operations gap fell from 129× to 6.7× on its own** (34.2M vs 5.11M
-  TU/s). Most of that gap was never the specialty multipliers — it was the
-  divergence loop amplifying an early production lead through 90 minutes of
-  compounding purchases. 6.7× sits inside the 3–8× band 0.2 was aiming for, so
-  **0.2 must re-measure before touching `SYSTEM_SPECIALTY_PRODUCTION_MULT`**;
-  applying a second fix to a problem that one fix already solved would
-  over-correct it into irrelevance.
-- **No harness bot had ever spent a Blueprint.** DESIGN.md M3's acceptance
-  criterion — "run 2 ≥45% faster to prior peak" — was therefore never exercised
-  in CI. Measured now: 26.4% on passive BP alone, **43.1%** once perks are
-  bought (and three of the nine perks a naive spender buys are offline-only, so
-  they contribute nothing to a foreground measurement). A `catalogue-spender`
-  bot now lives in the harness so this stays visible. Turning that band into a
-  CI assertion belongs to 0.5.
+### After 0.2 (contract Blueprints reserved for constraining work)
+
+Operations premium against `aspect-optimizer`, measured at 90 minutes:
+
+| | TU/s | premium | contract BP | appraisal BP |
+|---|---|---|---|---|
+| baseline | 659M | **123×** | 33 | 27 |
+| after 0.1 | 34.2M | 6.4× | 30 | 24 |
+| after 0.2 | 10.4M | **1.95×** | 13 | 21 |
+
+All three of DESIGN.md §3.10's stated constraints now hold: dispatch bonuses
+are smaller than the system ladder (+4% against +15%, and they always were),
+contracts pay modest BP, and Magrathea mints more Blueprints than the board.
+
+Note the shape of the sequence — most of the 123× was never the specialty
+multipliers. It was the BP loop amplifying an early Operations lead through
+ninety minutes of compounding purchases. Only 6.4× of it was Operations, and
+only the last step was a deliberate nerf. **If Operations later feels
+unrewarding, the lever is `SYSTEM_SPECIALTY_PRODUCTION_MULT`, not contract BP**
+— restoring board Blueprints would put the design violation back.
+
+1.95× sits below the 3–8× band this task originally aimed at. That band was a
+guess made before measuring; the design's own language — dispatch "changes
+strategy without replacing it" — is the better standard, and 1.95× meets it.
+Three assertions in `test/operations-balance.test.ts` now pin all of this.
+Tests: 153.
 
 ## Phase 0 — Economic reality permit
 

@@ -66,16 +66,31 @@ const FACTION_BY_TEMPLATE: Record<ContractTemplateId, FactionId> = {
   timed: 'vogon',
 };
 
+/**
+ * DESIGN.md §3.10: contracts pay "modest BP and faction reputation". Modest per
+ * contract was always true — nothing here has ever paid more than 1 — but the
+ * board files offers continuously, and twenty-five of them out-minted the
+ * portfolio sale that the entire prestige layer is built around. Magrathea is
+ * supposed to be where Blueprints come from; the Guide is supposed to be where
+ * standing comes from.
+ *
+ * So BP is now reserved for the two objectives that genuinely constrain a
+ * build: forming a system on request, and delivering a world under a lean
+ * filing. Routine work — deliveries, surveys, bottlenecks, beating a clock —
+ * pays reputation instead, which is not a lesser currency: it gates the
+ * megaprojects and it raises the endorsement in `standingRewardBpBonus`, which
+ * remains the capped path from good standing back to Blueprints.
+ */
 const REWARD_BY_TEMPLATE: Record<
   ContractTemplateId,
   { rewardBp: number; rewardReputation: number }
 > = {
   delivery: { rewardBp: 0, rewardReputation: 2 },
   system: { rewardBp: 1, rewardReputation: 3 },
-  bottleneck: { rewardBp: 1, rewardReputation: 2 },
+  bottleneck: { rewardBp: 0, rewardReputation: 3 },
   survey: { rewardBp: 0, rewardReputation: 2 },
   lean: { rewardBp: 1, rewardReputation: 3 },
-  timed: { rewardBp: 1, rewardReputation: 3 },
+  timed: { rewardBp: 0, rewardReputation: 4 },
 };
 
 export function standingRewardBpBonus(reputation: number): number {

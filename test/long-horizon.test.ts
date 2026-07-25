@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { newGame, step, stepOffline, computeDerived } from '../src/engine/sim';
-import { prestigeBpFor, bulkCost, upgradeVisible } from '../src/engine/economy';
-import { BUILDINGS } from '../src/content/buildings';
-import { UPGRADES } from '../src/content/upgrades';
+import { prestigeBpFor } from '../src/engine/economy';
 import { C } from '../src/content/constants';
 import { D } from '../src/engine/num';
-import { ASPECTS, type AspectId, type GameState, type Input } from '../src/engine/types';
-
-const OPTS = { utcDay: 3 };
-const TICK = 250;
+import { buyer, OPTS, TICK } from '../balance/bots';
+import type { Input } from '../src/engine/types';
 
 /**
  * These tests exist because the game used to stop being a game after about
@@ -17,48 +13,6 @@ const TICK = 250;
  * exponential, Infinity by prestige 19. Everything here is a guard on that
  * shape rather than on any particular number: the loop must stay broken.
  */
-
-function bottleneck(state: GameState): AspectId {
-  let result: AspectId = 'thermal';
-  let lowest = Number.POSITIVE_INFINITY;
-  for (const aspect of ASPECTS) {
-    const fraction = state.planet.gauges[aspect].div(state.planet.targets[aspect]).toNumber();
-    if (fraction < lowest) {
-      lowest = fraction;
-      result = aspect;
-    }
-  }
-  return result;
-}
-
-function buyer(state: GameState): Input[] {
-  const inputs: Input[] = [];
-  const d = computeDerived(state, OPTS);
-  for (const u of UPGRADES) {
-    if (upgradeVisible(u, state, d) && state.tu.gte(u.cost)) {
-      inputs.push({ type: 'buyUpgrade', id: u.id });
-      break;
-    }
-  }
-  const focus = bottleneck(state);
-  let bestId: string | null = null;
-  let bestValue = 0;
-  for (const b of BUILDINGS) {
-    if (b.unique && (state.buildings[b.id] ?? 0) > 0) continue;
-    const owned = state.buildings[b.id] ?? 0;
-    const cost = bulkCost(b.id, owned, 1, d);
-    if (state.tu.lt(cost)) continue;
-    const aspectSum = Object.values(b.aspects).reduce((a, v) => a + (v ?? 0), 0);
-    const value = (b.tuPerSec + aspectSum + (b.aspects[focus] ?? 0) * 3) / cost.toNumber();
-    if (value > bestValue) {
-      bestValue = value;
-      bestId = b.id;
-    }
-  }
-  if (bestId) inputs.push({ type: 'buyBuilding', id: bestId, qty: 'max' });
-  for (const bub of state.bubbles) inputs.push({ type: 'catchBubble', id: bub.id });
-  return inputs;
-}
 
 describe('long horizons stay finite', () => {
   // Ten, not twenty. Before the fix an adversarial bot reached prestige 19 in
@@ -102,9 +56,6 @@ describe('long horizons stay finite', () => {
   });
 
   it('the BP passive bonus is additive, so production cannot compound into it', () => {
-    const base = newGame(20260723, 0);
-    base.buildings['seedProbe'] = 10;
-
     const at = (bpEarned: number) => {
       const s = newGame(20260723, 0);
       s.buildings['seedProbe'] = 10;

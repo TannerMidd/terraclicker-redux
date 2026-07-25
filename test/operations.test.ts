@@ -131,13 +131,17 @@ describe('Operations contract board', () => {
     expect(standingRewardBpBonus(20)).toBe(1);
     expect(standingRewardBpBonus(10_000)).toBe(1);
 
+    // Blueprints are reserved for the two objectives that constrain a build:
+    // forming a system to order, and delivering under a lean filing. The rest
+    // pay reputation, which gates megaprojects and feeds the capped
+    // endorsement path above. See REWARD_BY_TEMPLATE in engine/operations.ts.
     const expectedBase: Record<ContractTemplateId, number> = {
       delivery: 0,
       system: 1,
-      bottleneck: 1,
+      bottleneck: 0,
       survey: 0,
       lean: 1,
-      timed: 1,
+      timed: 0,
     };
     const sampled = new Map<ContractTemplateId, number>();
     const catalogue = newGame(203, 0);
