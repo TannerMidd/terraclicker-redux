@@ -1,7 +1,67 @@
-import { useGame } from '../../state/store';
+import { actions, useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
 import { forecastSituation } from '../../engine/situations';
 import { Num } from '../bits';
+import { enactedStatutes, statuteOffers, universeStage } from '../../engine/statutes';
+
+/**
+ * The law, and what may still be passed.
+ *
+ * Lives in the Vortex because this is the panel about scale, and a statute is
+ * the only thing in the game that applies at every scale at once. Enacted acts
+ * are listed permanently — a law you cannot see is indistinguishable from a
+ * bug.
+ */
+function Statutes() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const stage = universeStage(s);
+  const enacted = enactedStatutes(s);
+  const offers = statuteOffers(s);
+  if (stage === 0 && enacted.length === 0) return null;
+
+  return (
+    <div className="statutes">
+      <div className="panel-h">Statutes of the Universe</div>
+      {enacted.length > 0 && (
+        <div className="st-enacted">
+          {enacted.map((def) => (
+            <div key={def.id} className="st-law">
+              <b>{def.name}</b>
+              <em>{def.terms}</em>
+            </div>
+          ))}
+        </div>
+      )}
+      {offers.length > 0 ? (
+        <>
+          <p className="panel-sub">
+            The house will hear one act per stage. It cannot be repealed afterwards, on
+            the grounds that you will be living in it.
+          </p>
+          {offers.map((def) => (
+            <button
+              key={def.id}
+              className="st-offer"
+              onClick={() => actions.enactStatute(def.id)}
+            >
+              <b>{def.name}</b>
+              <p>{def.text}</p>
+              <em>{def.terms}</em>
+            </button>
+          ))}
+        </>
+      ) : (
+        enacted.length > 0 && (
+          <p className="panel-sub">
+            Nothing further is before the house until the universe is larger.
+          </p>
+        )
+      )}
+    </div>
+  );
+}
 
 export function VortexPanel() {
   const rev = useGame((g) => g.rev);
@@ -52,6 +112,8 @@ export function VortexPanel() {
         of what drifts past while it waits for an answer.
       </p>
 
+
+      <Statutes />
 
       <div className="panel-h">The Record</div>
       <div className="stat-grid">

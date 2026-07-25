@@ -13,6 +13,19 @@
  */
 import { mulberry } from './rng';
 import { loadoutEffects } from './loadouts';
+
+/**
+ * Statute sensor bonus, published by the sim each tick.
+ *
+ * `sensorRange` takes only an ExpeditionState — it is called from the render
+ * loop and from a dozen places that have no GameState to hand — so the law's
+ * contribution is pushed in rather than looked up. One number, written once
+ * per tick, read everywhere.
+ */
+let sensorStatuteMult = 1;
+export function setSensorStatuteMult(v: number): void {
+  sensorStatuteMult = v;
+}
 import {
   DEEP_FIELD,
   DEEP_FIELD_BY_ID,
@@ -178,7 +191,7 @@ function rankOf(expedition: ExpeditionState, id: string): number {
 export function sensorRange(expedition: ExpeditionState): number {
   const base = SENSOR_RANGE[rankOf(expedition, 'sensors')] ?? SENSOR_RANGE[0];
   // Role and relay buoys both reach further; neither replaces the refit.
-  return (base ?? 0) * loadoutEffects(expedition).sensors;
+  return (base ?? 0) * loadoutEffects(expedition).sensors * sensorStatuteMult;
 }
 
 /** Scan rate multiplier — divides the catalogue's scanSeconds. */

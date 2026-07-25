@@ -3014,3 +3014,48 @@ button {
   cursor: pointer;
 }
 .sc-attend:hover { background: color-mix(in srgb, var(--magrathea, #7fd1c8) 16%, transparent); }
+
+/* ————— Statutes of the Universe ————— */
+
+.statutes { margin: 16px 0; }
+.st-enacted { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.st-law {
+  padding: 6px 10px;
+  border-left: 2px solid var(--magrathea, #7fd1c8);
+}
+.st-law b { display: block; font-size: 12px; color: var(--ink); }
+.st-law em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+.st-offer {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+.st-offer:hover {
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 8%, transparent);
+}
+.st-offer b { display: block; font-size: 13px; color: var(--ink); }
+.st-offer p {
+  margin: 5px 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.st-offer em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--magrathea, #7fd1c8);
+}

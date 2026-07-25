@@ -40,7 +40,7 @@ import {
   rerollContracts,
 } from './operations';
 import { deriveLegacyInstallations, snapshotInstallations } from './worldHardware';
-import { createExpeditionState, isBoarded, isDiscovered, refitCost } from './deepField';
+import { createExpeditionState, isBoarded, isDiscovered, refitCost, setSensorStatuteMult } from './deepField';
 import { createSubEthaState, fileBroadcast, stepSubEtha } from './subEtha';
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { CHRONICLE } from '../content/subEtha';
@@ -74,6 +74,7 @@ import { answerPhase } from './programmes';
 import { attendInPerson } from './bridge';
 import { boardUnscheduled } from './unscheduled';
 import { buildInfrastructure, setRole } from './loadouts';
+import { enactStatute, statuteEffects } from './statutes';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -156,6 +157,7 @@ export function newGame(seed: number, nowWall: number): GameState {
       rigsPlaced: 0,
       megaprojectsBuilt: 0,
       prestiges: 0,
+      statutes: [],
     },
     prestige: { bp: 0, bpEarned: 0, catalogue: {} },
     operations: createOperationsState(),
@@ -418,6 +420,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       // is a queue that silently does nothing, which is worse than a rejected
       // edit because it looks like it worked.
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
+      break;
+    }
+    case 'enactStatute': {
+      enactStatute(state, effects, input.id);
       break;
     }
     case 'setRole': {
@@ -829,6 +835,7 @@ export function step(
   state.timers.tickCarryMs -= ticks * TICK;
   if (ticks > 1_000_000) ticks = 1_000_000; // safety: ~69 simulated days per call
 
+  setSensorStatuteMult(statuteEffects(state).sensors);
   let rates = computeTickRates(state, opts, offline);
   let dirty = false;
 

@@ -162,6 +162,7 @@ export const saveSchema = z.object({
     rigsPlaced: z.number().int().min(0),
     megaprojectsBuilt: z.number().int().min(0),
     prestiges: z.number().int().min(0),
+    statutes: z.array(z.string()),
   }),
   prestige: z.object({
     bp: z.number().min(0),

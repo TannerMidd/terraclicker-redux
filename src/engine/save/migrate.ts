@@ -506,6 +506,19 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: { ...exp, role: 'general', infrastructure: {} } };
     },
   },
+  {
+    // v20 → v21: universe statutes. Nothing has been legislated in any
+    // existing universe, and a statute is chosen rather than granted — handing
+    // somebody a law they did not vote for would be exactly the wrong joke.
+    from: 20,
+    migrate: (raw) => {
+      const lifetime =
+        typeof raw['lifetime'] === 'object' && raw['lifetime'] !== null
+          ? (raw['lifetime'] as Record<string, unknown>)
+          : {};
+      return { ...raw, lifetime: { ...lifetime, statutes: [] } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

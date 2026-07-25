@@ -401,6 +401,12 @@ export interface GameState {
     rigsPlaced: number;
     megaprojectsBuilt: number;
     prestiges: number;
+    /**
+     * Universe statutes enacted, in order. Survives prestige alongside the
+     * monuments and the archive — it is the law, and the law outlasts the
+     * commission that voted for it. See engine/statutes.ts.
+     */
+    statutes: string[];
   };
 
   prestige: {
@@ -502,7 +508,8 @@ export type Input =
   | { type: 'attendInPerson'; uid: number }
   | { type: 'boardUnscheduled'; id: string }
   | { type: 'setRole'; id: string }
-  | { type: 'buildInfrastructure'; id: string };
+  | { type: 'buildInfrastructure'; id: string }
+  | { type: 'enactStatute'; id: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -551,6 +558,7 @@ export type SimEffect =
   | { t: 'attendedInPerson'; world: string; id: string }
   | { t: 'unscheduledBoarded'; id: string; text: string }
   | { t: 'infrastructureBuilt'; id: string }
+  | { t: 'statuteEnacted'; id: string }
   | {
       t: 'situationResolved';
       uid: number;

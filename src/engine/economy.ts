@@ -15,6 +15,7 @@ import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './
 import { dossierEffects, dossierSystemsDelta } from './dossiers';
 import { charterEffects } from './charters';
 import { programmeEffects } from './programmes';
+import { statuteEffects } from './statutes';
 
 /**
  * BP that a prestige right now would award.
@@ -36,7 +37,8 @@ export function prestigeBpFor(state: GameState): number {
 /** Each successful commission raises the depth expected by Magrathean appraisal. */
 export function prestigeRequiredSystems(state: GameState): number {
   const base = C.PRESTIGE_MIN_SYSTEMS
-    + C.PRESTIGE_SYSTEMS_PER_COMMISSION * state.lifetime.prestiges;
+    + C.PRESTIGE_SYSTEMS_PER_COMMISSION * state.lifetime.prestiges
+    - statuteEffects(state).appraisalEasier;
   // The brief can move the terms of the sale either way. Floored at one: an
   // appraisal that accepts nothing is not a terms change, it is a broken game.
   return Math.max(1, base + dossierSystemsDelta(state));
@@ -216,6 +218,12 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   scienceMult *= brief.scienceMult;
   costMult *= brief.costMult;
   headStart += brief.headStart;
+
+  // ——— the law of the universe ———
+  const law = statuteEffects(state);
+  situationFreqMult *= law.situationFreq;
+  offlineCapMs += law.offlineCapAddMs;
+  headStart += law.headStart;
 
   // ——— articles signed by the systems themselves ———
   const articles = charterEffects(state);
