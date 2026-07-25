@@ -431,6 +431,20 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, run: { ...run, dossier: null, dossierOffers: [] } };
     },
   },
+  {
+    // v15 → v16: System Charters. Systems already formed were never offered
+    // articles and do not get them retroactively — a Charter is read from what
+    // happened to five worlds while they were being delivered, and for these
+    // that moment has passed. The next system to form gets the choice.
+    from: 15,
+    migrate: (raw) => {
+      const run =
+        typeof raw['run'] === 'object' && raw['run'] !== null
+          ? (raw['run'] as Record<string, unknown>)
+          : {};
+      return { ...raw, run: { ...run, charters: {}, charterOffers: {} } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

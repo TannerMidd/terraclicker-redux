@@ -4,6 +4,52 @@ import { BRANCH_LABELS, CATALOGUE, type PerkBranch } from '../../content/catalog
 import { C } from '../../content/constants';
 import { format } from '../../engine/num';
 import { DOSSIER_BY_ID } from '../../content/dossiers';
+import { CHARTER_BY_ID } from '../../content/charters';
+
+/**
+ * Articles waiting to be signed, one per system that has just formed.
+ *
+ * Shown above the briefs because a Charter is about five worlds you have
+ * already delivered, and a brief is about worlds you have not met yet — the
+ * concrete thing goes first.
+ */
+function CharterArticles() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const pending = Object.entries(s.run.charterOffers);
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="charter-offers">
+      <div className="panel-h">Articles for Signature</div>
+      <p className="panel-sub">
+        Five worlds delivered together have views about what they now are. The articles
+        available depend on how the five were treated, which is the only way this
+        department knows how to be fair.
+      </p>
+      {pending.map(([index, ids]) => (
+        <div key={index} className="charter-system">
+          <div className="ch-kicker">System {Number(index) + 1}</div>
+          {ids.map((id) => {
+            const def = CHARTER_BY_ID[id];
+            if (!def) return null;
+            return (
+              <button
+                key={id}
+                className="charter-card"
+                onClick={() => actions.signCharter(Number(index), id)}
+              >
+                <b>{def.name}</b>
+                <p>{def.text}</p>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Three briefs, one commission.
@@ -67,6 +113,7 @@ export function MagratheaPanel() {
 
   return (
     <div>
+      <CharterArticles />
       <DossierBriefs />
       <div className="panel-h">The Commission</div>
       <div className="magrathea-offer">

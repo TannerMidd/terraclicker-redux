@@ -68,6 +68,7 @@ import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
 import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './dossiers';
+import { charterOffersFor, signCharter } from './charters';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -130,6 +131,8 @@ export function newGame(seed: number, nowWall: number): GameState {
       petitions: [],
       dossier: null,
       dossierOffers: [],
+      charters: {},
+      charterOffers: {},
     },
     lifetime: {
       tuEarned: DZERO,
@@ -411,6 +414,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
       break;
     }
+    case 'signCharter': {
+      signCharter(state, input.systemIndex, input.id);
+      break;
+    }
     case 'acceptDossier': {
       acceptDossier(state, input.id);
       break;
@@ -483,6 +490,9 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     // The brief went with it too. Magrathea files three more below.
     dossier: null,
     dossierOffers: [],
+    // Charters belong to the systems that signed them, and those were sold.
+    charters: {},
+    charterOffers: {},
   };
   state.run.dossierOffers = offerDossiers(state);
 
@@ -575,6 +585,10 @@ function completePlanet(
     state.run.systems += 1;
     state.lifetime.systems += 1;
     effects.push({ t: 'systemFormed', count: state.run.systems });
+    // Five worlds that were delivered together are the most specific thing in
+    // the game. Offer them an article, read from their own history.
+    const formedIndex = state.run.systems - 1;
+    state.run.charterOffers[String(formedIndex)] = charterOffersFor(state, formedIndex);
     if (state.run.systems % C.SYSTEMS_PER_GALAXY === 0) {
       state.run.galaxies += 1;
       state.lifetime.galaxies += 1;

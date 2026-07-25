@@ -13,6 +13,7 @@ import { D, DZERO, Decimal } from './num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions } from './types';
 import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
 import { dossierEffects, dossierSystemsDelta } from './dossiers';
+import { charterEffects } from './charters';
 
 /**
  * BP that a prestige right now would award.
@@ -214,6 +215,12 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   scienceMult *= brief.scienceMult;
   costMult *= brief.costMult;
   headStart += brief.headStart;
+
+  // ——— articles signed by the systems themselves ———
+  const articles = charterEffects(state);
+  allMult = allMult.mul(articles.prodMult);
+  scienceMult *= articles.scienceMult;
+  for (const a of ASPECTS) aspectMult[a] *= articles.aspectMult[a];
 
   // ——— planet context: type bias, quirks, survey ———
   const planetType = PLANET_TYPE_BY_ID[state.planet.type];

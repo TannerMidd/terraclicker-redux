@@ -30,6 +30,7 @@ import { EVENT_BY_ID } from '../content/events';
 import { PETITION_BY_ID, petitionsFor } from '../content/petitions';
 import { C } from '../content/constants';
 import { recordWorldEvent } from './worldRecords';
+import { charterStandingFloor } from './charters';
 
 /** One situation, open and waiting for an answer. */
 export interface SituationInstance {
@@ -70,7 +71,10 @@ export function standingFactor(state: GameState): number {
 }
 
 function setStanding(state: GameState, lifetimeIndex: number, value: number): void {
-  const clamped = Math.max(STANDING_FLOOR, Math.min(STANDING_CEIL, value));
+  // A system that signed Articles of Mutual Aid, or the Quiet Clause, has
+  // agreed it will not think less of you than this whatever else happens.
+  const floor = Math.max(STANDING_FLOOR, charterStandingFloor(state, lifetimeIndex) ?? 0);
+  const clamped = Math.max(floor, Math.min(STANDING_CEIL, value));
   const key = String(lifetimeIndex);
   // Full standing is the default — don't persist rows that say "fine".
   if (clamped >= STANDING_CEIL) delete state.run.standing[key];

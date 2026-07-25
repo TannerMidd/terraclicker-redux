@@ -142,6 +142,8 @@ export const saveSchema = z.object({
     petitions: z.array(situationInstance),
     dossier: z.string().nullable(),
     dossierOffers: z.array(z.string()),
+    charters: z.record(z.string(), z.string()),
+    charterOffers: z.record(z.string(), z.array(z.string())),
   }),
   lifetime: z.object({
     tuEarned: dec,

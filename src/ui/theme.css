@@ -2917,3 +2917,38 @@ button {
   color: var(--ink-faint);
   margin-top: 2px;
 }
+
+/* ————— System Charters ————— */
+
+.charter-offers { margin-bottom: 18px; }
+.charter-system { margin-bottom: 10px; }
+.ch-kicker {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.charter-card {
+  display: block;
+  width: 100%;
+  margin-bottom: 5px;
+  padding: 9px 11px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+.charter-card:hover {
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 8%, transparent);
+}
+.charter-card b { display: block; font-size: 12px; color: var(--ink); }
+.charter-card p {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}

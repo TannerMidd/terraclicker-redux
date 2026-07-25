@@ -340,6 +340,10 @@ export interface GameState {
     dossier: string | null;
     /** The three briefs currently on offer; emptied once one is accepted. */
     dossierOffers: string[];
+    /** System index → signed charter id. See engine/charters.ts. */
+    charters: Record<string, string>;
+    /** System index → articles on offer, until one is signed. */
+    charterOffers: Record<string, string[]>;
   };
 
   /**
@@ -466,7 +470,8 @@ export type Input =
    */
   | { type: 'setFlag'; id: string; value: number }
   | { type: 'setStandingOrders'; orders: StandingOrders }
-  | { type: 'acceptDossier'; id: string };
+  | { type: 'acceptDossier'; id: string }
+  | { type: 'signCharter'; systemIndex: number; id: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
