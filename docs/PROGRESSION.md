@@ -28,7 +28,7 @@ Design rule: **every screen shows at least two clocks.** The shop shows seconds 
 
 - **Income:** building cost `base × 1.15^owned`; each next building ≈ ×9–12 base cost, ×4–6 output. Net effect: TU/sec roughly **doubles every 3–5 minutes** during active play in a healthy run. The harness asserts this band.
 - **Clicks:** `click = (1 + additives) × mults × (1 + 0.01 × TUps × thumbLevel)` — click power rides TU/sec late, so active play always beats idle by 15–40%, never by 10×.
-- **Planet requirement:** `T(n) = 60 × 1.42^n × sizeMod` per gauge, times the planet's aspect bias. (Shipped constant: the 400 first drafted here made planet 1 a wall for idle-leaning players; 60 was chosen to put planet 1 at ~1–4 min active, ~14 min pure-idle. Measured, it lands at **50 s** active — faster than the band this line was written to describe. See §4.) Why 1.42: income compounds at ~1.15 per purchase across ~14 buildings; 1.8 (v1) outran income by planet ~8 and turned planets into once-per-run events. Completion pays a bonus of 45 s of TU/s (was 90 s; the harness showed high-cadence players compounding bonuses into a runaway).
+- **Planet requirement:** `T(n) = 60 × 1.42^n × sizeMod` per gauge, times the planet's aspect bias. (Shipped constant: the 400 first drafted here made planet 1 a wall for idle-leaning players; 60 was chosen to put planet 1 at ~1–4 min active, ~14 min pure-idle. Measured, it lands at **50 s** active — faster than the band this line was originally written to describe, and deliberately kept that way. See §4.) Why 1.42: income compounds at ~1.15 per purchase across ~14 buildings; 1.8 (v1) outran income by planet ~8 and turned planets into once-per-run events. Completion pays a bonus of 45 s of TU/s (was 90 s; the harness showed high-cadence players compounding bonuses into a runaway).
 - **Offline:** 50% efficiency, 8 h cap (research/Catalogue push to 100% / 24 h + towel 42%). Offline uses the same `step()` chunked — parity is a test, not a hope.
 
 ### Worked pacing table (run 1 — harness-measured bands, seed 20260723)
@@ -76,10 +76,10 @@ is what actually happens.
 | 28:06 | Research Lab affordable and bought. |
 
 The opening is therefore **much faster and much denser** than the authored
-sheet described. Whether that is the intended experience is an open question —
-see the note in [ROADMAP.md](ROADMAP.md); §3's own prose says the shipped
-constant puts planet 1 at "~1–4 min active", and it lands at 50 seconds, so the
-game is currently faster than both documents that describe it.
+sheet described, and that is the intended experience — ruled on and kept
+(2026-07-25). The constant is not moving. Where §3's prose still says planet 1
+lands in "~1–4 min active", the prose is the stale half; the table beside it
+and the beats above are the game.
 
 Panels unlock on first relevance, not at t=0: Shop → Research → Guide → Vortex → Magrathea (visible-but-locked with "Magrathea has noticed you" once run TU crosses 10% of the prestige threshold). In practice Vortex and Operations arrive first, at planet 1.
 

@@ -212,22 +212,22 @@ was describing a different one:
 §4 is now measured rather than authored, and seven assertions in
 `pacing.test.ts` hold it there. Tests: 162.
 
-#### Two open decisions, both surfaced rather than taken
+#### Two decisions, both now settled by the owner (2026-07-25)
 
-1. **Is the opening supposed to be this fast?** §3's prose says the shipped
-   constant puts planet 1 at "~1–4 min active". It lands at 50 seconds. The
-   game is currently faster than both documents that describe it, and every
-   one of the three disagrees with the other two. Changing it means moving
-   `T(n) = 60 × 1.42^n`, which ripples through every band in this file — a
-   pacing decision, not a repair.
-2. **DESIGN.md M3 wants run 2 ≥45% faster to prior peak; it measures 33.9%.**
-   Not a regression from 0.1: at the twelve Blueprints a first prestige awards,
-   the old compounding curve gave 1.268× against the new 1.24×, nowhere near
-   enough to explain eleven points. The criterion was simply never checked. The
-   lever is `BP_PASSIVE`, and raising it is *safe* now that the bonus is
-   additive and cannot run away — but it makes every prestige in the game more
-   rewarding, which is a balance call. The test floor is set at 30% to catch
-   regressions without endorsing the gap.
+1. **The opening is meant to be this fast. Ruled fine; keep it.** Planet 1 at
+   50 seconds stands, and `T(n) = 60 × 1.42^n` is not moving. §3's prose band
+   ("~1–4 min active") is the stale half, not the game — it has been marked as
+   such rather than the constant being changed to satisfy it. §4 is measured
+   and `pacing.test.ts` holds it there.
+2. **`BP_PASSIVE` stays at 0.02 for now, pending playtest.** DESIGN.md M3 asks
+   for run 2 ≥45% faster to prior peak; it measures 33.9%. That gap is *not*
+   fallout from 0.1 — at the twelve Blueprints a first prestige awards, the old
+   compounding curve gave 1.268× against the new 1.24×, nowhere near enough to
+   explain eleven points. The criterion had simply never been measured.
+   Raising `BP_PASSIVE` is safe now the bonus is additive and cannot run away,
+   so the lever is there and one number wide when it is wanted. The CI floor
+   stays at 30%: enough to catch a regression, not enough to pretend the
+   design target is met.
 
 ### After 0.6 — the frame budget
 
