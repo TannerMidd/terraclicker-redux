@@ -197,6 +197,20 @@ export function readPad(): PadState {
 
   for (const pad of navigator.getGamepads()) {
     if (!pad || !pad.connected) continue;
+    /**
+     * Standard mapping only, and this is not fussiness.
+     *
+     * Every index below — axes 0–3, buttons 0–10 — is a promise the Gamepad
+     * API makes for pads it reports as `standard`, and for nothing else. A
+     * HOTAS throttle, a yoke, a wheel or a set of rudder pedals all enumerate
+     * here too, and their axes mean entirely different things: a throttle
+     * sitting untouched on the desk reports its rudder rocker and slider as
+     * axes 2 and 3, which this used to read as a right stick held hard over.
+     * The helm then flew a permanent full-deflection turn commanded by a
+     * device nobody was touching, and the pilot got a ship that would not
+     * stop dropping. Better to see no pad at all than to invent one.
+     */
+    if (pad.mapping !== 'standard') continue;
     const b = (i: number) => pad.buttons[i]?.pressed ?? false;
     const v = (i: number) => pad.buttons[i]?.value ?? 0;
     return {

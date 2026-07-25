@@ -4,6 +4,7 @@ import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flig
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
+import { flightPrefs, keyLabel } from '../scene/flightBindings';
 import { FirstSortie } from './FirstSortie';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
@@ -16,12 +17,20 @@ import { actions, useGame } from '../../state/store';
 import * as audio from '../audio/audio';
 
 /** How the console describes your velocity, in ascending order of pride. */
-function speedLabel(frac: number, boosting: boolean): string {
+function speedLabel(frac: number, boosting: boolean, station: boolean): string {
   if (boosting && frac > 1.02) return 'highly improbable';
+  // The helm has been taken away from you, briefly and for a good reason. A
+  // ship that stops on its own without saying so is a ship that feels broken.
+  if (station) return frac < 0.03 ? 'holding station' : 'holding station…';
   if (frac < 0.03) return 'all stop';
   if (frac < 0.3) return 'loitering';
   if (frac < 0.7) return 'cruising';
   return 'making excellent time';
+}
+
+/** Whatever key currently engages a contact, as the console would say it. */
+function engageKey(): string {
+  return keyLabel(flightPrefs().bindings.engage[0] ?? 'KeyE').toUpperCase();
 }
 
 /** Range at which the console upgrades “nearest:” to “off …”. */
@@ -374,7 +383,7 @@ function FlightHUDInner() {
         cruise.current.style.left = `${(flightInput.cruise * 100).toFixed(1)}%`;
         cruise.current.style.opacity = flightInput.cruise > 0.02 ? '1' : '0';
       }
-      if (label.current) label.current.textContent = speedLabel(frac, boosting);
+      if (label.current) label.current.textContent = speedLabel(frac, boosting, f.station);
       if (pct.current) pct.current.textContent = `${Math.round(Math.min(1.6, frac) * 100)}%`;
       if (loc.current) {
         let line: string;
@@ -434,7 +443,9 @@ function FlightHUDInner() {
         if (locked) {
           const dist = `${locked.d.toFixed(1)}u`;
           if (locked.unreachable) text = `${dist} · and it will stay that way`;
-          else if (f.prompt) text = `${dist} · hold E to ${f.prompt.label}`;
+          // The key is whatever the pilot bound it to. Naming E at a helm
+          // that has been rearranged is worse than naming nothing at all.
+          else if (f.prompt) text = `${dist} · hold ${engageKey()} to ${f.prompt.label}`;
           else if (locked.boarded) text = `${dist} · already boarded`;
           else text = dist;
         }

@@ -11,6 +11,7 @@ import {
   stepFlight,
   zoomForDistance,
 } from '../src/ui/scene/flightControl';
+import { readPad } from '../src/ui/scene/flightBindings';
 import { BAND_DISTANCES, BAND_STOPS, WEB_R } from '../src/ui/scene/universeLayout';
 import { useGame } from '../src/state/store';
 import { deepFieldSites, sensorRange } from '../src/engine/deepField';
@@ -38,6 +39,25 @@ function clearInput(): void {
   flightInput.steerX = 0;
   flightInput.steerY = 0;
   flightInput.cruise = 0;
+  flightInput.engage = false;
+}
+
+/** Park the runabout a little way off a landmark, nose on, and hold there. */
+function faceNearestSite(standoff: number): Vector3 {
+  const s = useGame.getState().s;
+  // An unscanned landmark, every time: a scan that lands writes to the store,
+  // and the next test to fly out here would otherwise find its target already
+  // in the catalogue and nothing left to hold the engage key for.
+  s.expedition.discovered = {};
+  s.expedition.boarded = {};
+  const site = deepFieldSites(s.seed)
+    .filter((x) => !x.def.unreachable && x.def.kind !== 'phenomenon')
+    .sort((a, b) => Math.hypot(...a.pos) - Math.hypot(...b.pos))[0]!;
+  const target = new Vector3(site.pos[0], site.pos[1], site.pos[2]);
+  const from = target.clone().add(new Vector3(0, 0, standoff));
+  const to = target.clone().sub(from).normalize();
+  beginFlightAt(from, Math.atan2(-to.x, -to.z), Math.asin(to.y));
+  return target;
 }
 
 describe('flight mode (the company runabout)', () => {
@@ -294,6 +314,104 @@ describe('flight mode (the company runabout)', () => {
     flightInput.cruise = 0.6;
     run(5);
     expect(flightLive.speed).toBeGreaterThan(flightLive.cap * 0.35);
+  });
+
+  it('holding engage on a contact holds the ship still, drift and all', () => {
+    // The complaint this exists for: you coast in, hold engage to scan, and
+    // the drift you arrived with carries you on — sideways out of the cone,
+    // or downward away from the thing you were pointed at.
+    faceNearestSite(9);
+    run(0.5); // let a lock form
+    expect(flightLive.prompt).not.toBeNull();
+
+    flightLive.vel.set(0, -1.4, 0); // falling away from the target
+    flightInput.engage = true;
+    const t = run(1, 0.5);
+    expect(flightLive.station).toBe(true);
+    expect(flightLive.speed).toBeLessThan(0.4); // already most of the way stopped
+    expect(flightLive.scanProgress).toBeGreaterThan(0);
+
+    run(2, t);
+    expect(flightLive.speed).toBeLessThan(0.05); // and now genuinely still
+  });
+
+  it('the pilot always outranks the hold — any command takes the helm back', () => {
+    faceNearestSite(9);
+    run(0.5);
+    flightInput.engage = true;
+    flightInput.thrust = 1;
+    run(1.5);
+    expect(flightLive.station).toBe(false);
+    expect(flightLive.speed).toBeGreaterThan(0.05);
+  });
+
+  it('holding station releases the cruise trim rather than fighting it', () => {
+    faceNearestSite(9);
+    run(0.5);
+    flightInput.cruise = 0.6;
+    flightInput.engage = true;
+    run(2);
+    expect(flightInput.cruise).toBe(0);
+    expect(flightLive.speed).toBeLessThan(0.05);
+  });
+
+  it('a momentary loss of the lock does not erase the sweep', () => {
+    faceNearestSite(9);
+    flightInput.engage = true;
+    run(1);
+    const held = flightLive.scanProgress;
+    expect(held).toBeGreaterThan(0);
+
+    // Look away hard enough to break the cone, then straight back.
+    const yaw = flightLive.yaw;
+    flightLive.yaw = yaw + 1.2;
+    run(0.3, 1);
+    expect(flightLive.locked).toBeNull();
+    expect(flightLive.scanProgress).toBeCloseTo(held, 5); // frozen, not lost
+
+    flightLive.yaw = yaw;
+    run(0.3, 1.3);
+    expect(flightLive.scanProgress).toBeGreaterThan(held);
+
+    // Look away for longer than the grace and it is genuinely gone.
+    flightLive.yaw = yaw + 1.2;
+    run(1.2, 1.6);
+    expect(flightLive.scanProgress).toBe(0);
+  });
+
+  it('ignores devices that are not standard-mapping pads', () => {
+    // A Thrustmaster HOTAS throttle, sitting untouched on the desk. Its axes
+    // are a rudder rocker and a slider, which read as a right stick held hard
+    // over — and the helm flew a permanent full-deflection dive commanded by
+    // a device nobody was touching. Every index readPad uses is a promise the
+    // Gamepad API keeps only for 'standard'.
+    const pads = [
+      {
+        id: 'TWCS Throttle (Vendor: 044f Product: b687)',
+        connected: true,
+        mapping: '',
+        axes: [0.001, 0.001, 0.441, 1, 1, 0.001, 0.001, 0.314, 0, 1.286],
+        buttons: Array.from({ length: 14 }, () => ({ pressed: false, value: 0 })),
+      },
+    ];
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { getGamepads: () => pads },
+      configurable: true,
+      writable: true,
+    });
+    try {
+      expect(readPad().connected).toBe(false);
+      expect(readPad().lookY).toBe(0);
+
+      // A real pad, reported as such, still flies the ship.
+      pads[0]!.mapping = 'standard';
+      expect(readPad().connected).toBe(true);
+      expect(readPad().lookY).toBeGreaterThan(0.5);
+    } finally {
+      if (original) Object.defineProperty(globalThis, 'navigator', original);
+      else delete (globalThis as { navigator?: unknown }).navigator;
+    }
   });
 
   it('a landmark the Sub-Etha named reads at extended sensor range', () => {

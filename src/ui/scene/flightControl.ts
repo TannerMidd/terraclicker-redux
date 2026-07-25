@@ -79,6 +79,12 @@ const RESP_THRUST = 2.4; // velocity approach rates (1/s)
 const RESP_BRAKE = 4.2;
 const RESP_COAST = 0.33; // release the keys and the runabout coasts
 /**
+ * Station-keeping, which is slower than a brake and much faster than a coast:
+ * the console steadying the ship while it works, not the pilot standing on
+ * the pedal. See the hold in stepFlight for why it exists at all.
+ */
+const RESP_HOLD = 1.8;
+/**
  * Comfort tuning. Manual flight made a tester motion-sick, and three things
  * were doing it:
  *
@@ -100,6 +106,8 @@ const STEER_DEADZONE = 0.1;
 const SOFT_WALL = WEB_R * 1.35; // beyond this, space politely pushes back
 const HARD_WALL = WEB_R * 1.7;
 const SCAN_EVERY = 0.2; // landmark + modal sweep cadence (s)
+/** How long a lock may flicker out before the sweep it held is written off. */
+const SCAN_GRACE = 0.7;
 /** Fly this close to a formed system and its worlds materialize. */
 const SYSTEM_NEAR = SYSTEM_R * 3.2;
 const SYSTEM_FAR = SYSTEM_R * 4; // hysteresis so discs don't flicker at the border
@@ -214,6 +222,17 @@ export function bodyPosition(body: FlightBody, t: number, out: Vector3): Vector3
 
 /** Half-angle off boresight within which a contact can be locked (rad). */
 const LOCK_CONE = 0.3;
+/**
+ * How much wider the cone gets for a contact you are already scanning.
+ *
+ * Acquiring a lock should take aim; KEEPING one should not take a steady
+ * hand for the whole sweep. Without this the hull settling under you — the
+ * last of an approach bleeding off, which is the state you are always in when
+ * you arrive somewhere — walks the target out of a 0.3 cone in well under a
+ * second and takes the sweep with it. Same hysteresis as the near-system
+ * reveal, for the same reason: a border you are sitting on must not flicker.
+ */
+const LOCK_STICK = 0.22;
 /** Hold still-ish to board: above this speed the airlock declines. */
 const BOARD_SPEED = 4.5;
 
@@ -280,6 +299,8 @@ export const flightLive = {
   scanId: null as string | null,
   /** What holding the engage key would do right now. */
   prompt: null as { verb: 'scan' | 'board' | 'jump'; label: string } | null,
+  /** The console has the helm and is holding the ship still (drives the HUD). */
+  station: false,
   /** Wall-clock of the last jump, for the FX flash. */
   jumpNonce: 0,
   /** Sensor reach this frame (refit-derived), for the HUD. */
@@ -387,6 +408,8 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.scanProgress = 0;
   f.scanId = null;
   f.prompt = null;
+  f.station = false;
+  scanLostFor = 0;
   f.altitude = Infinity;
   f.altitudeOf = '';
   f.nearRadius = 0;
@@ -480,6 +503,32 @@ export function stepFlight(dt: number, t: number): void {
     approachCap,
   );
 
+  /**
+   * Station-keeping, and the reason the engage key stopped fighting the ship.
+   *
+   * A scan is a held gesture and the runabout coasts, so "hold engage on that
+   * contact" used to mean "hold engage, and brake, and hope": whatever drift
+   * you carried in kept running underneath you — sideways out of the lock
+   * cone, or downward away from the thing you were pointed at — until a sweep
+   * three seconds deep was simply gone. Two controls for one intention, which
+   * is one too many.
+   *
+   * So the console takes the helm while it works. It only does so with your
+   * hands off, which is what keeps this a convenience rather than a fight:
+   * command anything at all — thrust, slide, rise, brake — and the pilot wins
+   * outright and the hold does not exist.
+   */
+  const commanding =
+    input.thrust > 0 || input.strafe !== 0 || input.vert !== 0 || input.brake > 0;
+  // A sweep in progress keeps the helm held even in the instant the lock has
+  // flickered out — that instant is exactly when letting go would cost it.
+  const working = f.prompt !== null || f.scanProgress > 0;
+  const station = input.engage && !commanding && authority > 0 && working;
+  // Asking for a scan takes the throttle floor off, exactly as braking does —
+  // otherwise cruise trim quietly holds the ship away from its own station.
+  if (station) input.cruise = 0;
+  f.station = station;
+
   const thrust = Math.max(input.thrust, input.cruise) * authority;
   const braking = input.brake * authority;
   DESIRED.set(0, 0, 0)
@@ -499,7 +548,8 @@ export function stepFlight(dt: number, t: number): void {
   // A fragile load resists being hurried in BOTH directions, which is why this
   // multiplies the response rather than the speed cap.
   const hold = handlingFor(useGame.getState().s.expedition);
-  const resp = ((braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : RESP_COAST) / heft)
+  const resp =
+    ((braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : station ? RESP_HOLD : RESP_COAST) / heft)
     * hold.responseMult;
   if (braking > 0) DESIRED.set(0, 0, 0);
   f.vel.lerp(DESIRED, 1 - Math.exp(-dt * resp));
@@ -547,6 +597,8 @@ function sitesForSeed(seed: number): DeepFieldSite[] {
 
 const SITE_POS: [number, number, number] = [0, 0, 0];
 const TO_SITE = new Vector3();
+/** Seconds the current sweep has been without its lock (see SCAN_GRACE). */
+let scanLostFor = 0;
 /** Hull position at the start of this frame, for the swept collision test. */
 const PREV = new Vector3();
 
@@ -639,8 +691,10 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     if (d > rangeFor(site.def.id)) continue;
     TO_SITE.divideScalar(d || 1);
     const off = Math.acos(Math.max(-1, Math.min(1, TO_SITE.dot(forward))));
-    // Big things forgive sloppy aim; a teapot does not.
-    const cone = LOCK_CONE + Math.atan2(site.def.radius, Math.max(d, 0.001));
+    // Big things forgive sloppy aim; a teapot does not. And a sweep already
+    // under way holds on through a wider cone than it needed to acquire.
+    const sticky = f.scanProgress > 0 && f.scanId === site.def.id ? LOCK_STICK : 0;
+    const cone = LOCK_CONE + sticky + Math.atan2(site.def.radius, Math.max(d, 0.001));
     if (off > cone) continue;
     const score = off * 4 + d / range;
     if (score < bestScore) {
@@ -655,10 +709,23 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     ? writeContact(LOCKED, best, bestD, bestOff, expedition, rumoured.has(best.def.id))
     : null;
 
-  // Scan progress belongs to one lock. Look away and the sweep is lost.
-  if (!best || f.scanId !== best.def.id) {
-    f.scanId = best ? best.def.id : null;
-    f.scanProgress = 0;
+  // Scan progress belongs to one lock — but not to the frame. A contact
+  // clipping the edge of the cone for an instant, which is precisely what a
+  // drifting hull does to a sweep, used to erase the whole thing with no way
+  // to tell it had happened. A brief loss is now forgiven; look at something
+  // else, or away for longer than the grace, and the sweep is genuinely lost.
+  if (best) {
+    if (f.scanId !== best.def.id) {
+      f.scanId = best.def.id;
+      f.scanProgress = 0;
+    }
+    scanLostFor = 0;
+  } else if (f.scanId !== null) {
+    scanLostFor += dt;
+    if (scanLostFor > SCAN_GRACE) {
+      f.scanId = null;
+      f.scanProgress = 0;
+    }
   }
 
   const locked = f.locked;
@@ -1368,6 +1435,8 @@ function held(action: FlightAction): boolean {
 
 /** Latch so a held course-hold key toggles once rather than sixty times. */
 let courseHoldLatch = false;
+/** Whether the steering axis currently belongs to the pad, so it can let go. */
+let padSteering = false;
 
 function inputFromKeys(): void {
   const pad = flightPrefs().gamepad ? readPad() : null;
@@ -1398,6 +1467,16 @@ function inputFromKeys(): void {
     flightInput.steerX = Math.max(-1, Math.min(1, pad.lookX * prefs.sensitivity));
     flightInput.steerY = Math.max(-1, Math.min(1,
       pad.lookY * prefs.sensitivity * (prefs.invertPitch ? -1 : 1)));
+    padSteering = true;
+  } else if (padSteering && !mouseSteer.active && touchSteer.id === -1) {
+    // Centre the stick and the ship stops turning. Without this the last
+    // deflection the pad reported stayed commanded until something else
+    // happened to write the axis, which at a helm means a ship that will not
+    // fly straight. Only the pad's own contribution is released: a hand on
+    // the mouse or a thumb on the glass still owns the stick.
+    flightInput.steerX = 0;
+    flightInput.steerY = 0;
+    padSteering = false;
   }
 
   if (flightInput.brake > 0) flightInput.cruise = 0;
@@ -1602,7 +1681,9 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       contacts: flightLive.contacts,
       locked: flightLive.locked,
       scanProgress: flightLive.scanProgress,
+      scanId: flightLive.scanId,
       prompt: flightLive.prompt,
+      station: flightLive.station,
       nav: flightLive.nav,
       navLabel: flightLive.navLabel,
       range: flightLive.range,
