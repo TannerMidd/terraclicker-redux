@@ -15,6 +15,7 @@ import { standingOf } from '../../../engine/situations';
 import { useGame } from '../../../state/store';
 import { SCENE_SPRITES } from '../../assets';
 import { sharedGlowSprite, sharedTexSprite } from './shared';
+import { worldRecord, worldTraits } from '../../../engine/worldRecords';
 import { universeMotion } from './operationsVisual';
 
 export type CivilizationVariant = 'mini' | 'visit' | 'closeup';
@@ -73,9 +74,16 @@ function settlementSpots(
   record: CompletedPlanetRecord,
   variant: CivilizationVariant,
   standing: number,
+  traits: readonly string[] = [],
 ): LightSpot[] {
   const r = mulberry((record.seed ^ 0x11f5) >>> 0);
-  const full = Math.round(LIGHT_BASE[record.size] * maturity(record) * LIGHT_COUNT_MULT[variant]);
+  // What the world has become shows up as how built-up it looks. Heavily
+  // engineered worlds sprawl; austere ones stayed small on purpose. Both are
+  // derived from the record, so a world looks like its own biography.
+  const character = traits.includes('engineered') ? 1.25 : traits.includes('austere') ? 0.75 : 1;
+  const full = Math.round(
+    LIGHT_BASE[record.size] * maturity(record) * LIGHT_COUNT_MULT[variant] * character,
+  );
   // Never all the way dark: somebody is always still there.
   const count = Math.max(full > 0 ? 1 : 0, Math.round(full * standing));
   const hasLab = record.installations.includes('researchLab');
@@ -108,19 +116,27 @@ export function SettlementLights({
   // Subscribed, not read once: a world that dims (or recovers) has to change
   // on screen the moment it happens.
   const standing = useGame((g) => standingOf(g.s, record.lifetimeIndex));
+  const life = useGame((g) => worldRecord(g.s, record.lifetimeIndex));
+  const traits = useMemo(
+    () => (life ? worldTraits(life, standing) : []),
+    [life, standing],
+  );
   const spots = useMemo(
-    () => settlementSpots(record, variant, standing),
-    [record, variant, standing],
+    () => settlementSpots(record, variant, standing, traits),
+    [record, variant, standing, traits],
   );
-  const warmMat = useMemo(() => sharedGlowSprite(WARM, 0.85), []);
-  const coolMat = useMemo(() => sharedGlowSprite(COOL, 0.8), []);
-  useEffect(
-    () => () => {
-      warmMat.dispose();
-      coolMat.dispose();
-    },
-    [warmMat, coolMat],
-  );
+  // `sharedGlowSprite` already caches by colour and opacity, so these two are
+  // shared across every world on screen — which is what the frame budget in
+  // docs/ROADMAP.md §0.6 asks for, and was already true before it was written
+  // down.
+  //
+  // What was NOT safe was disposing them here. The old cleanup ran
+  // `warmMat.dispose()` when a single world unmounted, on a material the cache
+  // still hands to every other world — and worlds unmount constantly as
+  // systems reveal and hide. A shared material is not this component's to
+  // destroy.
+  const warmMat = sharedGlowSprite(WARM, 0.85);
+  const coolMat = sharedGlowSprite(COOL, 0.8);
   return (
     <>
       {spots.map((spot, i) => (
