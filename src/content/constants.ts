@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 10,
+  SAVE_VERSION: 11,
   LOGIC_TICK_MS: 250,
 
   // Clicks

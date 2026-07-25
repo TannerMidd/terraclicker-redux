@@ -66,6 +66,7 @@ import {
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
+import { findWaypoint } from './waypoints';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -359,6 +360,18 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     }
     case 'startMegaproject': {
       startMegaproject(state, effects, input.id);
+      break;
+    }
+    case 'setWaypoint': {
+      // Only a waypoint that currently exists can be pinned. Clearing is
+      // always allowed, and a stale id simply fails rather than parking the
+      // helm on something the registry no longer knows about.
+      if (input.id === null) {
+        state.expedition.pinned = null;
+      } else if (findWaypoint(state, input.id)) {
+        state.expedition.pinned = input.id;
+        effects.push({ t: 'waypointSet', id: input.id });
+      }
       break;
     }
     case 'resolveInterdiction': {

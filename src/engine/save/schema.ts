@@ -221,6 +221,7 @@ export const saveSchema = z.object({
     interdictions: z.number().int().min(0),
     deliveries: z.number().int().min(0),
     nextJobMs: z.number(),
+    pinned: z.string().nullable(),
   }),
   megaprojects: z.record(
     z.string(),

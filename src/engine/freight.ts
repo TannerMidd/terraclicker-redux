@@ -321,7 +321,8 @@ export function bankedTotal(expedition: ExpeditionState): number {
 /** Fresh flight-economy state, for a new game and for the v8 → v9 migration. */
 export function createFreightState(): Pick<
   ExpeditionState,
-  'manifest' | 'jobs' | 'seams' | 'rigs' | 'interdictions' | 'deliveries' | 'nextJobMs'
+  | 'manifest' | 'jobs' | 'seams' | 'rigs' | 'interdictions' | 'deliveries' | 'nextJobMs'
+  | 'pinned'
 > {
   return {
     manifest: null,
@@ -331,5 +332,6 @@ export function createFreightState(): Pick<
     interdictions: 0,
     deliveries: 0,
     nextJobMs: 0,
+    pinned: null,
   };
 }

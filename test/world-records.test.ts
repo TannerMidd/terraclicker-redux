@@ -163,7 +163,9 @@ describe('v9 → v10 migration', () => {
     const out = runMigrations(v9 as unknown as Record<string, unknown>) as Record<string, unknown>;
     const records = out['worldRecords'] as Record<string, Record<string, unknown>>;
 
-    expect(out['version']).toBe(10);
+    // runMigrations walks the whole chain, so this lands at the current
+    // SAVE_VERSION rather than stopping at 10.
+    expect(out['version']).toBe(C.SAVE_VERSION);
     expect(Object.keys(records).sort()).toEqual(['11', '4']);
     // Heritage keeps the commission that actually delivered it.
     expect(records['4']!['commissionNumber']).toBe(1);
@@ -178,7 +180,9 @@ describe('v9 → v10 migration', () => {
 
   it('produces an empty archive for a save with no worlds left', () => {
     const out = runMigrations({ version: 9, run: { number: 1 } } as Record<string, unknown>);
-    expect(out['version']).toBe(10);
+    // runMigrations walks the whole chain, so this lands at the current
+    // SAVE_VERSION rather than stopping at 10.
+    expect(out['version']).toBe(C.SAVE_VERSION);
     expect(out['worldRecords']).toEqual({});
   });
 });

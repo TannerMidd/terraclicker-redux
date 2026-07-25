@@ -204,6 +204,12 @@ export interface ExpeditionState {
   /** Lifetime deliveries, freight and passengers alike. */
   deliveries: number;
   nextJobMs: number;
+  /**
+   * Waypoint id the helm is currently pointed at, or null. Resolved through
+   * the live registry every read, so an expired job or a collected rig leaves
+   * a pin that quietly forgets itself. See engine/waypoints.ts.
+   */
+  pinned: string | null;
 }
 
 /** One job as offered on the board. */
@@ -424,7 +430,9 @@ export type Input =
   /** Commission a megaproject. */
   | { type: 'startMegaproject'; id: string }
   /** An interdiction resolved at the helm. */
-  | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' };
+  | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' }
+  /** Point the helm at a registry waypoint, or `null` to clear it. */
+  | { type: 'setWaypoint'; id: string | null };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -468,6 +476,7 @@ export type SimEffect =
   | { t: 'megaprojectStarted'; id: string }
   | { t: 'megaprojectFinished'; id: string }
   | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' }
+  | { t: 'waypointSet'; id: string }
   | {
       t: 'situationResolved';
       uid: number;

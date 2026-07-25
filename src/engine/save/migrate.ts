@@ -359,6 +359,19 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, worldRecords };
     },
   },
+  {
+    // v10 → v11: the helm can be pointed at something (engine/waypoints.ts).
+    // Nobody has pinned anything yet, and a null pin is the resting state
+    // rather than a missing value, so this is the whole migration.
+    from: 10,
+    migrate: (raw) => {
+      const expedition =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      return { ...raw, expedition: { ...expedition, pinned: null } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {
