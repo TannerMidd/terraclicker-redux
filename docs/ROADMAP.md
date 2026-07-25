@@ -355,6 +355,39 @@ reports TU and research only. Automation is the highest-risk item in the whole
 plan — configurable policies, never one play-for-me toggle — so it lands after
 the substrates and behind a settings surface.
 
+### Civil Navigation — done
+
+`engine/navigation.ts` (bearing, elevation, closing speed, ETA, braking
+distance), the Chart panel over the waypoint registry, and the cockpit ribbon.
+Two decisions worth keeping:
+
+- **Bearing is signed port-negative**, which is the negation of the rig's own
+  yaw delta — `flightControl` builds orientation from a YXZ Euler, so
+  *increasing* yaw turns to port. The flip happens once in `solveNav` rather
+  than at every call site.
+- **Braking distance is `v/k`, not `v²/2a`**, because the rig sheds speed
+  exponentially. A loaded hold divides the brake response, so the room a
+  delivery needs grows with its cargo; the textbook formula would have
+  understated it exactly when it mattered.
+
+Resolution runs on the 5Hz sweep (orbits crawl); the bearing is solved every
+frame and allocates nothing. The chart is a filterable list, not a map: the
+universe is a five-band log-scale hierarchy and any 2D projection lies at four
+of the five scales.
+
+Controls: rebindable to any physical key (localStorage, not the save — a layout
+belongs to the person, not the universe), gamepad, horizon lock, invert pitch,
+sensitivity. Course hold steers but never throttles, and is offered only for
+somewhere already visited (save v12) — the helm flies the commute, never the
+discovery.
+
+The first sortie replaces the control legend with five steps that use every
+verb the ship has. Nothing blocks input; abandoning it costs nothing.
+
+Verified in installed Chrome via `scripts/flight-check.mjs`, because flight
+only integrates while a render loop is running and cannot be checked from a
+headless DOM. Tests: 202.
+
 ## Phase 3 — Make places matter
 
 World biographies; Commission Dossiers and System Charters; megaproject

@@ -16,6 +16,32 @@ import {
   type SituationSeverity,
 } from '../../content/situations';
 import { situationCosts } from '../../engine/situations';
+import { findWaypoint, waypointId } from '../../engine/waypoints';
+
+/**
+ * "That one." A world that has just written to you is exactly the world you
+ * might want to go and look at, and until now there was no way to say so — the
+ * request named a place and the cockpit had no idea which place.
+ *
+ * Only offered when the world is actually addressable: a request from a world
+ * sold with a previous commission is a letter from somewhere you can no longer
+ * reach, which is its own kind of thing but not a destination.
+ */
+function PinWorld({ lifetimeIndex, name }: { lifetimeIndex: number; name: string }) {
+  const { s } = useGame.getState();
+  if (!lifetimeIndex) return null;
+  const id = waypointId('world', lifetimeIndex);
+  if (!findWaypoint(s, id)) return null;
+  const pinned = s.expedition.pinned === id;
+  return (
+    <button
+      className={`sc-pin${pinned ? ' on' : ''}`}
+      onClick={() => actions.setWaypoint(pinned ? null : id)}
+    >
+      {pinned ? `pinned — ${name}` : `pin ${name} on the chart`}
+    </button>
+  );
+}
 import { VOGON_POEM_LINES } from '../../content/vogonPoetry';
 import { poemLine } from '../../engine/improbability';
 import { C } from '../../content/constants';
@@ -225,7 +251,7 @@ function SituationCard({
   inst,
   petition = false,
 }: {
-  inst: { uid: number; id: string; remainingMs: number; worldName: string };
+  inst: { uid: number; id: string; remainingMs: number; world: number; worldName: string };
   petition?: boolean;
 }) {
   const { s, d } = useGame.getState();
@@ -248,6 +274,7 @@ function SituationCard({
         <i style={{ width: `${frac * 100}%` }} />
       </div>
       <p className="sc-text">{fillSituationText(def.text, inst.worldName)}</p>
+      <PinWorld lifetimeIndex={inst.world} name={inst.worldName} />
       <div className="sc-options">
         {def.options.map((o) => {
           const costs = situationCosts(d, o);
