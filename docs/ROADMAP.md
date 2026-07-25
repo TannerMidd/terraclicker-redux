@@ -418,8 +418,18 @@ old cleanup disposed those *shared* materials when a single world unmounted.)
 
 ### Still to build
 
-- **13 — Dossiers, Charters, megaproject programmes.** Every new economic rule
-  here lands on top of the Phase 0.1 curve fix, which is why it waited.
+- **13 — Dossiers ✅ · Charters and megaproject programmes remaining.**
+  Commission Dossiers landed (save v15): three briefs at every sale, each
+  changing exactly four things — which worlds arrive, what the board asks for,
+  one economic rule, and the terms of the sale. The one-rule constraint is
+  enforced by a test, not by good intentions, because several small modifiers
+  would be untraceable in play. Planet weighting multiplies rather than
+  replaces, so every type stays possible; the appraisal delta is floored at one
+  system. **Still to do:** System Charters (one choice when five worlds form a
+  system, read from their histories — the world record store already holds
+  what it needs) and megaproject programmes (three phases, a decision at each,
+  partial benefits, exclusive final modules — running on the Phase 0.4 queue,
+  with `doneAtMs` already in place from the Circular work).
 - **14 — Special Handling, physical ports, the bridge.** Flight pays in what
   the desk cannot buy (law 4), never in TU parity.
 - **15 — Renewable space.** Procedural contacts over `content/composer.ts`;
