@@ -388,7 +388,45 @@ Verified in installed Chrome via `scripts/flight-check.mjs`, because flight
 only integrates while a render loop is running and cannot be checked from a
 headless DOM. Tests: 202.
 
+### Standing Orders + Morning Circular — done
+
+Automation is **policies, not autopilot**: every one off by default, every one a
+rule the player wrote down, and none of them ever answers a question —
+situations, petitions and surveys are left alone because they are the part
+that is about judgement. It emits the same `Input`s a click does, one purchase
+per half-second, and is not unlocked until a commission has been sold by hand.
+
+The Circular derives over the deferred queue, world records and waypoint
+registry; every actionable line carries its action. Needed `doneAtMs` on
+megaprojects (save v13) because `builtMs` and `gameTimeMs` are different
+clocks — see the note in `engine/circular.ts` about why the comparison is `<=`.
+
 ## Phase 3 — Make places matter
+
+### World biographies — done
+
+Petition outcomes — answered *and* ignored — are filed against the world that
+asked, so traits evolve from what actually happened. Surfaced in the Guide
+atlas beside the delivery certificate, and in settlement density: engineered
+worlds sprawl, austere ones stayed small.
+
+**Open thread from this work:** the 227 material graphs are still unexplained.
+`sharedGlowSprite` already caches by colour, so settlement lights were never
+the source — pooling them again moved the count by zero. Worth finding before
+Phase 4 authors more scenery on top of them. (It did surface a real bug: the
+old cleanup disposed those *shared* materials when a single world unmounted.)
+
+### Still to build
+
+- **13 — Dossiers, Charters, megaproject programmes.** Every new economic rule
+  here lands on top of the Phase 0.1 curve fix, which is why it waited.
+- **14 — Special Handling, physical ports, the bridge.** Flight pays in what
+  the desk cannot buy (law 4), never in TU parity.
+- **15 — Renewable space.** Procedural contacts over `content/composer.ts`;
+  geography and new verbs; expanded customs appeal; loadouts and infrastructure.
+  Gated on the frame budget — see the open thread above.
+- **16 — Statutes, Guide collections, Milliways.** Closes with the editorial
+  and naming pass, whose cost scales with everything above it.
 
 World biographies; Commission Dossiers and System Charters; megaproject
 programmes with phases, decisions, partial benefits and exclusive final
