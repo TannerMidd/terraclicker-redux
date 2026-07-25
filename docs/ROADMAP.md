@@ -317,6 +317,36 @@ Consumers still to come: biographies (Phase 3), Charters (Phase 3),
 two-resolution petitions (Phase 3), passenger sourcing (Phase 3), statutes
 (Phase 5), Morning Circular (Phase 2).
 
+### Waypoint registry — done
+
+`engine/waypoints.ts`, save v11. Resolves **what** is addressable, never
+**where** it is: a `WaypointRef` is structural and the scene turns it into a
+position through `universeLayout`, so the engine never imports the renderer and
+the registry stays testable headlessly. The pin is stored as an id and resolved
+through the live list on every read, so an expired job or a collected rig
+leaves a pin that forgets itself rather than parking the helm on nothing.
+
+### Content format + scene pooling — done
+
+`content/composer.ts` is the slot/fragment/tag format. Coherence comes from
+tags: fragments `requires` or `forbids` tags contributed by earlier slots or by
+the caller's context, so "a door" can never end up on "a cloud". Composition
+takes an explicit seed and runs a local PRNG — it never touches a shared rng
+stream, because rendering a description must not move the universe along.
+
+First authored set is `content/biography.ts`, wired to `worldBiography()`, which
+gives the world record store an immediate consumer rather than leaving the
+format unproven until Phase 4.
+
+`ui/scene/universe/pool.tsx` is the enforcement half of the 0.6 budget.
+`pooledMaterial(key, make)` returns the same graph for the same *kind*, so a
+feature cannot mint one per instance by accident; `<InstancedPool>` draws any
+number of transforms in one call with per-instance colour riding the instance
+buffer rather than a new graph. `test/scene-pool.test.ts` asserts that four
+hundred worlds of settlement lights and weather stay inside two graphs, and
+that keying on instance identity — the failure mode this exists to prevent —
+is detectable. Tests: 193.
+
 ## Phase 2 — Make repetition pleasant
 
 Civil Navigation and the first sortie; Standing Orders; the Morning Circular

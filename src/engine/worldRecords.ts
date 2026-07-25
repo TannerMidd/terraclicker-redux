@@ -33,6 +33,8 @@
  * the same universe always produces the same biography (engine law #1). No rng
  * stream is consumed: a trait is a consequence, not a roll.
  */
+import { compose } from '../content/composer';
+import { WORLD_BIOGRAPHY, worldContextTags } from '../content/biography';
 import type {
   AspectId,
   CompletedPlanetRecord,
@@ -144,4 +146,21 @@ export function activeWorldRecords(state: GameState): WorldRecord[] {
 
 export function bottleneckOf(record: WorldRecord): AspectId {
   return record.bottleneck;
+}
+
+/**
+ * One sentence about what a world is like now, assembled from authored parts.
+ *
+ * Seeded from the world's own lifetimeIndex and the length of its history, so
+ * the line is stable for a given world in a given state and changes when
+ * something actually happens to it — the description of a place should move
+ * when the place does, and not otherwise.
+ */
+export function worldBiography(record: WorldRecord, standing: number): string {
+  const traits = worldTraits(record, standing);
+  return compose(
+    WORLD_BIOGRAPHY,
+    record.lifetimeIndex * 2654435761 + record.history.length,
+    worldContextTags(record.type, record.bottleneck, traits),
+  ).text;
 }
