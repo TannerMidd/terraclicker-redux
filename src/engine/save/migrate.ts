@@ -478,6 +478,20 @@ export const MIGRATIONS: readonly Migration[] = [
       };
     },
   },
+  {
+    // v18 → v19: the Unscheduled Objects Register. The objects themselves are
+    // derived from the seed and the commission number and are therefore
+    // already out there; all that is needed is somewhere to record which have
+    // been looked into, and nobody has looked into any yet.
+    from: 18,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      return { ...raw, expedition: { ...exp, unscheduled: {} } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

@@ -207,6 +207,11 @@ export interface ExpeditionState {
   deliveries: number;
   nextJobMs: number;
   /**
+   * Unscheduled object id → gameTimeMs boarded. Cleared with the commission,
+   * because the objects themselves expire with it. See engine/unscheduled.ts.
+   */
+  unscheduled: Record<string, number>;
+  /**
    * Waypoint id the helm is currently pointed at, or null. Resolved through
    * the live registry every read, so an expired job or a collected rig leaves
    * a pin that quietly forgets itself. See engine/waypoints.ts.
@@ -474,7 +479,7 @@ export type Input =
   /** Commission a megaproject. */
   | { type: 'startMegaproject'; id: string }
   /** An interdiction resolved at the helm. */
-  | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' }
+  | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' | 'decoyed' | 'eclipsed' | 'permitted' | 'wake' }
   /** Point the helm at a registry waypoint, or `null` to clear it. */
   | { type: 'setWaypoint'; id: string | null }
   /** Record arrival at a waypoint — this is what earns course hold. */
@@ -490,7 +495,8 @@ export type Input =
   | { type: 'answerPhase'; id: string; optionId: string }
   | { type: 'pickUpManifest' }
   /** Resolve a request by having gone there. See engine/bridge.ts. */
-  | { type: 'attendInPerson'; uid: number };
+  | { type: 'attendInPerson'; uid: number }
+  | { type: 'boardUnscheduled'; id: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -533,10 +539,11 @@ export type SimEffect =
   | { t: 'rigCollected'; id: string; salvage: number }
   | { t: 'megaprojectStarted'; id: string }
   | { t: 'megaprojectFinished'; id: string }
-  | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' }
+  | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' | 'decoyed' | 'eclipsed' | 'permitted' | 'wake' }
   | { t: 'waypointSet'; id: string }
   | { t: 'manifestPickedUp'; id: string; from: string }
   | { t: 'attendedInPerson'; world: string; id: string }
+  | { t: 'unscheduledBoarded'; id: string; text: string }
   | {
       t: 'situationResolved';
       uid: number;

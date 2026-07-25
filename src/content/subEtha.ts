@@ -291,12 +291,28 @@ export const CHRONICLE = {
     `A survey rig now stands at ${seam}. It has been left detailed instructions and will ignore all of them productively.`,
   megaprojectFinished: (name: string) =>
     `${name} is finished and standing. It will outlast this commission, the next one, and very probably you.`,
-  interdicted: (outcome: 'outrun' | 'complied' | 'deterred') =>
-    outcome === 'outrun'
-      ? 'A patrol was left behind at speed. It has filed a complaint about the speed.'
-      : outcome === 'deterred'
-        ? 'A patrol was dispersed without injury and with enormous resentment.'
-        : 'A patrol was complied with. The cargo is theirs now, and the paperwork was immaculate.',
+  /**
+   * Seven ways out, none of them a weapon. Customs is an inconvenience with
+   * forms, not an enemy — the cost of losing is fees, time or standing, and
+   * never a ship.
+   */
+  interdicted: (
+    outcome: 'outrun' | 'complied' | 'deterred' | 'decoyed' | 'eclipsed' | 'permitted' | 'wake',
+  ) =>
+    ({
+      outrun: 'A patrol was left behind at speed. It has filed a complaint about the speed.',
+      deterred: 'A patrol was dispersed without injury and with enormous resentment.',
+      complied:
+        'A patrol was complied with. The cargo is theirs now, and the paperwork was immaculate.',
+      decoyed:
+        'A patrol is currently inspecting a jettisoned crate of ballast with great thoroughness.',
+      eclipsed:
+        'A patrol lost contact behind a planet and is now searching the wrong side of it.',
+      permitted:
+        'A permit was transmitted. It was valid, which surprised everybody including its holder.',
+      wake:
+        'A patrol followed you into an improbability wake and came out somewhere it had not agreed to.',
+    })[outcome],
 } as const;
 
 // ————— Rumours (the category that does real work) —————

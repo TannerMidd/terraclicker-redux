@@ -346,7 +346,7 @@ export function bankedTotal(expedition: ExpeditionState): number {
 export function createFreightState(): Pick<
   ExpeditionState,
   | 'manifest' | 'jobs' | 'seams' | 'rigs' | 'interdictions' | 'deliveries' | 'nextJobMs'
-  | 'pinned' | 'visited'
+  | 'pinned' | 'visited' | 'unscheduled'
 > {
   return {
     manifest: null,
@@ -358,5 +358,6 @@ export function createFreightState(): Pick<
     nextJobMs: 0,
     pinned: null,
     visited: {},
+    unscheduled: {},
   };
 }

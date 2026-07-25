@@ -28,6 +28,7 @@
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { SEAM_BY_ID } from '../content/freight';
 import { C } from '../content/constants';
+import { hasBoardedUnscheduled, unscheduledFor } from './unscheduled';
 import type { GameState } from './types';
 
 export type WaypointKind =
@@ -37,7 +38,8 @@ export type WaypointKind =
   | 'landmark'
   | 'seam'
   | 'rig'
-  | 'job';
+  | 'job'
+  | 'unscheduled';
 
 /**
  * How the scene finds this thing. Deliberately structural: `focus` mirrors
@@ -47,7 +49,9 @@ export type WaypointKind =
 export type WaypointRef =
   | { at: 'home' }
   | { at: 'focus'; kind: 'world' | 'system' | 'galaxy'; index: number }
-  | { at: 'site'; id: string };
+  | { at: 'site'; id: string }
+  /** A bare position — used by things that are derived rather than seeded. */
+  | { at: 'point'; pos: readonly [number, number, number] };
 
 export interface Waypoint {
   /** Stable and unique across kinds: `world:42`, `landmark:sofa`, `job:17`. */
@@ -147,6 +151,18 @@ export function waypoints(state: GameState): Waypoint[] {
         known: true,
       });
     }
+  }
+
+  // Unscheduled objects: this commission's oddities, while they last.
+  for (const object of unscheduledFor(state)) {
+    list.push({
+      id: waypointId('unscheduled', object.id),
+      kind: 'unscheduled',
+      label: 'Unscheduled object',
+      detail: hasBoardedUnscheduled(state, object.id) ? 'looked into' : object.text,
+      ref: { at: 'point', pos: object.pos },
+      known: true,
+    });
   }
 
   const manifest = state.expedition.manifest;

@@ -264,7 +264,7 @@ export const actions = {
   placeRig: (id: string) => dispatch({ type: 'placeRig', id }),
   collectRig: (id: string) => dispatch({ type: 'collectRig', id }),
   startMegaproject: (id: string) => dispatch({ type: 'startMegaproject', id }),
-  resolveInterdiction: (outcome: 'outrun' | 'complied' | 'deterred') =>
+  resolveInterdiction: (outcome: 'outrun' | 'complied' | 'deterred' | 'decoyed' | 'eclipsed' | 'permitted' | 'wake') =>
     dispatch({ type: 'resolveInterdiction', outcome }),
   /** Point the helm at a chart waypoint, or null to clear it. */
   setWaypoint: (id: string | null) => dispatch({ type: 'setWaypoint', id }),
@@ -276,6 +276,7 @@ export const actions = {
   answerPhase: (id: string, optionId: string) => dispatch({ type: 'answerPhase', id, optionId }),
   pickUpManifest: () => dispatch({ type: 'pickUpManifest' }),
   attendInPerson: (uid: number) => dispatch({ type: 'attendInPerson', uid }),
+  boardUnscheduled: (id: string) => dispatch({ type: 'boardUnscheduled', id }),
 };
 
 // Dev hook for headless verification and manual poking.

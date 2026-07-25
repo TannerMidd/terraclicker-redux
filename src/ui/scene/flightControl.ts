@@ -1132,6 +1132,10 @@ function resolveWaypoint(
     out.set(0, 0, 0);
     return true;
   }
+  if (ref.at === 'point') {
+    out.set(ref.pos[0], ref.pos[1], ref.pos[2]);
+    return true;
+  }
   if (ref.at === 'site') {
     const site = sitesForSeed(st.seed).find((s) => s.def.id === ref.id);
     if (!site) return false;

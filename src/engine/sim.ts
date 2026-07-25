@@ -72,6 +72,7 @@ import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './d
 import { charterOffersFor, signCharter } from './charters';
 import { answerPhase } from './programmes';
 import { attendInPerson } from './bridge';
+import { boardUnscheduled } from './unscheduled';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -418,6 +419,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
       break;
     }
+    case 'boardUnscheduled': {
+      boardUnscheduled(state, effects, input.id);
+      break;
+    }
     case 'attendInPerson': {
       attendInPerson(state, effects, input.uid);
       break;
@@ -503,6 +508,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     standing: {},
     // The worlds that were asking went with the sale.
     petitions: [],
+    // The unscheduled oddities expire with the commission that found them.
+    // (state.expedition.unscheduled is cleared just below.)
     // The brief went with it too. Magrathea files three more below.
     dossier: null,
     dossierOffers: [],
@@ -510,6 +517,7 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     charters: {},
     charterOffers: {},
   };
+  state.expedition.unscheduled = {};
   state.run.dossierOffers = offerDossiers(state);
 
   // Catalogue perks that shape the new run.
