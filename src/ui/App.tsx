@@ -8,6 +8,7 @@ import { SurveyModal } from './hud/SurveyModal';
 import { FlightHUD } from './hud/FlightHUD';
 import { useUiBus } from './fx/uiBus';
 import { EVENT_BY_ID } from '../content/events';
+import { SITUATION_BY_ID } from '../content/situations';
 import { ACHIEVEMENT_BY_ID } from '../content/achievements';
 import { RESEARCH_BY_ID } from '../content/research';
 import {
@@ -183,6 +184,35 @@ function useEffectWiring(): void {
                 ttlMs: 4200,
               });
             }
+            break;
+          }
+          case 'situationOpened': {
+            const def = SITUATION_BY_ID[e.id];
+            if (def) {
+              bus.addToast({
+                kind: 'info',
+                kicker: 'SOMETHING WANTS AN ANSWER',
+                title: def.name,
+                body: e.world ? `Concerning ${e.world}.` : 'Concerning nobody in particular.',
+                ttlMs: 4200,
+              });
+              audio.upgradeSting();
+            }
+            break;
+          }
+          case 'situationResolved': {
+            // The player just made a decision — tell them what it did, rather
+            // than filing it quietly on a channel they may not be reading.
+            const worse = e.standing < 0;
+            bus.addToast({
+              kind: worse ? 'info' : 'achievement',
+              kicker: worse ? 'NOTED, AND REMEMBERED' : 'SETTLED',
+              title: SITUATION_BY_ID[e.id]?.name ?? 'Resolved',
+              body: e.text,
+              ttlMs: 7000,
+            });
+            if (worse) audio.upgradeSting();
+            else audio.achievementSting();
             break;
           }
           case 'contractCompleted': {

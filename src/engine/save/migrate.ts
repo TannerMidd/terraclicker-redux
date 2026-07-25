@@ -3,6 +3,7 @@ import { createSubEthaState } from '../subEtha';
 import { createOperationsState } from '../operations';
 import { initRng } from '../rng';
 import { deriveLegacyInstallations } from '../worldHardware';
+import { C } from '../../content/constants';
 
 /**
  * Ordered save migrations. Each entry upgrades `from` → `from + 1`.
@@ -209,6 +210,51 @@ export const MIGRATIONS: readonly Migration[] = [
           subetha: typeof rng['subetha'] === 'number' ? rng['subetha'] : initRng(seed).subetha,
         },
         subEtha: createSubEthaState(),
+      };
+    },
+  },
+  {
+    // v7 -> v8: situations replace the buff-only events. An existing universe
+    // gets its own situations stream (from the master seed, so the sequence it
+    // would always have had), no open situation, and — importantly — FULL
+    // standing everywhere. Nobody is retroactively punished for neglecting
+    // worlds during a version of the game that never asked them anything.
+    from: 7,
+    migrate: (raw) => {
+      const seed = typeof raw['seed'] === 'number' ? raw['seed'] : 1;
+      const rng =
+        typeof raw['rng'] === 'object' && raw['rng'] !== null
+          ? (raw['rng'] as Record<string, unknown>)
+          : {};
+      const run =
+        typeof raw['run'] === 'object' && raw['run'] !== null
+          ? (raw['run'] as Record<string, unknown>)
+          : {};
+      const lifetime =
+        typeof raw['lifetime'] === 'object' && raw['lifetime'] !== null
+          ? (raw['lifetime'] as Record<string, unknown>)
+          : {};
+      const timers =
+        typeof raw['timers'] === 'object' && raw['timers'] !== null
+          ? (raw['timers'] as Record<string, unknown>)
+          : {};
+      return {
+        ...raw,
+        rng: {
+          ...rng,
+          situations:
+            typeof rng['situations'] === 'number' ? rng['situations'] : initRng(seed).situations,
+        },
+        run: { ...run, standing: {} },
+        lifetime: { ...lifetime, situationsAnswered: 0, situationsIgnored: 0 },
+        timers: {
+          ...timers,
+          nextSituationMs:
+            typeof timers['nextSituationMs'] === 'number'
+              ? timers['nextSituationMs']
+              : C.SITUATION_FIRST_MIN_MS,
+        },
+        situations: [],
       };
     },
   },

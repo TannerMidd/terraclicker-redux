@@ -66,9 +66,10 @@ describe('save migrations', () => {
     raw['version'] = 3;
     delete raw['operations'];
     const rng = raw['rng'] as Record<string, unknown>;
-    // A genuine v3 save predates BOTH later streams.
+    // A genuine v3 save predates every later stream.
     delete rng['contracts'];
     delete rng['subetha'];
+    delete rng['situations'];
     const legacyStreams = { ...rng };
 
     const result = deserialize(JSON.stringify(raw));
@@ -171,6 +172,8 @@ describe('save migrations', () => {
     delete raw['subEtha'];
     const rng = raw['rng'] as Record<string, unknown>;
     delete rng['subetha'];
+    // v6 also predates the situations stream (v7 -> v8).
+    delete rng['situations'];
     const legacyStreams = { ...rng };
 
     const result = deserialize(JSON.stringify(raw));

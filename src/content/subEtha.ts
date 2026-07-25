@@ -281,6 +281,8 @@ export const CHRONICLE = {
   vogonStart: () =>
     'A Vogon vessel has begun to read aloud on an open channel. Take whatever cover is available.',
   towel: () => 'A towel has entered your possession. The Guide considers the matter settled.',
+  situationResolved: (text: string) => text,
+  situationIgnored: (text: string) => text,
 } as const;
 
 // ————— Rumours (the category that does real work) —————

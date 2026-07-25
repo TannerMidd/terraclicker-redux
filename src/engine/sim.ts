@@ -44,6 +44,12 @@ import { createExpeditionState, isBoarded, isDiscovered, refitCost } from './dee
 import { createSubEthaState, fileBroadcast, stepSubEtha } from './subEtha';
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { CHRONICLE } from '../content/subEtha';
+import {
+  answerSituation,
+  createSituationsState,
+  spawnSituation,
+  stepSituations,
+} from './situations';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -88,6 +94,7 @@ export function newGame(seed: number, nowWall: number): GameState {
       galaxies: 0,
       tuEarned: DZERO,
       completedPlanets: [],
+      standing: {},
     },
     lifetime: {
       tuEarned: DZERO,
@@ -100,6 +107,8 @@ export function newGame(seed: number, nowWall: number): GameState {
       petuniasCaught: 0,
       vogonShipsRepelled: 0,
       vogonReadingsEndured: 0,
+      situationsAnswered: 0,
+      situationsIgnored: 0,
       prestiges: 0,
     },
     prestige: { bp: 0, bpEarned: 0, catalogue: {} },
@@ -109,10 +118,12 @@ export function newGame(seed: number, nowWall: number): GameState {
     buffs: [],
     bubbles: [],
     activeEvents: [],
+    situations: createSituationsState(),
     vogon: null,
     timers: {
       nextBubbleMs: C.FIRST_BUBBLE_MS,
       nextEventMs: randRange(rng, 'events', C.FIRST_EVENT_MIN_MS, C.FIRST_EVENT_MAX_MS),
+      nextSituationMs: randRange(rng, 'situations', C.SITUATION_FIRST_MIN_MS, C.SITUATION_FIRST_MAX_MS),
       nextVogonMs: C.VOGON_EARLIEST_MS + randRange(rng, 'vogons', 0, C.VOGON_MAX_GAP_MS - C.VOGON_MIN_GAP_MS),
       stallMs: 0,
       sinceBubbleCatchMs: 0,
@@ -295,8 +306,13 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       }
       break;
     }
+    case 'answerSituation': {
+      answerSituation(state, derived, effects, input.uid, input.optionId);
+      break;
+    }
     case 'devSpawn': {
-      if (input.what === 'vogon') spawnVogons(state, derived, effects, false, true);
+      if (input.what === 'situation') spawnSituation(state, derived, effects);
+      else if (input.what === 'vogon') spawnVogons(state, derived, effects, false, true);
       else if (input.what === 'bubble') spawnBubble(state, derived, effects);
       else if (input.what === 'broadcast') {
         // Force the channel's next line immediately (headless verification).
@@ -336,6 +352,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
   state.buffs = [];
   state.bubbles = [];
   state.activeEvents = [];
+  // Open questions went with the portfolio that raised them.
+  state.situations = [];
   state.vogon = null;
   delete state.flags['earthNoticeAtMs'];
   delete state.flags['earthDefenseActive'];
@@ -347,6 +365,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     galaxies: 0,
     tuEarned: DZERO,
     completedPlanets: [],
+    // A fresh portfolio: nothing is neglected yet, and nothing is owed.
+    standing: {},
   };
 
   // Catalogue perks that shape the new run.
@@ -498,6 +518,9 @@ function chronicleEffect(state: GameState, effect: SimEffect): void {
         'chronicle',
         CHRONICLE.siteBoarded(DEEP_FIELD_BY_ID[effect.id]?.name ?? effect.id, effect.salvage),
       );
+      break;
+    case 'situationResolved':
+      fileBroadcast(state, 'chronicle', CHRONICLE.situationResolved(effect.text));
       break;
     case 'prestiged':
       fileBroadcast(state, 'chronicle', CHRONICLE.prestiged());
@@ -665,14 +688,25 @@ export function step(
     // 3) Spawns (suppressed offline; the universe waits for an audience).
     if (!offline) {
       if ((state.timers.nextBubbleMs -= TICK) <= 0) spawnBubble(state, derived, effects);
-      if ((state.timers.nextEventMs -= TICK) <= 0) {
-        spawnEvent(state, derived, effects);
-        dirty = true;
-      }
       if ((state.timers.nextVogonMs -= TICK) <= 0) {
         spawnVogons(state, derived, effects);
         dirty = true;
       }
+      // Situations spawn AND count down only in the foreground: the clock on
+      // a question must not run while there is nobody there to answer it.
+      //
+      // Note what is NOT here any more: the random buff event. Those still
+      // exist as a MECHANISM — half the situation outcomes hand you one — but
+      // they no longer arrive on their own, because a multiplier that turns up
+      // uninvited, asks nothing and leaves nothing behind is indistinguishable
+      // from the number going up by itself. Every buff is now something you
+      // were given for choosing well. `state.timers.nextEventMs` survives in
+      // the save so old files still load; nothing reads it.
+      if ((state.timers.nextSituationMs -= TICK) <= 0) {
+        spawnSituation(state, derived, effects);
+        dirty = true;
+      }
+      if (stepSituations(state, derived, effects, TICK)) dirty = true;
       const noticeAt = state.flags['earthNoticeAtMs'];
       if (typeof noticeAt === 'number' && state.gameTimeMs >= noticeAt) {
         if (state.vogon) {

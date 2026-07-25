@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 7,
+  SAVE_VERSION: 8,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -45,6 +45,13 @@ export const C = {
   EVENT_MAX_GAP_MS: 720_000, // 12 min
   FIRST_EVENT_MIN_MS: 420_000, // guaranteed window 7–10 min into a fresh game
   FIRST_EVENT_MAX_MS: 600_000,
+  // Situations are the ones that ask a question, so they come round less
+  // often than a buff did — often enough to be the rhythm of a session,
+  // rarely enough that answering one never feels like clearing an inbox.
+  SITUATION_MIN_GAP_MS: 420_000, // 7 min
+  SITUATION_MAX_GAP_MS: 900_000, // 15 min
+  SITUATION_FIRST_MIN_MS: 240_000, // the first one arrives early; it teaches
+  SITUATION_FIRST_MAX_MS: 360_000,
   FIRST_BUBBLE_MS: 180_000, // guaranteed first bubble at ~3 min
 
   // Rubber band: if nothing acquired for this long, improbability rises

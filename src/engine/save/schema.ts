@@ -81,6 +81,7 @@ export const saveSchema = z.object({
     visuals: z.number(),
     contracts: z.number(),
     subetha: z.number(),
+    situations: z.number(),
   }),
   gameTimeMs: z.number().min(0),
   createdAtWall: z.number(),
@@ -115,6 +116,8 @@ export const saveSchema = z.object({
     galaxies: z.number().int().min(0),
     tuEarned: dec,
     completedPlanets: z.array(completedPlanetRecord),
+    /** World lifetimeIndex → standing. Sparse: only worlds below 1 appear. */
+    standing: z.record(z.string(), z.number().min(0).max(1)),
   }),
   lifetime: z.object({
     tuEarned: dec,
@@ -127,6 +130,8 @@ export const saveSchema = z.object({
     petuniasCaught: z.number().int().min(0),
     vogonShipsRepelled: z.number().int().min(0),
     vogonReadingsEndured: z.number().int().min(0),
+    situationsAnswered: z.number().int().min(0),
+    situationsIgnored: z.number().int().min(0),
     prestiges: z.number().int().min(0),
   }),
   prestige: z.object({
@@ -209,6 +214,15 @@ export const saveSchema = z.object({
     }),
   ),
   activeEvents: z.array(z.object({ id: z.string(), remainingMs: z.number() })),
+  situations: z.array(
+    z.object({
+      uid: z.number().int(),
+      id: z.string(),
+      remainingMs: z.number(),
+      world: z.number().int().min(0),
+      worldName: z.string(),
+    }),
+  ),
   vogon: z
     .object({
       remainingMs: z.number(),
@@ -219,6 +233,7 @@ export const saveSchema = z.object({
   timers: z.object({
     nextBubbleMs: z.number(),
     nextEventMs: z.number(),
+    nextSituationMs: z.number(),
     nextVogonMs: z.number(),
     stallMs: z.number(),
     sinceBubbleCatchMs: z.number(),

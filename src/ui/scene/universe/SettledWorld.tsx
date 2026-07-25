@@ -11,6 +11,8 @@ import { useFrame } from '@react-three/fiber';
 import { Group, Sprite, Vector3 } from 'three/webgpu';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { mulberry } from '../../../engine/rng';
+import { standingOf } from '../../../engine/situations';
+import { useGame } from '../../../state/store';
 import { SCENE_SPRITES } from '../../assets';
 import { sharedGlowSprite, sharedTexSprite } from './shared';
 import { universeMotion } from './operationsVisual';
@@ -58,10 +60,24 @@ interface LightSpot {
   cool: boolean;
 }
 
-/** Seeded settlement sites on the sphere (planet-local, radius 1). */
-function settlementSpots(record: CompletedPlanetRecord, variant: CivilizationVariant): LightSpot[] {
+/**
+ * Seeded settlement sites on the sphere (planet-local, radius 1).
+ *
+ * `standing` is how the stakes become visible. A neglected world does not
+ * change colour or get a badge — its lights go out, a few at a time, in the
+ * same places they always were, and come back when it is looked after again.
+ * The spots themselves are unchanged and still seeded from the world, so a
+ * recovered world lights up exactly the settlements it used to have.
+ */
+function settlementSpots(
+  record: CompletedPlanetRecord,
+  variant: CivilizationVariant,
+  standing: number,
+): LightSpot[] {
   const r = mulberry((record.seed ^ 0x11f5) >>> 0);
-  const count = Math.round(LIGHT_BASE[record.size] * maturity(record) * LIGHT_COUNT_MULT[variant]);
+  const full = Math.round(LIGHT_BASE[record.size] * maturity(record) * LIGHT_COUNT_MULT[variant]);
+  // Never all the way dark: somebody is always still there.
+  const count = Math.max(full > 0 ? 1 : 0, Math.round(full * standing));
   const hasLab = record.installations.includes('researchLab');
   const spots: LightSpot[] = [];
   for (let i = 0; i < count; i++) {
@@ -89,7 +105,13 @@ export function SettlementLights({
   record: CompletedPlanetRecord;
   variant: CivilizationVariant;
 }) {
-  const spots = useMemo(() => settlementSpots(record, variant), [record, variant]);
+  // Subscribed, not read once: a world that dims (or recovers) has to change
+  // on screen the moment it happens.
+  const standing = useGame((g) => standingOf(g.s, record.lifetimeIndex));
+  const spots = useMemo(
+    () => settlementSpots(record, variant, standing),
+    [record, variant, standing],
+  );
   const warmMat = useMemo(() => sharedGlowSprite(WARM, 0.85), []);
   const coolMat = useMemo(() => sharedGlowSprite(COOL, 0.8), []);
   useEffect(

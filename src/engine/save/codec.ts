@@ -105,8 +105,9 @@ export function fromSave(shape: SaveShape): GameState {
       gauges: aspects(shape.planet.gauges),
       targets: aspects(shape.planet.targets),
     },
-    run: { ...shape.run, tuEarned: D(shape.run.tuEarned) },
+    run: { ...shape.run, tuEarned: D(shape.run.tuEarned), standing: { ...shape.run.standing } },
     lifetime: { ...shape.lifetime, tuEarned: D(shape.lifetime.tuEarned) },
+    situations: shape.situations.map((s2) => ({ ...s2 })),
     operations: cloneOperations(shape.operations),
     expedition: cloneExpedition(shape.expedition),
     subEtha: {

@@ -1,4 +1,5 @@
 import { C } from '../content/constants';
+import { standingFactor } from './situations';
 import { BUILDINGS, BUILDING_BY_ID } from '../content/buildings';
 import { UPGRADES, UPGRADE_BY_ID, type UpgradeDef } from '../content/upgrades';
 import { RESEARCH_BY_ID } from '../content/research';
@@ -243,7 +244,11 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   let prodMult = allMult
     .mul(1 + C.ACHIEVEMENT_BONUS * Object.keys(state.achievements).length)
     .mul(Decimal.pow(1 + C.BP_PASSIVE, state.prestige.bpEarned))
-    .mul(1 + C.SYSTEM_BONUS * state.run.systems)
+    // Standing scales what your finished worlds are worth to you. Every world
+    // starts at 1 and this is exactly 1 until something is actually
+    // neglected, so a player who never lets a situation lapse sees the same
+    // numbers this line always produced.
+    .mul(1 + C.SYSTEM_BONUS * state.run.systems * standingFactor(state))
     .mul(Decimal.pow(C.GALAXY_MULT, state.run.galaxies))
     .mul(mondayMult);
   if (answer) prodMult = prodMult.mul(C.ANSWER_MULT);

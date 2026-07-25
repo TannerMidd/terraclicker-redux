@@ -1001,14 +1001,122 @@ button {
 .survey-opt .so-name { font-weight: 650; }
 .survey-opt .so-text { color: var(--ink-dim); font-size: 13px; margin-top: 2px; }
 
+/* ————— Notices: the things happening TO you, stacked ————— */
+
+/* One column so a situation and a Vogon reading can be on screen at once
+   without one landing on top of the other. Children opt back into pointer
+   events; the column itself must never eat a click meant for the planet. */
+.notice-stack {
+  position: absolute;
+  /* Below the masthead: the TU counter is the number the player is actually
+     watching, and a notice must never sit on top of it. */
+  top: 140px;
+  left: calc((100% - var(--dock-w) - 16px) / 2);
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - var(--dock-w) - 56px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+/* ————— A situation, and the ways out of it ————— */
+
+.situation-card {
+  pointer-events: auto;
+  border: 1px solid rgba(122, 162, 214, 0.55);
+  border-radius: var(--r-sm);
+  background: rgba(14, 20, 32, 0.92);
+  backdrop-filter: blur(10px);
+  padding: 12px 14px 10px;
+  animation: toastIn var(--t-med) ease;
+}
+.situation-card.sev-nuisance { border-color: rgba(214, 178, 106, 0.55); }
+.situation-card.sev-hazard { border-color: rgba(214, 118, 96, 0.65); }
+
+.situation-card .sc-head { display: flex; align-items: center; gap: 8px; }
+.situation-card .sc-emoji { font-size: 15px; }
+.situation-card .sc-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9fc0e8;
+}
+.situation-card.sev-nuisance .sc-kicker { color: #e0c489; }
+.situation-card.sev-hazard .sc-kicker { color: #eda893; }
+.situation-card .sc-clock {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.situation-card .sc-timer {
+  height: 2px;
+  margin: 7px 0 9px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.situation-card .sc-timer i {
+  display: block;
+  height: 100%;
+  background: #7aa2d6;
+  transition: width 240ms linear;
+}
+.situation-card.sev-nuisance .sc-timer i { background: #d6b26a; }
+.situation-card.sev-hazard .sc-timer i { background: #d67660; }
+.situation-card .sc-text {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.situation-card .sc-options { display: flex; flex-direction: column; gap: 6px; }
+.situation-card .sc-opt {
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
+}
+.situation-card .sc-opt:hover:not(:disabled) {
+  border-color: #7aa2d6;
+  background: rgba(122, 162, 214, 0.07);
+  transform: translateX(2px);
+}
+.situation-card .sc-opt:disabled { opacity: 0.45; cursor: not-allowed; }
+.situation-card .sc-opt-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 650;
+  font-size: 13.5px;
+}
+.situation-card .sc-cost {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+.situation-card .sc-cost.short { color: #e0806a; }
+.situation-card .sc-opt-text { color: var(--ink-dim); font-size: 12.5px; margin-top: 2px; }
+.situation-card .sc-lapse {
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
 /* ————— Vogon overlay ————— */
 
 .vogon-banner {
-  position: absolute;
-  top: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(560px, 88vw);
+  position: relative;
+  width: 100%;
   border: 1px solid rgba(138, 143, 90, 0.6);
   border-radius: var(--r-sm);
   background: rgba(30, 32, 18, 0.88);
@@ -1487,7 +1595,8 @@ button {
 .app.in-flight .zoom-rail,
 .app.in-flight .uni-caption-wrap,
 .app.in-flight .eta-ribbon,
-.app.in-flight .planet-name-tag { display: none; }
+.app.in-flight .planet-name-tag,
+.app.in-flight .notice-stack { display: none; }
 .app.in-flight .scene-layer { cursor: crosshair; }
 /* The canopy frame owns the corners of the screen, so the masthead stands
    down while you have the helm. It is waiting when you disembark. */
@@ -2146,6 +2255,7 @@ button {
   /* On phones the caption lives in the clear sky under the masthead,
      out of the subject's way at every band. */
   .uni-caption-wrap { left: 50%; top: 112px; bottom: auto; width: 86vw; }
+  .notice-stack { left: 50%; top: 150px; width: 92vw; }
   .uc-line { font-size: 13px; }
   .fh-console { width: calc(100vw - 20px); bottom: 12px; padding: 10px 14px; gap: 12px; }
   .fh-panic { width: 54px; }

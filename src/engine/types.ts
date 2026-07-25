@@ -1,5 +1,6 @@
 import type { Decimal } from './num';
 import type { RngState } from './rng';
+import type { SituationInstance } from './situations';
 import type { SubEthaKind } from '../content/subEtha';
 
 export type AspectId = 'thermal' | 'atmo' | 'hydro' | 'bio';
@@ -214,6 +215,12 @@ export interface GameState {
     tuEarned: Decimal;
     /** Every world finished this run, in order — the visible universe accretes from these. */
     completedPlanets: CompletedPlanetRecord[];
+    /**
+     * World lifetimeIndex → standing, 0.35…1. Absent means 1, which is why
+     * this is empty for anybody who has never neglected anything. A world
+     * below 1 has visibly dimmed and contributes less; it can always recover.
+     */
+    standing: Record<string, number>;
   };
 
   lifetime: {
@@ -227,6 +234,8 @@ export interface GameState {
     petuniasCaught: number;
     vogonShipsRepelled: number;
     vogonReadingsEndured: number;
+    situationsAnswered: number;
+    situationsIgnored: number;
     prestiges: number;
   };
 
@@ -245,11 +254,14 @@ export interface GameState {
   buffs: BuffState[];
   bubbles: BubbleState[];
   activeEvents: ActiveEventState[];
+  /** Open situations awaiting an answer (content/situations.ts). */
+  situations: SituationInstance[];
   vogon: VogonState | null;
 
   timers: {
     nextBubbleMs: number;
     nextEventMs: number;
+    nextSituationMs: number;
     nextVogonMs: number;
     /** ms since last acquisition (purchase/planet/upgrade) — rubber band. */
     stallMs: number;
@@ -288,7 +300,9 @@ export type Input =
   /** Dev/testing input: grant TU and optionally set gauge fractions. */
   | { type: 'devGrant'; tu: string; gaugeFrac?: number }
   /** Dev/testing input: force a spawn. */
-  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' };
+  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' | 'situation' }
+  /** Answer an open situation with one of its options. */
+  | { type: 'answerSituation'; uid: number; optionId: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -321,7 +335,17 @@ export type SimEffect =
   | { t: 'heritageArchived'; lifetimeIndex: number }
   | { t: 'siteScanned'; id: string }
   | { t: 'siteBoarded'; id: string; salvage: number }
-  | { t: 'refitInstalled'; id: string; rank: number };
+  | { t: 'refitInstalled'; id: string; rank: number }
+  | { t: 'situationOpened'; uid: number; id: string; world: string }
+  | {
+      t: 'situationResolved';
+      uid: number;
+      id: string;
+      text: string;
+      world: string;
+      /** Net standing change, for the chronicle's tone. */
+      standing: number;
+    };
 
 /** Everything computed from state — never persisted (engine law #3). */
 export interface Derived {

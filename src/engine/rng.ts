@@ -11,7 +11,8 @@ export type StreamId =
   | 'vogons'
   | 'visuals'
   | 'contracts'
-  | 'subetha';
+  | 'subetha'
+  | 'situations';
 
 export type RngState = Record<StreamId, number>;
 
@@ -31,6 +32,7 @@ export function initRng(seed: number): RngState {
     visuals: mix(seed + 4),
     contracts: mix(seed + 5),
     subetha: mix(seed + 6),
+    situations: mix(seed + 7),
   };
 }
 

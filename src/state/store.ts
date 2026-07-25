@@ -247,6 +247,8 @@ export const actions = {
   scanSite: (id: string) => dispatch({ type: 'scanSite', id }),
   boardSite: (id: string) => dispatch({ type: 'boardSite', id }),
   buyRefit: (id: string) => dispatch({ type: 'buyRefit', id }),
+  answerSituation: (uid: number, optionId: string) =>
+    dispatch({ type: 'answerSituation', uid, optionId }),
 };
 
 // Dev hook for headless verification and manual poking.

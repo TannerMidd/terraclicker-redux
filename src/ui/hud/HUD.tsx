@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useGame } from '../../state/store';
+import { actions, useGame } from '../../state/store';
 import { heroScreen, useUiBus } from '../fx/uiBus';
 import { UniverseHUD } from './UniverseHUD';
 import { SubEthaTicker } from './SubEthaTicker';
@@ -9,6 +9,12 @@ import { ASPECTS, type AspectId } from '../../engine/types';
 import { BUILDINGS } from '../../content/buildings';
 import { buildingCost } from '../../engine/economy';
 import { EVENT_BY_ID } from '../../content/events';
+import {
+  SITUATION_BY_ID,
+  fillSituationText,
+  type SituationSeverity,
+} from '../../content/situations';
+import { situationCosts } from '../../engine/situations';
 import { VOGON_POEM_LINES } from '../../content/vogonPoetry';
 import { poemLine } from '../../engine/improbability';
 import { C } from '../../content/constants';
@@ -200,6 +206,81 @@ function BuffRow() {
   );
 }
 
+/**
+ * The open situation, and the two ways out of it.
+ *
+ * This is the one thing on screen that is WAITING for the player rather than
+ * reporting to them, so it says what each option costs before it is taken,
+ * and it says what kind of thing is at stake if the window closes — enough to
+ * teach that ignoring is a real answer, without printing the ending.
+ */
+const LAPSE_HINT: Record<SituationSeverity, string> = {
+  opportunity: 'Let it pass and nothing is lost but the chance.',
+  nuisance: 'Let it pass and somebody will notice.',
+  hazard: 'Let it pass and it will leave a mark.',
+};
+
+function SituationCard() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s, d } = useGame.getState();
+  const inst = s.situations[0];
+  if (!inst) return null;
+  const def = SITUATION_BY_ID[inst.id];
+  if (!def) return null;
+
+  const left = Math.max(0, inst.remainingMs);
+  const frac = Math.max(0, Math.min(1, left / def.windowMs));
+
+  return (
+    <div className={`situation-card sev-${def.severity}`}>
+      <div className="sc-head">
+        <span className="sc-emoji" aria-hidden>
+          {def.emoji}
+        </span>
+        <span className="sc-kicker">{def.name}</span>
+        <span className="sc-clock">{formatDuration(left)}</span>
+      </div>
+      <div className="sc-timer" aria-hidden>
+        <i style={{ width: `${frac * 100}%` }} />
+      </div>
+      <p className="sc-text">{fillSituationText(def.text, inst.worldName)}</p>
+      <div className="sc-options">
+        {def.options.map((o) => {
+          const costs = situationCosts(d, o);
+          const canTu = !costs.tu || s.tu.gte(costs.tu);
+          const canSci = !costs.science || s.science.gte(costs.science);
+          const afford = canTu && canSci;
+          return (
+            <button
+              key={o.id}
+              className="sc-opt"
+              disabled={!afford}
+              onClick={() => actions.answerSituation(inst.uid, o.id)}
+            >
+              <div className="sc-opt-name">
+                {o.label}
+                {costs.tu && (
+                  <span className={canTu ? 'sc-cost' : 'sc-cost short'}>
+                    {format(costs.tu)} TU
+                  </span>
+                )}
+                {costs.science && (
+                  <span className={canSci ? 'sc-cost' : 'sc-cost short'}>
+                    {format(costs.science)} sci
+                  </span>
+                )}
+              </div>
+              <div className="sc-opt-text">{o.detail}</div>
+            </button>
+          );
+        })}
+      </div>
+      <div className="sc-lapse">{LAPSE_HINT[def.severity]}</div>
+    </div>
+  );
+}
+
 function VogonBanner() {
   const rev = useGame((g) => g.rev);
   void rev;
@@ -316,7 +397,10 @@ export function HUD() {
       <SubEthaTicker />
       <EtaRibbon />
       <BuffRow />
-      <VogonBanner />
+      <div className="notice-stack">
+        <SituationCard />
+        <VogonBanner />
+      </div>
       <Toasts />
       <Floats />
       <Flash />
