@@ -11,7 +11,7 @@ export interface QuirkDef {
   /** Overrides the overflow→TU conversion rate for one aspect (1 = full rate). */
   overflowRate?: Partial<Record<AspectId, number>>;
   /** Event frequency multiplier while on this planet. */
-  eventFreq?: number;
+  situationFreq?: number;
   /** Bubble frequency multiplier while on this planet. */
   bubbleFreq?: number;
   /** Production penalty on real-world Mondays (0.95 = −5%). */
@@ -64,7 +64,7 @@ export const QUIRKS: readonly QuirkDef[] = [
     id: 'improbability-nexus',
     text: 'Sits in a mild improbability current. Odd things drift ashore.',
     weight: 6,
-    eventFreq: 1.15,
+    situationFreq: 1.15,
     bubbleFreq: 1.15,
   },
   {
@@ -77,7 +77,7 @@ export const QUIRKS: readonly QuirkDef[] = [
     id: 'time-tourists',
     text: 'Attracts time travelers, who keep leaving reviews before arriving.',
     weight: 6,
-    eventFreq: 1.1,
+    situationFreq: 1.1,
   },
   {
     id: 'excellent-coffee',

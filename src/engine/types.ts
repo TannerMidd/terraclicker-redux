@@ -451,7 +451,7 @@ export interface Derived {
   costMult: number;
   buildingMults: Record<string, Decimal>;
   prodMult: Decimal;
-  eventFreqMult: number;
+  situationFreqMult: number;
   bubbleFreqMult: number;
   bubbleLifetimeMs: number;
   goldenOddsMult: number;

@@ -6,7 +6,7 @@ export interface SurveyDef {
   text: string;
   prodMult?: Partial<Record<AspectId, number>>;
   allProdMult?: number;
-  eventFreq?: number;
+  situationFreq?: number;
   noVogons?: boolean;
   /** Start the planet with this fraction of every gauge pre-filled. */
   headStart?: number;
@@ -41,8 +41,8 @@ export const SURVEYS: readonly SurveyDef[] = [
   {
     id: 'improbability-shadow',
     name: 'Improbability Shadow',
-    text: 'Events 20% more frequent while here. Odd, but profitable.',
-    eventFreq: 1.2,
+    text: 'Situations 20% more frequent while here. Odd, but profitable.',
+    situationFreq: 1.2,
   },
   {
     id: 'paperwork-lost',

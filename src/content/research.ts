@@ -8,7 +8,7 @@ export type ResearchEffect =
   | { kind: 'offlineEfficiency'; v: number }
   | { kind: 'offlineCapAddMs'; v: number }
   | { kind: 'vogonHalve' }
-  | { kind: 'eventFreqMult'; v: number }
+  | { kind: 'situationFreqMult'; v: number }
   | { kind: 'bubbleLifetimeAddMs'; v: number }
   | { kind: 'costGrowthDelta'; v: number }
   | { kind: 'researchSpeedMult'; v: number }
@@ -109,8 +109,8 @@ export const RESEARCH: readonly ResearchDef[] = [
     name: 'Sub-Etha Sens-O-Matic',
     costScience: 900,
     durationMs: 30 * MIN,
-    effects: [{ kind: 'eventFreqMult', v: 1.2 }],
-    guide: 'Detects interesting weather before it detects you. Events 20% more frequent.',
+    effects: [{ kind: 'situationFreqMult', v: 1.2 }],
+    guide: 'Detects interesting weather before it detects you. Situations 20% more frequent, and the Vortex will name the next one.',
   },
   {
     id: 'sep-field',

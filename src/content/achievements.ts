@@ -226,7 +226,13 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     name: 'Knows Where Their Towel Is',
     guide: 'A towel arrives by post, pre-warmed. Offline cap +42%. You did not order a towel. You needed one.',
     hidden: true,
-    cond: (s) => Boolean(s.flags['towelEarned']) || Object.keys(s.achievements).length >= 42,
+    // The second path wanted 42 achievements when there have only ever been
+    // twenty-nine, so it could not be taken. The number is not negotiable, so
+    // the count is: everything filed, awards and charted objects together,
+    // which is closer to what the towel is actually about. 29 + 15 = 44.
+    cond: (s) =>
+      Boolean(s.flags['towelEarned'])
+      || Object.keys(s.achievements).length + Object.keys(s.expedition.discovered).length >= 42,
   },
 ];
 

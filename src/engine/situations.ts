@@ -92,15 +92,38 @@ export function situationScienceCost(derived: Derived, seconds: number): Decimal
  * is the same promise ("things happen to you more often") pointed at the
  * layer that is worth having things happen in.
  */
+function rollGapWith(rng: GameState['rng'], derived: Derived): number {
+  const gap = randRange(rng, 'situations', C.SITUATION_MIN_GAP_MS, C.SITUATION_MAX_GAP_MS);
+  return gap / Math.max(0.1, derived.situationFreqMult);
+}
+
 function rollGap(state: GameState, derived: Derived): number {
-  const gap = randRange(state.rng, 'situations', C.SITUATION_MIN_GAP_MS, C.SITUATION_MAX_GAP_MS);
-  return gap / Math.max(0.1, derived.eventFreqMult);
+  return rollGapWith(state.rng, derived);
 }
 
 /** Which situations can happen right now. */
 function eligible(state: GameState): SituationDef[] {
   const hasWorlds = state.run.completedPlanets.length > 0;
   return SITUATIONS.filter((s) => (s.targeted ? hasWorlds : true)) as SituationDef[];
+}
+
+/**
+ * Peek at what is coming without advancing the persisted stream — the rng is
+ * copied, not consumed. This is what the Sub-Etha Sens-O-Matic buys: not
+ * influence over what arrives, only the discourtesy of knowing first.
+ *
+ * The copy has to roll the gap before it chooses, because `spawnSituation`
+ * does; peeking straight at the cursor reads one draw behind the universe and
+ * confidently names the wrong thing. Petitions draw from this stream too, so a
+ * forecast is only good until the next one of those — which is the correct
+ * amount of certainty for a machine that admits to being provisional.
+ */
+export function forecastSituation(state: GameState, derived: Derived): SituationDef | null {
+  const pool = eligible(state);
+  if (pool.length === 0) return null;
+  const rng = { ...state.rng };
+  rollGapWith(rng, derived);
+  return pickWeighted(rng, 'situations', pool);
 }
 
 export function spawnSituation(

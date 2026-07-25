@@ -4,7 +4,7 @@ export type PerkEffect =
   | { kind: 'startProbes'; perRank: number }
   | { kind: 'costMultPerRank'; v: number }
   | { kind: 'headStartPerRank'; v: number }
-  | { kind: 'eventFreqPerRank'; v: number }
+  | { kind: 'situationFreqPerRank'; v: number }
   | { kind: 'bubbleLifetimePerRankMs'; v: number }
   | { kind: 'goldenOddsPerRank'; v: number }
   | { kind: 'offlineCapPerRankMs'; v: number }
@@ -62,10 +62,10 @@ export const CATALOGUE: readonly PerkDef[] = [
     id: 'drive-tuning',
     branch: 'improbability',
     name: 'Drive Tuning',
-    guide: 'Events 10% more frequent per rank. The universe becomes easier to surprise.',
+    guide: 'Situations 10% more frequent per rank. The universe becomes easier to surprise.',
     maxRank: 5,
     costs: [1, 2, 4, 8, 16],
-    effect: { kind: 'eventFreqPerRank', v: 1.1 },
+    effect: { kind: 'situationFreqPerRank', v: 1.1 },
   },
   {
     id: 'bubble-lens',

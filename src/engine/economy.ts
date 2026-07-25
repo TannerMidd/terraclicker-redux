@@ -89,7 +89,7 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   let offlineEfficiency: number = C.OFFLINE_EFFICIENCY;
   let offlineCapMs: number = C.OFFLINE_CAP_MS;
   let vogonHalve = false;
-  let eventFreqMult = 1;
+  let situationFreqMult = 1;
   let bubbleLifetimeMs: number = C.BUBBLE_LIFETIME_MS;
   let costGrowth: number = C.COST_GROWTH;
   let researchSpeedMult = 1;
@@ -121,8 +121,8 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
         case 'vogonHalve':
           vogonHalve = true;
           break;
-        case 'eventFreqMult':
-          eventFreqMult *= e.v;
+        case 'situationFreqMult':
+          situationFreqMult *= e.v;
           break;
         case 'bubbleLifetimeAddMs':
           bubbleLifetimeMs += e.v;
@@ -181,8 +181,8 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
       case 'headStartPerRank':
         headStart += e.v * rank;
         break;
-      case 'eventFreqPerRank':
-        eventFreqMult *= Math.pow(e.v, rank);
+      case 'situationFreqPerRank':
+        situationFreqMult *= Math.pow(e.v, rank);
         break;
       case 'bubbleLifetimePerRankMs':
         bubbleLifetimeMs += e.v * rank;
@@ -210,7 +210,7 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     hydro: C.OVERFLOW_RATE,
     bio: C.OVERFLOW_RATE,
   };
-  let quirkEventFreq = 1;
+  let quirkSituationFreq = 1;
   let quirkBubbleFreq = 1;
   let mondayMult = 1;
   let vogonsBlocked = false;
@@ -220,7 +220,7 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     if (!q) continue;
     if (q.prodMult) for (const a of ASPECTS) aspectMult[a] *= q.prodMult[a] ?? 1;
     if (q.overflowRate) for (const a of ASPECTS) overflowRates[a] = q.overflowRate[a] ?? overflowRates[a];
-    if (q.eventFreq) quirkEventFreq *= q.eventFreq;
+    if (q.situationFreq) quirkSituationFreq *= q.situationFreq;
     if (q.bubbleFreq) quirkBubbleFreq *= q.bubbleFreq;
     if (q.mondayMult && opts.utcDay === 1) mondayMult *= q.mondayMult;
     if (q.noVogons) vogonsBlocked = true;
@@ -231,7 +231,7 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     if (sv) {
       if (sv.prodMult) for (const a of ASPECTS) aspectMult[a] *= sv.prodMult[a] ?? 1;
       if (sv.allProdMult) allMult = allMult.mul(sv.allProdMult);
-      if (sv.eventFreq) quirkEventFreq *= sv.eventFreq;
+      if (sv.situationFreq) quirkSituationFreq *= sv.situationFreq;
       if (sv.noVogons) vogonsBlocked = true;
     }
   }
@@ -240,11 +240,11 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     for (const a of ASPECTS) aspectMult[a] *= planetType.prodBias[a];
   }
   const heartOfGoldCount = state.buildings['heartOfGold'] ?? 0;
-  eventFreqMult *= Math.pow(1.12, heartOfGoldCount);
+  situationFreqMult *= Math.pow(1.12, heartOfGoldCount);
   const bubbleFreqMult = quirkBubbleFreq * Math.pow(1.08, heartOfGoldCount);
   goldenOddsMult *= Math.pow(1.15, heartOfGoldCount);
-  const finalEventFreqMult = eventFreqMult * quirkEventFreq;
-  const anomalyPressure = finalEventFreqMult * bubbleFreqMult * Math.sqrt(goldenOddsMult);
+  const finalSituationFreqMult = situationFreqMult * quirkSituationFreq;
+  const anomalyPressure = finalSituationFreqMult * bubbleFreqMult * Math.sqrt(goldenOddsMult);
   const improbability = Math.min(
     42,
     100 * (1 - 1 / Math.sqrt(Math.max(1, anomalyPressure))),
@@ -355,7 +355,7 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     costMult,
     buildingMults,
     prodMult,
-    eventFreqMult: finalEventFreqMult,
+    situationFreqMult: finalSituationFreqMult,
     bubbleFreqMult,
     bubbleLifetimeMs,
     goldenOddsMult,

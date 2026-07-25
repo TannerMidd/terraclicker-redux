@@ -1,6 +1,6 @@
 import { useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
-import { forecastEvent } from '../../engine/improbability';
+import { forecastSituation } from '../../engine/situations';
 import { Num } from '../bits';
 
 export function VortexPanel() {
@@ -9,7 +9,7 @@ export function VortexPanel() {
   const { s, d } = useGame.getState();
   const pct = 100 * (1 - Math.exp(-s.lifetime.bestGalaxies / 6));
   const hasForecast = s.research.completed.includes('sens-o-matic');
-  const forecast = hasForecast ? forecastEvent(s, d) : null;
+  const forecast = hasForecast ? forecastSituation(s, d) : null;
   const driveCount = s.buildings['heartOfGold'] ?? 0;
 
   return (
@@ -42,13 +42,14 @@ export function VortexPanel() {
           <div className="s-v">{forecast?.name ?? 'Forecast unresolved'}</div>
           <div className="s-k">
             {forecast
-              ? `expected in ~${formatDuration(Math.max(0, s.timers.nextEventMs))}`
+              ? `expected in ~${formatDuration(Math.max(0, s.timers.nextSituationMs))}`
               : 'Sub-Etha Sens-O-Matic research required'}
           </div>
         </div>
       </div>
       <p className="panel-sub">
-        Anomaly pressure now governs event cadence, rare-event weighting, and bubble quality.
+        Anomaly pressure governs how often the universe asks you something, and the quality
+        of what drifts past while it waits for an answer.
       </p>
 
 

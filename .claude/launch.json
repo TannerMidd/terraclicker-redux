@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "preview"],
       "port": 4173
+    },
+    {
+      "name": "dev-alt",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host", "localhost", "--port", "5199", "--strictPort"],
+      "port": 5199
     }
   ]
 }

@@ -8,7 +8,7 @@ import {
   prestigeEligible,
   prestigeRequiredSystems,
 } from '../src/engine/economy';
-import { forecastEvent, spawnEvent } from '../src/engine/improbability';
+import { forecastSituation, spawnSituation } from '../src/engine/situations';
 import type { SimEffect } from '../src/engine/types';
 import { D } from '../src/engine/num';
 import { format } from '../src/engine/num';
@@ -106,16 +106,21 @@ describe('economy', () => {
     const derived = computeDerived(s, OPTS);
 
     expect(derived.improbability).toBeGreaterThan(baseline.improbability);
-    expect(derived.eventFreqMult).toBeGreaterThan(baseline.eventFreqMult);
+    expect(derived.situationFreqMult).toBeGreaterThan(baseline.situationFreqMult);
     expect(derived.bubbleFreqMult).toBeGreaterThan(baseline.bubbleFreqMult);
     expect(derived.goldenOddsMult).toBeGreaterThan(baseline.goldenOddsMult);
 
-    const eventCursor = s.rng.events;
-    const forecast = forecastEvent(s, derived);
-    expect(s.rng.events).toBe(eventCursor);
+    // The forecast names the next *situation*. It used to name the next random
+    // buff event, which stopped being able to happen — the Vortex was counting
+    // down to something the simulation no longer does.
+    const cursor = s.rng.situations;
+    const forecast = forecastSituation(s, derived);
+    expect(forecast).not.toBeNull();
+    expect(s.rng.situations).toBe(cursor); // a peek must not consume
+
     const effects: SimEffect[] = [];
-    spawnEvent(s, derived, effects);
-    expect(s.activeEvents[0]?.id).toBe(forecast.id);
+    spawnSituation(s, derived, effects);
+    expect(s.situations[0]?.id).toBe(forecast?.id);
   });
 
   it('no NaN/negative anywhere across extreme magnitudes', () => {

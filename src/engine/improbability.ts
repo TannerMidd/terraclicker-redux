@@ -124,7 +124,7 @@ export function rollEventGap(state: GameState, derived: Derived, first = false):
   const gap = first
     ? randRange(state.rng, 'events', C.FIRST_EVENT_MIN_MS, C.FIRST_EVENT_MAX_MS)
     : randRange(state.rng, 'events', C.EVENT_MIN_GAP_MS, C.EVENT_MAX_GAP_MS);
-  return gap / (derived.eventFreqMult * stallBoost(state));
+  return gap / (derived.situationFreqMult * stallBoost(state));
 }
 function weightedEvents(derived: Derived): EventDef[] {
   const rareBoost = 1 + 2 * (derived.improbability / 42);
@@ -133,12 +133,6 @@ function weightedEvents(derived: Derived): EventDef[] {
     weight: event.weight * Math.pow(rareBoost, (8 - event.weight) / 6),
   }));
 }
-
-/** Peek without advancing the persisted event stream. */
-export function forecastEvent(state: GameState, derived: Derived): EventDef {
-  return pickWeighted({ ...state.rng }, 'events', weightedEvents(derived));
-}
-
 
 export function spawnEvent(state: GameState, derived: Derived, effects: SimEffect[]): void {
   if (state.activeEvents.length > 0) {
