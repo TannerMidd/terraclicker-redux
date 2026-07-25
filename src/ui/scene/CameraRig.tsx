@@ -69,9 +69,34 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-/** Where the camera auto-travels to watch each formation cinematic —
- * wide enough to frame both the ignition and the constellation seat. */
-const CINEMATIC_ZOOM: Record<'system' | 'galaxy', number> = { system: 0.46, galaxy: 0.72 };
+/**
+ * Where the camera goes to watch a formation cinematic.
+ *
+ * A ceremony is a JOURNEY between two bands, not a place: a system leaves the
+ * assembling anchor and is delivered to the constellation; a galaxy leaves
+ * the constellation and takes its seat on the universe shell. So the camera
+ * holds at the band the ceremony starts in, then pulls back to the band it
+ * ends in, arriving in time to watch it land.
+ *
+ * This used to be one fixed rail position per kind (0.46 and 0.72), chosen
+ * when the whole universe was a few units across and one framing could
+ * contain both ends. After the re-scale it contained neither: at 0.46 the
+ * camera sits ~94 units out looking 46 units past the ignition, so a system
+ * formed as a speck at the edge of frame and then left it. Expressing the
+ * move in BAND_STOPS instead means it follows the scale hierarchy the way
+ * everything else does.
+ *
+ * `hold` and `travel` are seconds, and want to sit inside the ceremony's own
+ * phases (FormationFX): hold while it spirals and ignites, travel while the
+ * comet flies.
+ */
+const CINEMATIC_RAIL: Record<
+  'system' | 'galaxy',
+  { from: number; to: number; hold: number; travel: number }
+> = {
+  system: { from: BAND_STOPS[1], to: BAND_STOPS[2], hold: 1.5, travel: 1.7 },
+  galaxy: { from: BAND_STOPS[2], to: BAND_STOPS[3], hold: 1.2, travel: 1.2 },
+};
 
 /** Focus dolly range: 1 = the standard framing; small = nose to the glass. */
 const DOLLY_MAX = 2.6;
@@ -97,6 +122,8 @@ export function CameraRig() {
   const pointer = useRef({ x: 0, y: 0, sx: 0, sy: 0 });
   const cineOverride = useRef(false);
   const lastCineId = useRef(0);
+  /** Seconds since the active ceremony began — drives the pull-back. */
+  const cineAge = useRef(0);
   const lastBand = useRef(0);
   /** Visit hold: eased camera pose + blend weight off the journey rail. */
   const focusPose = useRef({ cam: new Vector3(), look: new Vector3(), b: 0 });
@@ -533,9 +560,16 @@ export function CameraRig() {
     if (cine && cine.id !== lastCineId.current) {
       lastCineId.current = cine.id;
       cineOverride.current = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      cineAge.current = 0;
     }
-    const zTarget =
-      cine && cineOverride.current && !bus.focus ? CINEMATIC_ZOOM[cine.kind] : bus.zoom;
+    if (cine) cineAge.current += d;
+    let zTarget = bus.zoom;
+    if (cine && cineOverride.current && !bus.focus) {
+      const rail = CINEMATIC_RAIL[cine.kind];
+      // Hold on the ignition, then follow it out to where it is going.
+      const k = clamp((cineAge.current - rail.hold) / rail.travel, 0, 1);
+      zTarget = rail.from + (rail.to - rail.from) * smoothstep(k);
+    }
 
     zoomSmooth.current += (zTarget - zoomSmooth.current) * (1 - Math.exp(-d * (cine ? 2.2 : 4)));
     const z = zoomSmooth.current;
