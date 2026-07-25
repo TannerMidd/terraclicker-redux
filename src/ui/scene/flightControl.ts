@@ -56,6 +56,7 @@ import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
 import { pinnedWaypoint, type WaypointRef } from '../../engine/waypoints';
 import { solveNav, type NavSolution } from '../../engine/navigation';
+import { flightPrefs, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
 
 // ————— Tuning —————
@@ -414,6 +415,7 @@ export function stepFlight(dt: number, t: number): void {
     scanSurroundings();
   }
   solveNavThisFrame();
+  applyCourseHold(dt);
 
   const authority = f.ramp * (f.paused ? 0 : 1);
 
@@ -425,7 +427,11 @@ export function stepFlight(dt: number, t: number): void {
   f.pitchRate += (pitchTarget - f.pitchRate) * rateK;
   f.yaw += f.yawRate * dt;
   f.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, f.pitch + f.pitchRate * dt));
-  const rollTarget = -f.yawRate * ROLL_BANK - input.strafe * authority * 0.1;
+  // Horizon lock: the bank is cosmetic, and a rolling horizon is one of the
+  // most reliable ways to make somebody motion-sick. Anyone who still finds
+  // the reduced bank unpleasant can have none of it at all.
+  const bank = flightPrefs().horizonLock ? 0 : 1;
+  const rollTarget = bank * (-f.yawRate * ROLL_BANK - input.strafe * authority * 0.1);
   f.roll += (rollTarget - f.roll) * (1 - Math.exp(-dt * ROLL_RESP));
 
   // Thrust: velocity chases the desired vector; the cap breathes with range.
@@ -1074,6 +1080,39 @@ function solveNavThisFrame(): void {
     },
     NAV_POS_T,
   );
+
+  if (!f.nav) return;
+
+  // Arriving is what earns course hold for next time. Recorded once, on the
+  // frame the range first closes.
+  if (f.nav.distance <= ARRIVED_RANGE) {
+    const st = useGame.getState().s;
+    const pin = st.expedition.pinned;
+    if (pin && st.expedition.visited[pin] === undefined) actions.markVisited(pin);
+    // Nothing left to hold a course to.
+    f.courseHold = false;
+  }
+}
+
+/** Close enough to count as having been there. */
+const ARRIVED_RANGE = 8;
+
+/**
+ * Course hold steers; it never throttles. The pilot still decides how fast to
+ * arrive and when to stop, which keeps the interesting half of flying — and
+ * means a held course through something solid is still the pilot's problem,
+ * exactly as it is with hands on the stick.
+ */
+function applyCourseHold(dt: number): void {
+  const f = flightLive;
+  if (!f.courseHold || !f.nav) return;
+  const prefs = flightPrefs();
+  void dt;
+  // Feed the same steering channel a hand would, so every downstream rule —
+  // rate limits, ramp, the pause — applies unchanged.
+  flightInput.steerX = Math.max(-1, Math.min(1, f.nav.bearing * 1.6));
+  flightInput.steerY = Math.max(-1, Math.min(1,
+    -f.nav.elevation * 1.6 * (prefs.invertPitch ? -1 : 1)));
 }
 
 /** Turn a structural `WaypointRef` into a position in flight space. */
@@ -1298,18 +1337,67 @@ export function flightZoom(): { z: number; band: number } {
 
 const keys = new Set<string>();
 
+/** Is any key bound to this action currently down? */
+function held(action: FlightAction): boolean {
+  for (const code of flightPrefs().bindings[action]) if (keys.has(code)) return true;
+  return false;
+}
+
+/** Latch so a held course-hold key toggles once rather than sixty times. */
+let courseHoldLatch = false;
+
 function inputFromKeys(): void {
-  flightInput.thrust = keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0;
-  flightInput.brake = keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0;
-  flightInput.strafe =
-    (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) -
-    (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-  flightInput.vert = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') ? 1 : 0);
-  flightInput.boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
-  flightInput.engage = keys.has('KeyE');
+  const pad = flightPrefs().gamepad ? readPad() : null;
+
+  flightInput.thrust = Math.max(held('thrust') ? 1 : 0, pad?.thrust ?? 0);
+  flightInput.brake = Math.max(held('brake') ? 1 : 0, pad?.brake ?? 0);
+  flightInput.strafe = Math.max(-1, Math.min(1,
+    (held('strafeRight') ? 1 : 0) - (held('strafeLeft') ? 1 : 0) + (pad?.moveX ?? 0)));
+  flightInput.vert = Math.max(-1, Math.min(1,
+    (held('up') ? 1 : 0) - (held('down') ? 1 : 0) - (pad?.moveY ?? 0)));
+  flightInput.boost = held('boost') || Boolean(pad?.boost);
+  flightInput.engage = held('engage') || Boolean(pad?.engage);
   // F: the Dispersal Field. Held, like everything else that takes nerve.
-  flightInput.deter = keys.has('KeyF');
+  flightInput.deter = held('deter') || Boolean(pad?.deter);
+
+  // Course hold: a toggle, and only ever available for somewhere you have
+  // actually been. The helm will fly a route it has flown; it will not fly
+  // you somewhere you have never seen, which would make the whole Deep Field
+  // a menu.
+  const wantsHold = held('courseHold') || Boolean(pad?.courseHold);
+  if (wantsHold && !courseHoldLatch) toggleCourseHold();
+  courseHoldLatch = wantsHold;
+
+  // The right stick steers, and shares the sensitivity and invert settings
+  // with the mouse so a pilot who has tuned one has tuned both.
+  if (pad?.connected && (pad.lookX !== 0 || pad.lookY !== 0)) {
+    const prefs = flightPrefs();
+    flightInput.steerX = Math.max(-1, Math.min(1, pad.lookX * prefs.sensitivity));
+    flightInput.steerY = Math.max(-1, Math.min(1,
+      pad.lookY * prefs.sensitivity * (prefs.invertPitch ? -1 : 1)));
+  }
+
   if (flightInput.brake > 0) flightInput.cruise = 0;
+}
+
+/**
+ * Fly the pinned course without holding a heading.
+ *
+ * Gated on having arrived at the waypoint before: this is a convenience for
+ * the commute, not a way to have the ship find things for you. Discovery stays
+ * something you do at the helm.
+ */
+function toggleCourseHold(): void {
+  const f = flightLive;
+  if (f.courseHold) {
+    f.courseHold = false;
+    return;
+  }
+  const st = useGame.getState().s;
+  const pin = st.expedition.pinned;
+  if (!pin || !f.nav) return;
+  if (st.expedition.visited[pin] === undefined) return;
+  f.courseHold = true;
 }
 
 /**

@@ -260,6 +260,8 @@ export const actions = {
     dispatch({ type: 'resolveInterdiction', outcome }),
   /** Point the helm at a chart waypoint, or null to clear it. */
   setWaypoint: (id: string | null) => dispatch({ type: 'setWaypoint', id }),
+  markVisited: (id: string) => dispatch({ type: 'markVisited', id }),
+  setFlag: (id: string, value: number) => dispatch({ type: 'setFlag', id, value }),
 };
 
 // Dev hook for headless verification and manual poking.

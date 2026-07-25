@@ -210,6 +210,12 @@ export interface ExpeditionState {
    * a pin that quietly forgets itself. See engine/waypoints.ts.
    */
   pinned: string | null;
+  /**
+   * Waypoint id → gameTimeMs of first arrival. Course hold is only offered for
+   * somewhere you have actually been, so the helm flies the commute and never
+   * the discovery.
+   */
+  visited: Record<string, number>;
 }
 
 /** One job as offered on the board. */
@@ -432,7 +438,14 @@ export type Input =
   /** An interdiction resolved at the helm. */
   | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' }
   /** Point the helm at a registry waypoint, or `null` to clear it. */
-  | { type: 'setWaypoint'; id: string | null };
+  | { type: 'setWaypoint'; id: string | null }
+  /** Record arrival at a waypoint — this is what earns course hold. */
+  | { type: 'markVisited'; id: string }
+  /**
+   * Set a narrative flag. Deliberately narrow: only ids the engine already
+   * knows about are accepted, so the UI cannot invent save state.
+   */
+  | { type: 'setFlag'; id: string; value: number };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }

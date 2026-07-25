@@ -372,6 +372,21 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: { ...expedition, pinned: null } };
     },
   },
+  {
+    // v11 → v12: the helm remembers where it has been, so course hold can be
+    // offered for the commute and withheld for the discovery. Nobody has
+    // arrived anywhere yet as far as this record is concerned, which is the
+    // safe direction to be wrong in — it withholds a convenience rather than
+    // handing out an autopilot to somewhere unseen.
+    from: 11,
+    migrate: (raw) => {
+      const expedition =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      return { ...raw, expedition: { ...expedition, visited: {} } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

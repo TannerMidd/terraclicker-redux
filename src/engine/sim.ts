@@ -67,6 +67,7 @@ import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
+import { SORTIE_FLAG } from '../content/firstSortie';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -80,6 +81,9 @@ import {
 } from './types';
 
 const EARTH_NOTICE_DELAY_MS = 600_000; // 10 real minutes after Earth completes
+
+/** Flags the UI is allowed to set. See the `setFlag` input. */
+const SETTABLE_FLAGS = new Set([SORTIE_FLAG]);
 
 // ————————————————— New game —————————————————
 
@@ -372,6 +376,18 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
         state.expedition.pinned = input.id;
         effects.push({ t: 'waypointSet', id: input.id });
       }
+      break;
+    }
+    case 'markVisited': {
+      if (state.expedition.visited[input.id] === undefined && findWaypoint(state, input.id)) {
+        state.expedition.visited[input.id] = state.gameTimeMs;
+      }
+      break;
+    }
+    case 'setFlag': {
+      // An allowlist, so a flag is a thing the engine agreed to remember
+      // rather than anything the UI felt like writing into the save.
+      if (SETTABLE_FLAGS.has(input.id)) state.flags[input.id] = input.value;
       break;
     }
     case 'resolveInterdiction': {

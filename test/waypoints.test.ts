@@ -3,6 +3,7 @@ import { newGame, step } from '../src/engine/sim';
 import { serialize, deserialize } from '../src/engine/save/codec';
 import { runMigrations } from '../src/engine/save/migrate';
 import { findWaypoint, pinnedWaypoint, waypointId, waypoints } from '../src/engine/waypoints';
+import { C } from '../src/content/constants';
 import { BOTS, OPTS, TICK } from '../balance/bots';
 import type { GameState } from '../src/engine/types';
 
@@ -110,14 +111,19 @@ describe('the waypoint registry', () => {
   }, 60_000);
 });
 
-describe('v10 → v11 migration', () => {
-  it('gives an older save a resting helm', () => {
+describe('v10 → v12 migration', () => {
+  it('gives an older save a resting helm that has been nowhere', () => {
     const out = runMigrations({
       version: 10,
       expedition: { salvage: 5 },
     } as unknown as Record<string, unknown>);
-    expect(out['version']).toBe(11);
-    expect((out['expedition'] as Record<string, unknown>)['pinned']).toBeNull();
-    expect((out['expedition'] as Record<string, unknown>)['salvage']).toBe(5);
+    // runMigrations walks the whole chain to the current SAVE_VERSION.
+    expect(out['version']).toBe(C.SAVE_VERSION);
+    const expedition = out['expedition'] as Record<string, unknown>;
+    expect(expedition['pinned']).toBeNull();
+    expect(expedition['salvage']).toBe(5);
+    // Nothing visited: course hold is withheld rather than handed out for
+    // somewhere the pilot has never actually been.
+    expect(expedition['visited']).toEqual({});
   });
 });

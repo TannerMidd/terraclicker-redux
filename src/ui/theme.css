@@ -2553,3 +2553,114 @@ button {
   text-align: right;
 }
 .cp-row.pinned .cp-pin { color: var(--magrathea, #7fd1c8); }
+
+/* ————— Helm controls (form 11-C) ————— */
+
+.fh-controls { max-width: 520px; }
+.fc-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+.fc-binds {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.fc-row { display: contents; }
+.fc-label { font-size: 12px; color: var(--ink-dim); }
+.fc-key {
+  min-width: 110px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink-faint) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 30%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fc-key:hover { border-color: var(--ink-faint); }
+.fc-key.listening {
+  color: var(--magrathea, #7fd1c8);
+  border-color: var(--magrathea, #7fd1c8);
+}
+
+.fc-toggles { display: flex; flex-direction: column; gap: 10px; }
+.fc-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  cursor: pointer;
+}
+.fc-toggle input { margin-top: 3px; flex: none; }
+.fc-toggle b { display: block; font-size: 12px; color: var(--ink); font-weight: 600; }
+.fc-toggle em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.45;
+}
+.fc-slider label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink);
+}
+.fc-slider label span { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.fc-slider input { width: 100%; margin-top: 4px; }
+
+.fc-reset {
+  margin-top: 14px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fc-reset:hover { color: var(--ink-dim); }
+
+/* ————— The first sortie ————— */
+
+.fh-sortie {
+  position: absolute;
+  left: 50%;
+  bottom: 132px;
+  transform: translateX(-50%);
+  width: min(460px, 62vw);
+  padding: 10px 14px;
+  text-align: center;
+  pointer-events: none;
+  background: color-mix(in srgb, #05070c 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 28%, transparent);
+  border-radius: 6px;
+  backdrop-filter: blur(3px);
+}
+.fh-sortie .fs-kicker {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.fh-sortie p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.fh-sortie .fs-hint {
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--magrathea, #7fd1c8);
+}
+.fh-sortie.complete {
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 50%, transparent);
+}

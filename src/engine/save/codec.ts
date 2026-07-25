@@ -47,6 +47,7 @@ function cloneExpedition(expedition: GameState['expedition']): GameState['expedi
     deliveries: expedition.deliveries,
     nextJobMs: expedition.nextJobMs,
     pinned: expedition.pinned,
+    visited: { ...expedition.visited },
   };
 }
 

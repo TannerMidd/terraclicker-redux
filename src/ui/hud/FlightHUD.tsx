@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
 import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flightControl';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
+import { FlightControlsDialog } from './FlightControlsDialog';
+import { FirstSortie } from './FirstSortie';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
@@ -318,6 +320,7 @@ function FlightHUDInner() {
     { id: string; scanned: boolean; boarded: boolean; dist: HTMLElement }[]
   >([]);
   const [refit, setRefit] = useState(false);
+  const [controls, setControls] = useState(false);
   const coarse = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
     [],
@@ -330,6 +333,7 @@ function FlightHUDInner() {
       const el = e.target as HTMLElement | null;
       if (el?.closest?.('input, textarea, select, [contenteditable]')) return;
       if (e.code === 'KeyR') setRefit((v) => !v);
+      if (e.code === 'KeyK') setControls((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -521,6 +525,7 @@ function FlightHUDInner() {
       </div>
 
       <NavRibbon />
+      <FirstSortie />
 
       <div className="fh-top">
         <span className="fh-chip">manual flight · the company runabout</span>
@@ -539,6 +544,9 @@ function FlightHUDInner() {
         <div className="fs-none">no contacts</div>
         <button className="fs-refit" onClick={() => setRefit(true)}>
           refit <kbd>r</kbd>
+        </button>
+        <button className="fs-refit" onClick={() => setControls(true)}>
+          controls <kbd>k</kbd>
         </button>
       </div>
 
@@ -597,6 +605,7 @@ function FlightHUDInner() {
       </div>
 
       {refit && <RefitConsole onClose={() => setRefit(false)} />}
+      {controls && <FlightControlsDialog onClose={() => setControls(false)} />}
     </div>
   );
 }
