@@ -51,8 +51,14 @@ export function ShaderWarmup() {
   useEffect(() => {
     if (import.meta.env?.DEV && typeof window !== 'undefined') {
       (window as unknown as Record<string, unknown>)['__tcRenderer'] = gl;
+      // Scene and camera alongside the renderer, so scripts/scene-budget.mjs
+      // can count distinct material graphs. That count is the one that matters
+      // here: this scene is node-material based, so each distinct graph
+      // compiles its own pipeline, and `info.programs` is a WebGL-only field
+      // that reads -1 on the WebGPU backend players actually run.
+      (window as unknown as Record<string, unknown>)['__tcScene'] = { scene, camera };
     }
-  }, [gl]);
+  }, [gl, scene, camera]);
 
   useEffect(() => {
     // A short delay lets React finish mounting whatever triggered this, so

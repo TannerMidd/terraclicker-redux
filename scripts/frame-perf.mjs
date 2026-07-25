@@ -16,6 +16,7 @@ import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 
 const save = process.argv[2] ?? 'shots/u34.txt';
+const port = process.env.TC_PORT ?? '5173';
 const browser = await chromium.launch({
   ...(process.env.TC_BROWSER === 'chromium' ? {} : { channel: 'chrome' }),
   args: ['--enable-unsafe-webgpu', '--enable-gpu', '--use-angle=d3d11'],
@@ -23,7 +24,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('pageerror:', e.message));
 
-await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
+await page.goto(`http://localhost:${port}`, { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(6000);
 await page.evaluate((s) => window.__tc.importSave(s), await fs.readFile(save, 'utf8'));
 await page.waitForTimeout(2500);

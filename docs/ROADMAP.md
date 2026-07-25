@@ -229,6 +229,60 @@ was describing a different one:
    rewarding, which is a balance call. The test floor is set at 30% to catch
    regressions without endorsing the gap.
 
+### After 0.6 — the frame budget
+
+Measured on installed Chrome (WebGPU), 1440×900, against `shots/u409.txt`:
+**409 worlds, 81 systems, 16 galaxies**. Reproduce with
+`npm run budget` and `TC_PORT=<port> node scripts/frame-perf.mjs shots/u409.txt`.
+
+**Frame time is not the problem.** Every zoom band and every flight state sits
+at a locked 60fps — p50 16.7ms, p99 16.8ms, zero frames over 33ms — with one
+exception: entering flight costs a single **166.7ms** hitch, after which the
+warm pass is clean. That is first-pipeline-compile, and `ShaderWarmup` already
+exists to fight it.
+
+| State | p50 | p99 | max | >50ms |
+|---|---|---|---|---|
+| map-idle | 16.7 | 16.8 | 16.8 | 0 |
+| flight-idle (cold) | 16.7 | 16.8 | **166.7** | 1 |
+| flight-warm | 16.7 | 16.8 | 16.8 | 0 |
+| flight-moving | 16.7 | 16.8 | 16.8 | 0 |
+| flight-at-home | 16.7 | 16.8 | 16.9 | 0 |
+| flight-thru-system | 16.7 | 16.8 | 16.9 | 0 |
+
+**The ceiling is material graphs, not polygons.** The same scene:
+
+| | value |
+|---|---|
+| distinct material graphs | **227** |
+| material types | 7 |
+| meshes | 279 |
+| **instanced meshes** | **2** |
+| geometries (zoom 0 → flight-warm) | 55 → 121 |
+| textures | 15–18 |
+
+409 worlds are drawn by 279 meshes carrying 227 distinct material graphs and
+almost no instancing. This is a node-material scene, so each distinct graph
+compiles its own pipeline — that is precisely what the 166.7ms entry hitch is.
+Triangles are irrelevant here; the whole universe is under 10K of them.
+
+So the budget for Phases 3–4 is about **graph reuse**, not geometry:
+
+1. **A new visual feature may add at most 2–3 distinct material graphs,
+   regardless of how many instances it spawns.** Settlement lights across four
+   hundred worlds must be one graph, not four hundred. This is the rule that
+   decides whether "the universe visibly accumulates" scales or stops.
+2. **Anything spawning more than ~8 objects of a kind must use
+   `InstancedMesh`.** There are currently two instanced meshes in the entire
+   scene, so this is a new discipline rather than an existing one, and it is
+   what the pooled-scene-object substrate in Phase 1 has to provide.
+3. **Regression gates:** p50 ≤ 16.8ms and zero frames > 50ms after warm-up, in
+   every band. Cold-entry hitch is allowed to exist but must not grow.
+
+Note `info.render.calls` and `.triangles` are deliberately not reported:
+against this scene they read 2 and 0, because they are WebGL-era counters the
+WebGPU backend does not populate. Frame timing comes from rAF deltas instead.
+
 ## Phase 1 — Substrates
 
 Built once, with every consumer listed above in mind. Save-schema changes go

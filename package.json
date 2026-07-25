@@ -11,7 +11,8 @@
     "deploy": "npm run build && node scripts/deploy-pages.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "balance": "tsx balance/run.ts"
+    "balance": "tsx balance/run.ts",
+    "budget": "node scripts/scene-budget.mjs shots/u409.txt"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.2.5",
