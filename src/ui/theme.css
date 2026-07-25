@@ -2865,3 +2865,55 @@ button {
   letter-spacing: 0.06em;
   color: var(--ink-faint);
 }
+
+/* ————— Commission Dossiers ————— */
+
+.dossier-offers { margin-bottom: 16px; }
+.dossier-card {
+  display: block;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 10px 12px;
+  text-align: left;
+  background: color-mix(in srgb, var(--ink-faint) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 25%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  color: inherit;
+}
+.dossier-card:hover {
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 8%, transparent);
+}
+.dossier-card b { display: block; font-size: 13px; color: var(--ink); }
+.dossier-card p {
+  margin: 5px 0 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.dossier-card em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--magrathea, #7fd1c8);
+}
+.dossier-active {
+  margin-bottom: 14px;
+  padding: 8px 11px;
+  border-left: 2px solid var(--magrathea, #7fd1c8);
+}
+.dossier-active .do-kicker {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.dossier-active b { display: block; font-size: 13px; color: var(--ink); margin-top: 2px; }
+.dossier-active em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}

@@ -3,6 +3,56 @@ import { actions, useGame } from '../../state/store';
 import { BRANCH_LABELS, CATALOGUE, type PerkBranch } from '../../content/catalogue';
 import { C } from '../../content/constants';
 import { format } from '../../engine/num';
+import { DOSSIER_BY_ID } from '../../content/dossiers';
+
+/**
+ * Three briefs, one commission.
+ *
+ * Shown only while a choice is outstanding — once accepted, the brief becomes
+ * a line in the commission summary rather than a decision that keeps asking to
+ * be re-made. There is no "decide later" button because there is no hurry: the
+ * commission simply runs unbriefed until you pick, which is a legitimate way
+ * to play and is what every commission before this feature did.
+ */
+function DossierBriefs() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const offers = s.run.dossierOffers;
+  const active = s.run.dossier ? DOSSIER_BY_ID[s.run.dossier] : null;
+
+  if (active) {
+    return (
+      <div className="dossier-active">
+        <div className="do-kicker">this commission</div>
+        <b>{active.name}</b>
+        <em>{active.terms}</em>
+      </div>
+    );
+  }
+  if (offers.length === 0) return null;
+
+  return (
+    <div className="dossier-offers">
+      <div className="panel-h">Briefs on File</div>
+      <p className="panel-sub">
+        Magrathea has filed three. Accept one and it holds for the whole commission.
+        Accepting none is also a filing, and is processed identically.
+      </p>
+      {offers.map((id) => {
+        const def = DOSSIER_BY_ID[id];
+        if (!def) return null;
+        return (
+          <button key={id} className="dossier-card" onClick={() => actions.acceptDossier(id)}>
+            <b>{def.name}</b>
+            <p>{def.brief}</p>
+            <em>{def.terms}</em>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 export function MagratheaPanel() {
   const rev = useGame((g) => g.rev);
@@ -17,6 +67,7 @@ export function MagratheaPanel() {
 
   return (
     <div>
+      <DossierBriefs />
       <div className="panel-h">The Commission</div>
       <div className="magrathea-offer">
         <div className="m-bp num">

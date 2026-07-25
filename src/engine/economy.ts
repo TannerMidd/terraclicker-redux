@@ -12,6 +12,7 @@ import { EVENT_BY_ID } from '../content/events';
 import { D, DZERO, Decimal } from './num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions } from './types';
 import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
+import { dossierEffects, dossierSystemsDelta } from './dossiers';
 
 /**
  * BP that a prestige right now would award.
@@ -32,8 +33,11 @@ export function prestigeBpFor(state: GameState): number {
 }
 /** Each successful commission raises the depth expected by Magrathean appraisal. */
 export function prestigeRequiredSystems(state: GameState): number {
-  return C.PRESTIGE_MIN_SYSTEMS
+  const base = C.PRESTIGE_MIN_SYSTEMS
     + C.PRESTIGE_SYSTEMS_PER_COMMISSION * state.lifetime.prestiges;
+  // The brief can move the terms of the sale either way. Floored at one: an
+  // appraisal that accepts nothing is not a terms change, it is a broken game.
+  return Math.max(1, base + dossierSystemsDelta(state));
 }
 
 /** Appraisal requires the complete portfolio depth assigned to this commission. */
@@ -201,6 +205,15 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
         break;
     }
   }
+
+  // ——— the commission's brief ———
+  // Exactly one of these is ever non-neutral, because a dossier changes
+  // exactly one economic rule. See content/dossiers.ts.
+  const brief = dossierEffects(state);
+  allMult = allMult.mul(brief.prodMult);
+  scienceMult *= brief.scienceMult;
+  costMult *= brief.costMult;
+  headStart += brief.headStart;
 
   // ——— planet context: type bias, quirks, survey ———
   const planetType = PLANET_TYPE_BY_ID[state.planet.type];

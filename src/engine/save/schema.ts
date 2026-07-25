@@ -140,6 +140,8 @@ export const saveSchema = z.object({
     /** World lifetimeIndex → standing. Sparse: only worlds below 1 appear. */
     standing: z.record(z.string(), z.number().min(0).max(1)),
     petitions: z.array(situationInstance),
+    dossier: z.string().nullable(),
+    dossierOffers: z.array(z.string()),
   }),
   lifetime: z.object({
     tuEarned: dec,

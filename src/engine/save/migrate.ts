@@ -417,6 +417,20 @@ export const MIGRATIONS: readonly Migration[] = [
     from: 13,
     migrate: (raw) => ({ ...raw, standingOrders: createStandingOrders() }),
   },
+  {
+    // v14 → v15: Commission Dossiers. A commission already under way was never
+    // briefed, so it keeps running unbriefed — every dossier effect is
+    // multiplicative-by-1 with no brief in force, so an existing run continues
+    // exactly as it was. The next appraisal files three.
+    from: 14,
+    migrate: (raw) => {
+      const run =
+        typeof raw['run'] === 'object' && raw['run'] !== null
+          ? (raw['run'] as Record<string, unknown>)
+          : {};
+      return { ...raw, run: { ...run, dossier: null, dossierOffers: [] } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

@@ -336,6 +336,10 @@ export interface GameState {
     standing: Record<string, number>;
     /** Requests from delivered worlds, queued. Sold with the portfolio. */
     petitions: SituationInstance[];
+    /** Accepted commission brief, or null before one is chosen. */
+    dossier: string | null;
+    /** The three briefs currently on offer; emptied once one is accepted. */
+    dossierOffers: string[];
   };
 
   /**
@@ -461,7 +465,8 @@ export type Input =
    * knows about are accepted, so the UI cannot invent save state.
    */
   | { type: 'setFlag'; id: string; value: number }
-  | { type: 'setStandingOrders'; orders: StandingOrders };
+  | { type: 'setStandingOrders'; orders: StandingOrders }
+  | { type: 'acceptDossier'; id: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }

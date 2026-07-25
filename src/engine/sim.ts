@@ -67,6 +67,7 @@ import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
+import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './dossiers';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -127,6 +128,8 @@ export function newGame(seed: number, nowWall: number): GameState {
       completedPlanets: [],
       standing: {},
       petitions: [],
+      dossier: null,
+      dossierOffers: [],
     },
     lifetime: {
       tuEarned: DZERO,
@@ -408,6 +411,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
       break;
     }
+    case 'acceptDossier': {
+      acceptDossier(state, input.id);
+      break;
+    }
     case 'resolveInterdiction': {
       state.expedition.interdictions += 1;
       if (input.outcome === 'complied') loseManifest(state, effects, 'complied');
@@ -473,7 +480,11 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     standing: {},
     // The worlds that were asking went with the sale.
     petitions: [],
+    // The brief went with it too. Magrathea files three more below.
+    dossier: null,
+    dossierOffers: [],
   };
+  state.run.dossierOffers = offerDossiers(state);
 
   // Catalogue perks that shape the new run.
   const derived = computeDerived(state);
@@ -483,6 +494,7 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     runIndex: 0,
     lifetimeIndex: state.lifetime.planetsCompleted + 1,
     headStart: derived.headStart,
+    planetWeights: activeDossier(state)?.planetWeights,
     startedAtGameMs: state.gameTimeMs,
   });
 
@@ -506,7 +518,11 @@ function completePlanet(
   bottleneck: AspectId,
 ): void {
   const finished = state.planet;
-  const bonus = derived.tuPerSec.mul(C.PLANET_BONUS_SECONDS).max(D(C.PLANET_BONUS_MIN));
+  const bonus = derived.tuPerSec
+    .mul(C.PLANET_BONUS_SECONDS)
+    .max(D(C.PLANET_BONUS_MIN))
+    // A brief that pays for finishing worlds pays here, on the act itself.
+    .mul(dossierEffects(state).completionMult);
   addTu(state, bonus);
 
   state.run.planetsCompleted += 1;
@@ -573,6 +589,7 @@ function completePlanet(
     lifetimeIndex: state.lifetime.planetsCompleted + 1,
     startedAtGameMs: state.gameTimeMs,
     headStart: derived.headStart,
+    planetWeights: activeDossier(state)?.planetWeights,
   });
   if (state.planet.surveyOptions) effects.push({ t: 'surveyOffered' });
 }

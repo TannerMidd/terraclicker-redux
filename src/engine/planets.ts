@@ -5,7 +5,7 @@ import { SURVEYS } from '../content/surveys';
 import { EARTH_NAME, FIRST_PLANET_NAME, generatePlanetName } from '../content/naming';
 import { D, DZERO, Decimal } from './num';
 import { pickWeighted, randInt, sample, type RngState } from './rng';
-import { ASPECTS, type AspectId, type PlanetSize, type PlanetState } from './types';
+import { ASPECTS, type AspectId, type PlanetSize, type PlanetState, type PlanetType } from './types';
 
 const SIZES: readonly { id: PlanetSize; weight: number }[] = [
   { id: 'small', weight: 25 },
@@ -44,6 +44,8 @@ export interface NewPlanetOpts {
   startedAtGameMs: number;
   /** Gauge head start (0–1) from Fjord Certification / surveys. */
   headStart: number;
+  /** Per-type multipliers from the commission's brief. See engine/dossiers.ts. */
+  planetWeights?: Partial<Record<PlanetType, number>>;
 }
 
 /**
@@ -73,7 +75,14 @@ export function generatePlanet(rng: RngState, opts: NewPlanetOpts): PlanetState 
     name = FIRST_PLANET_NAME;
     quirks = [];
   } else {
-    type = pickWeighted(rng, 'planets', PLANET_TYPES).id;
+    // The brief shifts which worlds arrive by MULTIPLYING the base weights,
+    // never replacing them: a luxury ocean portfolio that could produce
+    // nothing but oceans would stop being a portfolio.
+    const weighted = PLANET_TYPES.map((t) => ({
+      ...t,
+      weight: t.weight * (opts.planetWeights?.[t.id as PlanetType] ?? 1),
+    }));
+    type = pickWeighted(rng, 'planets', weighted).id;
     size = pickWeighted(rng, 'planets', SIZES).id;
     name = generatePlanetName(rng);
     const rollable = QUIRKS.filter((q) => q.weight > 0);
