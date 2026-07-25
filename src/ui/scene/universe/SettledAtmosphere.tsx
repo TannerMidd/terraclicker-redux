@@ -40,6 +40,7 @@ import {
   smoothstep,
   sub,
   time,
+  uniform,
   vec3,
 } from 'three/tsl';
 import { paletteFor } from '../planetMaterial';
@@ -109,11 +110,13 @@ function airMaterial(type: PlanetType): MeshBasicNodeMaterial {
   if (mat) return mat;
   // `atmosphere` is the one palette entry that is not seed-jittered, so a
   // single material per type is exactly right rather than an approximation.
+  // The hue is a uniform rather than a literal so all six types still share
+  // one compiled shader (see createPlanetMaterial).
   const pal = paletteFor(type, 0);
   mat = new MeshBasicNodeMaterial();
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const rim = pow(sub(1.0, abs(dot(normalWorld, viewDir))), 2.6);
-  mat.colorNode = vec3(pal.atmosphere.r, pal.atmosphere.g, pal.atmosphere.b).mul(rim).mul(0.85);
+  mat.colorNode = uniform(pal.atmosphere).mul(rim).mul(0.85);
   mat.side = BackSide;
   mat.transparent = true;
   mat.blending = AdditiveBlending;

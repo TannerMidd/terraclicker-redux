@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   BufferAttribute,
@@ -16,6 +16,7 @@ import { MINI_SIZE } from '../miniPlanet';
 import { CURRENT_SYSTEM_ANCHOR, orbitSlot, starClass, starColor } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
+import { useLamp } from '../SceneLamps';
 import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 
@@ -126,6 +127,14 @@ export function AssemblingSystem() {
   );
 
   const flicker = useRef<Mesh>(null);
+  // The star's light. It goes out between systems — when the last one formed
+  // and departed there is no star here yet, and a lit void is worse than a
+  // dark one. (The lamp itself is permanent; only its brightness moves.)
+  const lamp = useLamp();
+  const lit = inSystem.length > 0;
+  useEffect(() => {
+    lamp.set(CURRENT_SYSTEM_ANCHOR, star, lit ? 5 : 0, 7);
+  }, [lamp, star, lit]);
   useFrame((state) => {
     const m = flicker.current;
     if (m) m.scale.setScalar(0.34 + Math.sin(state.clock.elapsedTime * 2.3) * 0.015);
@@ -145,7 +154,7 @@ export function AssemblingSystem() {
       <sprite position={CURRENT_SYSTEM_ANCHOR} scale={[1.6, 1.6, 1]} raycast={() => null}>
         <primitive object={starGlow} attach="material" />
       </sprite>
-      <pointLight position={CURRENT_SYSTEM_ANCHOR} color={star} intensity={5} distance={7} />
+      {/* Its light comes from the permanent pool — see SceneLamps. */}
       {orbitLines.slice(0, inSystem.length).map((l, i) => (
         <primitive key={i} object={l} />
       ))}

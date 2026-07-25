@@ -22,6 +22,7 @@ import { SettledAtmosphere } from './SettledAtmosphere';
 import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { worldAnchors } from '../navControl';
+import { useLamp } from '../SceneLamps';
 import { focusOn, focusSystemIndex, inspectHandlers, makeGlowSprite, TYPE_LABEL, visitHandlers } from './shared';
 import { CloseupLife, OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 import { FreightLane } from './LivingLanes';
@@ -280,6 +281,13 @@ function FocusedSystemInner({ index }: { index: number }) {
     if (records.length === 0) useUiBus.getState().setFocus(null);
   }, [records]);
 
+  // The star lights its own worlds. `seat` is already a world position, so
+  // the lamp needs no parent transform.
+  const lamp = useLamp();
+  useEffect(() => {
+    lamp.set(seat, star, 3.6, 5.5);
+  }, [lamp, seat, star]);
+
   const spin = useRef<Group>(null);
   const dispatch = useRef<Group>(null);
   const born = useRef<number | null>(null);
@@ -324,7 +332,7 @@ function FocusedSystemInner({ index }: { index: number }) {
           </mesh>
         </group>
       )}
-      <pointLight color={star} intensity={3.6} distance={5.5} />
+      {/* The star's light comes from the permanent pool — see SceneLamps. */}
       {/* A specialized system visibly works its dispatch route. At a world
           close-up the system-scale traffic yields the frame. */}
       {specialty && !worldFocused && (

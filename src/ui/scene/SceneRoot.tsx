@@ -10,6 +10,7 @@ import { Infrastructure } from './Infrastructure';
 import { Universe } from './Universe';
 import { Traffic } from './Traffic';
 import { RunaboutLamp } from './RunaboutLamp';
+import { SceneLamps } from './SceneLamps';
 import { RunaboutHull } from './RunaboutHull';
 import { ShaderWarmup } from './ShaderWarmup';
 import { EventFX } from './EventFX';
@@ -84,6 +85,9 @@ export default function SceneRoot() {
       <directionalLight position={[-4.5, -1, -3]} intensity={0.4} color={0x3a5a8e} />
       {/* At the helm the ship brings its own light; out there, nothing else does. */}
       <RunaboutLamp />
+      {/* Every other point light in the game, permanent so the scene never
+          recompiles because a star came into view. */}
+      <SceneLamps />
       <Stars count={cfg.stars} />
       <Planet detail={cfg.detail} />
       <Infrastructure />

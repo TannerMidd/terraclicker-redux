@@ -7,12 +7,17 @@
  * because of a handful of 200ms hitches, so the percentiles are the point.
  *
  * Needs `npm run dev` running. Pair with frame-profile.mjs to find the cause.
+ *
+ * Runs against INSTALLED CHROME: the bundled Chromium has no WebGPU and falls
+ * back to WebGL2, which is not the backend players are on and hides the
+ * hitches that matter. `TC_BROWSER=chromium` measures the fallback instead.
  */
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 
 const save = process.argv[2] ?? 'shots/u34.txt';
 const browser = await chromium.launch({
+  ...(process.env.TC_BROWSER === 'chromium' ? {} : { channel: 'chrome' }),
   args: ['--enable-unsafe-webgpu', '--enable-gpu', '--use-angle=d3d11'],
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });

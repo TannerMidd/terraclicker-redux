@@ -1,12 +1,6 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import {
-  Mesh,
-  MeshBasicMaterial,
-  PointLight,
-  Sprite,
-  Vector3,
-} from 'three/webgpu';
+import { Color, Mesh, MeshBasicMaterial, Sprite, Vector3 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
 import { useUiBus, type CinematicJob } from '../../fx/uiBus';
 import { SCENE_SPRITES } from '../../assets';
@@ -22,10 +16,13 @@ import {
 import { C } from '../../../content/constants';
 import * as audio from '../../audio/audio';
 import { makeGlowSprite, makeTexSprite } from './shared';
+import { useLamp } from '../SceneLamps';
 
 const P = new Vector3();
 const DIR = new Vector3();
 const Z_AXIS = new Vector3(0, 0, 1);
+/** The colour a galaxy is born in. */
+const FLASH_COLOR = new Color(0xfff0d0);
 
 function easeInOut(k: number): number {
   return k * k * (3 - 2 * k);
@@ -62,7 +59,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
   const streakGlow = useRef<Sprite>(null);
   const streakTrail = useRef<Mesh>(null);
   const arriveRef = useRef<Sprite>(null);
-  const lightRef = useRef<PointLight>(null);
+  const lamp = useLamp();
   const t0 = useRef<number | null>(null);
   const ignited = useRef(false);
 
@@ -158,15 +155,13 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       streakTrail.current.scale.set(1, 1, 1 + len * 24);
       trailMat.opacity = sk > 0 && sk < 1 ? 0.6 : 0;
     }
-    if (lightRef.current) {
-      lightRef.current.intensity = 5 + flare * 70;
-      if (sk > 0) {
-        lightRef.current.position.copy(P);
-        lightRef.current.intensity = 8 * (1 - sk * 0.6);
-      } else {
-        lightRef.current.position.copy(CURRENT_SYSTEM_ANCHOR);
-      }
-    }
+    // The ceremony's own light rides the new star out to its seat.
+    lamp.set(
+      sk > 0 ? P : CURRENT_SYSTEM_ANCHOR,
+      star,
+      sk > 0 ? 8 * (1 - sk * 0.6) : 5 + flare * 70,
+      12,
+    );
 
     // Phase 4 — arrival ring at the constellation seat.
     const ak = Math.max(0, Math.min(1, (e - STREAK_B) / (END - STREAK_B)));
@@ -211,7 +206,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       <sprite ref={arriveRef} position={target} raycast={() => null}>
         <primitive object={arriveMat} attach="material" />
       </sprite>
-      <pointLight ref={lightRef} position={CURRENT_SYSTEM_ANCHOR} color={star} intensity={5} distance={12} />
+      {/* Ceremony light: pool slot, driven above — see SceneLamps. */}
     </group>
   );
 }
@@ -253,9 +248,13 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
     () => makeTexSprite(SCENE_SPRITES.fx.shockwaveRing, { color: 0xffe9c0, opacity: 0, additive: true }),
     [],
   );
-  const lightRef = useRef<PointLight>(null);
+  const lamp = useLamp();
   const t0 = useRef<number | null>(null);
   const boomed = useRef(false);
+  // Parked on the birth site; only the flash moves it (setIntensity, below).
+  useEffect(() => {
+    lamp.set(target, FLASH_COLOR, 0, 20);
+  }, [lamp, target]);
 
   const CONVERGE = 1.75;
   const FLASH_T = 1.8;
@@ -294,7 +293,7 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
       shockRef.current.scale.setScalar(0.7 + f * 16);
       shockMat.opacity = f > 0 ? (1 - f) * 0.65 : 0;
     }
-    if (lightRef.current) lightRef.current.intensity = flash * 90;
+    lamp.setIntensity(flash * 90);
 
     if (e >= END) useUiBus.getState().finishCinematic();
   });
@@ -318,7 +317,7 @@ function GalaxyFormation({ job }: { job: CinematicJob }) {
       <sprite ref={shockRef} position={target} raycast={() => null}>
         <primitive object={shockMat} attach="material" />
       </sprite>
-      <pointLight ref={lightRef} position={target} color={0xfff0d0} intensity={0} distance={20} />
+      {/* Ceremony light: pool slot, driven above — see SceneLamps. */}
     </group>
   );
 }

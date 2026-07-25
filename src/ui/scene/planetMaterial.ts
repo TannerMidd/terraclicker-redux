@@ -1,4 +1,11 @@
-import { AdditiveBlending, BackSide, Color, MeshBasicNodeMaterial, MeshStandardNodeMaterial } from 'three/webgpu';
+import {
+  AdditiveBlending,
+  BackSide,
+  Color,
+  MeshBasicNodeMaterial,
+  MeshStandardNodeMaterial,
+  Vector3,
+} from 'three/webgpu';
 import {
   abs,
   attribute,
@@ -171,6 +178,20 @@ export interface PlanetUniforms {
  * aspect gauges are uniforms, and every visible feature derives from them —
  * ice caps recede with thermal, sea level rises with hydro, vegetation
  * creeps with bio, city lights wake on the night side near completion.
+ *
+ * EVERY per-world value here is a uniform, and that is load-bearing rather
+ * than tidy. three caches a compiled shader per node-graph SHAPE, and a
+ * literal baked into the graph — a palette colour, a seed offset, an `if
+ * (isEarth)` branch — changes the shape, so each world became its own shader.
+ * Building one is hundreds of milliseconds of WGSL generation, it happens
+ * synchronously inside the render pass the first time the world is drawn, and
+ * a system reveals five worlds at once: measured at 8.4 SECONDS of frozen
+ * main thread when clicking a system in a 409-world universe. With the values
+ * in uniforms every planet in the game shares one shader — built once, then
+ * free — and the same click costs 33ms.
+ *
+ * So: nothing that varies per world may enter this graph as a literal. If a
+ * new feature needs a per-world number, it needs a uniform.
  */
 export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: boolean) {
   const thermal = uniform(0);
@@ -179,16 +200,37 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
   const bio = uniform(0);
   const sunDir = uniform(vec3(1, 0.35, 0.6));
 
+  // The palette, as uniforms. `uniform(color)` uploads r/g/b unchanged, so
+  // these are the same numbers the literals used to be.
+  const uDeepWater = uniform(pal.deepWater);
+  const uShallowWater = uniform(pal.shallowWater);
+  const uLow = uniform(pal.low);
+  const uHigh = uniform(pal.high);
+  const uPeak = uniform(pal.peak);
+  const uVegetation = uniform(pal.vegetation);
+  const uIce = uniform(pal.ice);
+  const uEmissive = uniform(pal.emissive);
+  const uCapBase = uniform(pal.capBase);
+  const uFrostMax = uniform(pal.frostMax);
+  // Earth is a variation in value, not in shape — a branch would fork the
+  // shader and cost every other planet the sharing.
+  const uEarth = uniform(isEarth ? 1 : 0);
+
   const mat = new MeshStandardNodeMaterial();
   const baseElevation = attribute('elevation', 'float');
   const latitude = attribute('latitude', 'float');
   const seedOff = (seed % 977) * 0.13;
+  // Three noise fields are offset by the seed so two worlds never wear the
+  // same continents. Precomputed on the CPU, uploaded as vectors.
+  const uDetailOff = uniform(new Vector3(seedOff, seedOff * 1.7 + 3.1, seedOff * 0.34 + 7.7));
+  const uVegOff = uniform(new Vector3(seedOff, 0, seedOff));
+  const uCityOff = uniform(new Vector3(seedOff, seedOff, 0));
 
   // Displacement is radial, so normalising the local position recovers the
   // ORIGINAL sphere direction exactly — the one coordinate that is stable
   // between the vertex and fragment stages and identical for every octave.
   const dir = normalize(positionLocal);
-  const detailOff = vec3(seedOff, seedOff * 1.7 + 3.1, seedOff * 0.34 + 7.7);
+  const detailOff = uDetailOff;
 
   // Detail LOD: 0 seen from orbit, 1 on a low pass.
   const camDist = cameraPosition.sub(positionWorld).length();
@@ -245,16 +287,16 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
   const isWater = smoothstep(seaLevel.add(0.012), seaLevel.sub(0.012), elevShape); // 1 under water
   const shoreFoam = smoothstep(0.024, 0.0, abs(elevShape.sub(seaLevel))).mul(isWater.oneMinus().add(0.4));
   const waterDepth = smoothstep(seaLevel, seaLevel.sub(0.3), elevShape);
-  const waterCol = mix(vec3(pal.shallowWater.r, pal.shallowWater.g, pal.shallowWater.b), vec3(pal.deepWater.r, pal.deepWater.g, pal.deepWater.b), waterDepth);
+  const waterCol = mix(uShallowWater, uDeepWater, waterDepth);
 
   // — Land ramp by elevation, with altitude depth-shading for contrast. —
   const landMix = smoothstep(seaLevel, 0.85, elevation);
-  let landCol = mix(vec3(pal.low.r, pal.low.g, pal.low.b), vec3(pal.high.r, pal.high.g, pal.high.b), landMix);
-  landCol = mix(landCol, vec3(pal.peak.r, pal.peak.g, pal.peak.b), smoothstep(0.78, 0.95, elevation));
+  let landCol = mix(uLow, uHigh, landMix);
+  landCol = mix(landCol, uPeak, smoothstep(0.78, 0.95, elevation));
   landCol = landCol.mul(elevation.mul(0.55).add(0.62)) as unknown as ReturnType<typeof mix>; // valleys darker than ridges
 
   // — Vegetation: a creeping frontier driven by bio. —
-  const vegNoise = mx_fractal_noise_float(positionWorld.mul(2.6).add(vec3(seedOff, 0, seedOff)), 3, 2.2, 0.55, 1);
+  const vegNoise = mx_fractal_noise_float(positionWorld.mul(2.6).add(uVegOff), 3, 2.2, 0.55, 1);
   const vegBand = smoothstep(seaLevel.add(0.005), seaLevel.add(0.28), elevShape)
     .mul(smoothstep(0.75, 0.45, elevShape));
   const vegThreshold = bio.mul(1.6).sub(0.55);
@@ -262,17 +304,17 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
     .oneMinus()
     .mul(vegBand)
     .mul(bio.mul(3).clamp(0, 1));
-  landCol = mix(landCol, vec3(pal.vegetation.r, pal.vegetation.g, pal.vegetation.b), vegMask.mul(0.9));
+  landCol = mix(landCol, uVegetation, vegMask.mul(0.9));
 
   // — Ice caps recede as thermal fills (size at rest depends on planet type). —
-  const capEdge = mix(float(pal.capBase), float(0.96), thermal);
+  const capEdge = mix(uCapBase, float(0.96), thermal);
   const capMask = smoothstep(capEdge, capEdge.add(0.05), latitude);
-  const frost = smoothstep(0.55, 0.0, thermal).mul(pal.frostMax); // permafrost tint when cold
+  const frost = smoothstep(0.55, 0.0, thermal).mul(uFrostMax); // permafrost tint when cold
 
   type N = ReturnType<typeof vec3>;
   let surface = mix(landCol, waterCol, isWater) as unknown as N;
   surface = surface.add(shoreFoam.mul(0.35)) as unknown as N;
-  surface = mix(surface, vec3(pal.ice.r, pal.ice.g, pal.ice.b), capMask.max(frost)) as unknown as N;
+  surface = mix(surface, uIce, capMask.max(frost)) as unknown as N;
 
   mat.colorNode = surface;
   mat.roughnessNode = mix(float(0.9), float(0.24), isWater).sub(
@@ -287,19 +329,17 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
 
   // — Night side: bioluminescence, then city lights near completion. —
   const nightSide = smoothstep(0.15, -0.25, dot(normalWorld, normalize(sunDir)));
-  const cityNoise = mx_fractal_noise_float(positionWorld.mul(9.0).add(vec3(seedOff, seedOff, 0)), 2, 2.0, 0.6, 1);
+  const cityNoise = mx_fractal_noise_float(positionWorld.mul(9.0).add(uCityOff), 2, 2.0, 0.6, 1);
   const cityMask = smoothstep(0.55, 0.9, cityNoise.mul(0.5).add(0.5))
     .mul(isWater.oneMinus())
     .mul(capMask.oneMinus());
   const civilization = clamp(bio.add(thermal).add(atmo).add(hydro).mul(0.25).sub(0.55).mul(2.4), 0, 1);
   const cityGlow = vec3(1.0, 0.72, 0.35).mul(cityMask).mul(civilization).mul(nightSide).mul(1.6);
-  const veins = vec3(pal.emissive.r, pal.emissive.g, pal.emissive.b)
+  const veins = uEmissive
     .mul(smoothstep(0.45, 0.2, elevation))
     .mul(smoothstep(0.6, 0.0, thermal)) // volcanic veins cool and fade as terraforming proceeds
     .mul(0.8);
-  const earthNight = (isEarth
-    ? vec3(0.02, 0.05, 0.1).mul(nightSide)
-    : vec3(0, 0, 0)) as unknown as ReturnType<typeof vec3>;
+  const earthNight = vec3(0.02, 0.05, 0.1).mul(nightSide).mul(uEarth);
   mat.emissiveNode = cityGlow.add(veins).add(earthNight);
 
   return { mat, uniforms: { thermal, atmo, hydro, bio, sunDir } };
@@ -312,7 +352,9 @@ export function createAtmosphereMaterial(pal: PlanetPalette) {
   const viewDir = normalize(cameraPosition.sub(positionWorld));
   const rim = pow(sub(1.0, abs(dot(normalWorld, viewDir))), 2.4);
   const strength = atmo.mul(0.9).add(0.045);
-  mat.colorNode = vec3(pal.atmosphere.r, pal.atmosphere.g, pal.atmosphere.b).mul(rim).mul(strength);
+  // Hue as a uniform, so every planet type shares one shader — see
+  // createPlanetMaterial for why a baked colour is expensive here.
+  mat.colorNode = uniform(pal.atmosphere).mul(rim).mul(strength);
   mat.side = BackSide;
   mat.transparent = true;
   mat.blending = AdditiveBlending;
@@ -324,7 +366,7 @@ export function createAtmosphereMaterial(pal: PlanetPalette) {
 export function createCloudMaterial(seed: number) {
   const coverage = uniform(0);
   const mat = new MeshStandardNodeMaterial();
-  const seedOff = (seed % 613) * 0.29;
+  const seedOff = uniform((seed % 613) * 0.29);
   const n = mx_fractal_noise_float(
     positionWorld.mul(2.4).add(vec3(time.mul(0.014).add(seedOff), 0, time.mul(0.009))),
     3,
