@@ -1,4 +1,5 @@
 import { createExpeditionState } from '../deepField';
+import { createFreightState } from '../freight';
 import { createSubEthaState } from '../subEtha';
 import { createOperationsState } from '../operations';
 import { initRng } from '../rng';
@@ -255,6 +256,46 @@ export const MIGRATIONS: readonly Migration[] = [
               : C.SITUATION_FIRST_MIN_MS,
         },
         situations: [],
+      };
+    },
+  },
+  {
+    // v8 -> v9: the expansion, in one bump (docs/EXPANSION.md). The flight
+    // economy gains a hold, a board, seams and rigs; worlds gain a petition
+    // queue; megaprojects get a home OUTSIDE `run`, because they survive
+    // prestige. Everything arrives empty: seams are seeded from the master
+    // seed and so were always where they are, but nothing was ever prospected,
+    // carried or commissioned in a version that had none of it.
+    from: 8,
+    migrate: (raw) => {
+      const seed = typeof raw['seed'] === 'number' ? raw['seed'] : 1;
+      const obj = (k: string): Record<string, unknown> =>
+        typeof raw[k] === 'object' && raw[k] !== null ? (raw[k] as Record<string, unknown>) : {};
+      const rng = obj('rng');
+      const expedition = obj('expedition');
+      const timers = obj('timers');
+      return {
+        ...raw,
+        rng: {
+          ...rng,
+          freight: typeof rng['freight'] === 'number' ? rng['freight'] : initRng(seed).freight,
+        },
+        run: { ...obj('run'), petitions: [] },
+        lifetime: {
+          ...obj('lifetime'),
+          deliveries: 0,
+          rigsPlaced: 0,
+          megaprojectsBuilt: 0,
+        },
+        expedition: { ...expedition, ...createFreightState() },
+        megaprojects: {},
+        timers: {
+          ...timers,
+          nextPetitionMs:
+            typeof timers['nextPetitionMs'] === 'number'
+              ? timers['nextPetitionMs']
+              : C.PETITION_MIN_GAP_MS,
+        },
       };
     },
   },

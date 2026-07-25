@@ -9,6 +9,7 @@ import { ASPECTS, type AspectId } from '../../engine/types';
 import { BUILDINGS } from '../../content/buildings';
 import { buildingCost } from '../../engine/economy';
 import { EVENT_BY_ID } from '../../content/events';
+import { PETITION_BY_ID } from '../../content/petitions';
 import {
   SITUATION_BY_ID,
   fillSituationText,
@@ -220,20 +221,22 @@ const LAPSE_HINT: Record<SituationSeverity, string> = {
   hazard: 'Let it pass and it will leave a mark.',
 };
 
-function SituationCard() {
-  const rev = useGame((g) => g.rev);
-  void rev;
+function SituationCard({
+  inst,
+  petition = false,
+}: {
+  inst: { uid: number; id: string; remainingMs: number; worldName: string };
+  petition?: boolean;
+}) {
   const { s, d } = useGame.getState();
-  const inst = s.situations[0];
-  if (!inst) return null;
-  const def = SITUATION_BY_ID[inst.id];
+  const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
   if (!def) return null;
 
   const left = Math.max(0, inst.remainingMs);
   const frac = Math.max(0, Math.min(1, left / def.windowMs));
 
   return (
-    <div className={`situation-card sev-${def.severity}`}>
+    <div className={`situation-card sev-${def.severity}${petition ? ' petition-card' : ''}`}>
       <div className="sc-head">
         <span className="sc-emoji" aria-hidden>
           {def.emoji}
@@ -277,6 +280,28 @@ function SituationCard() {
         })}
       </div>
       <div className="sc-lapse">{LAPSE_HINT[def.severity]}</div>
+    </div>
+  );
+}
+
+/**
+ * Everything currently waiting on an answer: the urgent situation first, then
+ * the petitions the worlds have filed. Petitions queue rather than interrupt,
+ * so seeing three at once is normal and none of them is an emergency.
+ */
+function NoticeQueue() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const urgent = s.situations[0];
+  const petitions = s.run.petitions;
+  if (!urgent && petitions.length === 0) return null;
+  return (
+    <div className="petition-stack">
+      {urgent && <SituationCard inst={urgent} />}
+      {petitions.map((p) => (
+        <SituationCard key={p.uid} inst={p} petition />
+      ))}
     </div>
   );
 }
@@ -398,7 +423,7 @@ export function HUD() {
       <EtaRibbon />
       <BuffRow />
       <div className="notice-stack">
-        <SituationCard />
+        <NoticeQueue />
         <VogonBanner />
       </div>
       <Toasts />

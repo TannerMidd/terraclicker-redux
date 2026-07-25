@@ -17,6 +17,7 @@ import type {
 } from '../../engine/types';
 import { actions, useGame } from '../../state/store';
 import { AspectGlyph } from '../assets';
+import { FreightSection, MegaprojectSection, RigSection } from './ExpansionSections';
 
 const ASPECT_CLASS = {
   thermal: 'asp-th',
@@ -289,6 +290,9 @@ export function OperationsPanel() {
         )}
       </div>
 
+      <MegaprojectSection />
+      <FreightSection />
+      <RigSection />
       <div className="panel-h">Heritage Registry</div>
       <div className="heritage-rule">
         Designate one completed world in Guide → Commission Atlas before selling the commission.

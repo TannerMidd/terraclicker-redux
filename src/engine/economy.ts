@@ -1,5 +1,6 @@
 import { C } from '../content/constants';
 import { standingFactor } from './situations';
+import { megaprojectEffects } from './megaprojects';
 import { BUILDINGS, BUILDING_BY_ID } from '../content/buildings';
 import { UPGRADES, UPGRADE_BY_ID, type UpgradeDef } from '../content/upgrades';
 import { RESEARCH_BY_ID } from '../content/research';
@@ -251,6 +252,12 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
     .mul(1 + C.SYSTEM_BONUS * state.run.systems * standingFactor(state))
     .mul(Decimal.pow(C.GALAXY_MULT, state.run.galaxies))
     .mul(mondayMult);
+  // Megaprojects: the only permanent structures in the game, and the only
+  // multipliers that survive a prestige.
+  const mega = megaprojectEffects(state);
+  prodMult = prodMult.mul(mega.prodMult);
+  scienceMult *= mega.scienceMult;
+  offlineCapMs += mega.offlineCapAddMs;
   if (answer) prodMult = prodMult.mul(C.ANSWER_MULT);
 
   // Buffs (bubbles) and events

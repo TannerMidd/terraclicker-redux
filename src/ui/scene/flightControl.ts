@@ -42,6 +42,17 @@ import {
   thrustMult,
   type DeepFieldSite,
 } from '../../engine/deepField';
+import {
+  deterrentPower,
+  isProspected,
+  isSeamId,
+  massFactor,
+  rigLimit,
+  rigsStanding,
+  seamAsLandmark,
+  seamSites,
+} from '../../engine/freight';
+import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
 import { C } from '../../content/constants';
 
@@ -293,6 +304,8 @@ export const flightInput = {
   engage: false,
   /** Tapped the jump key this frame (consumed by stepFlight). */
   jump: false,
+  /** Holding the dispersal field key. */
+  deter: false,
 };
 
 const EUL = new Euler(0, 0, 0, 'YXZ');
@@ -447,7 +460,13 @@ export function stepFlight(dt: number, t: number): void {
   const engaged = DESIRED.lengthSq() > 1e-6;
   if (engaged) DESIRED.multiplyScalar(cap);
 
-  const resp = braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : RESP_COAST;
+  // Cargo is mass, and mass is the whole hauling mechanic: a loaded hold
+  // does not cap your speed, it slows how fast you reach or shed it. The
+  // proximity governor consequently needs more room to save you, which is
+  // exactly the tension a freight run is supposed to have. An empty ship
+  // divides by 1 and flies as it always did.
+  const heft = massFactor(useGame.getState().s.expedition);
+  const resp = (braking > 0 ? RESP_BRAKE : engaged ? RESP_THRUST : RESP_COAST) / heft;
   if (braking > 0) DESIRED.set(0, 0, 0);
   f.vel.lerp(DESIRED, 1 - Math.exp(-dt * resp));
 
@@ -476,9 +495,18 @@ export function stepFlight(dt: number, t: number): void {
 
 let sitesCache: { seed: number; sites: DeepFieldSite[] } | null = null;
 
+/**
+ * Everything out there the sensors can hold: the Deep Field catalogue AND the
+ * mining seams, which are dressed as landmarks precisely so they inherit this
+ * pipeline rather than growing a second one beside it (see seamAsLandmark).
+ */
 function sitesForSeed(seed: number): DeepFieldSite[] {
   if (!sitesCache || sitesCache.seed !== seed) {
-    sitesCache = { seed, sites: deepFieldSites(seed) };
+    const seams: DeepFieldSite[] = seamSites(seed).map((s2) => ({
+      def: seamAsLandmark(SEAM_BY_ID[s2.id]!),
+      pos: s2.pos,
+    }));
+    sitesCache = { seed, sites: [...deepFieldSites(seed), ...seams] };
   }
   return sitesCache.sites;
 }
@@ -503,7 +531,11 @@ function writeContact(
   expedition: ReturnType<typeof useGame.getState>['s']['expedition'],
   rumoured: boolean,
 ): FlightContact {
-  const scanned = isDiscovered(expedition, site.def.id);
+  // A seam's "scanned" is its prospecting record, not the Guide catalogue.
+  const seam = isSeamId(site.def.id);
+  const scanned = seam
+    ? isProspected(expedition, site.def.id)
+    : isDiscovered(expedition, site.def.id);
   out.id = site.def.id;
   out.rumoured = rumoured;
   out.label = scanned ? site.def.name : site.def.contact;
@@ -511,7 +543,8 @@ function writeContact(
   out.d = d;
   out.off = off;
   out.scanned = scanned;
-  out.boarded = isBoarded(expedition, site.def.id);
+  // A seam is never 'boarded' — you can work it again every time you come back.
+  out.boarded = seam ? false : isBoarded(expedition, site.def.id);
   out.inRange = d <= boardRange(site.def.radius);
   out.unreachable = Boolean(site.def.unreachable);
   return out;
@@ -599,7 +632,10 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     const seconds = Math.max(0.25, scanSecondsFor(expedition, locked.id));
     f.scanProgress = Math.min(1, f.scanProgress + dt / seconds);
     if (f.scanProgress >= 1) {
-      actions.scanSite(locked.id);
+      // Prospecting a seam and cataloguing a derelict are the same gesture
+      // with different paperwork behind it.
+      if (isSeamId(locked.id)) actions.prospectSeam(locked.id);
+      else actions.scanSite(locked.id);
       f.scanProgress = 0;
     }
   } else if (!flightInput.engage) {
@@ -620,7 +656,13 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     !f.paused &&
     f.speed <= BOARD_SPEED
   ) {
-    actions.boardSite(locked.id);
+    if (isSeamId(locked.id)) {
+      // Parked on a seam: collect what the rig banked, or plant one.
+      if (st.expedition.rigs[locked.id]) actions.collectRig(locked.id);
+      else actions.placeRig(locked.id);
+    } else {
+      actions.boardSite(locked.id);
+    }
   }
 
   // The prompt: exactly one verb, so the console never offers a menu.
@@ -630,6 +672,25 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
       f.prompt = { verb: 'scan', label: 'scan' };
     } else if (locked.unreachable) {
       f.prompt = null;
+    } else if (isSeamId(locked.id)) {
+      const rig = expedition.rigs[locked.id];
+      const seam = SEAM_BY_ID[locked.id];
+      if (!locked.inRange) {
+        f.prompt = hasJumpDrive(expedition) ? { verb: 'jump', label: 'jump to it' } : null;
+      } else if (f.speed > BOARD_SPEED) {
+        f.prompt = { verb: 'board', label: 'slow down to work it' };
+      } else if (rig) {
+        f.prompt =
+          rig.banked >= 1
+            ? { verb: 'board', label: `collect ${Math.floor(rig.banked)} salvage` }
+            : { verb: 'board', label: 'rig working — nothing banked yet' };
+      } else if (rigsStanding(expedition) >= rigLimit(expedition)) {
+        f.prompt = { verb: 'board', label: 'no rig bay free' };
+      } else if (seam && expedition.salvage < seam.rigCost) {
+        f.prompt = { verb: 'board', label: `needs ${seam?.rigCost} salvage to rig` };
+      } else {
+        f.prompt = { verb: 'board', label: `place a rig (${seam?.rigCost} salvage)` };
+      }
     } else if (!locked.boarded) {
       f.prompt = locked.inRange
         ? { verb: 'board', label: f.speed > BOARD_SPEED ? 'slow down to board' : 'board' }
@@ -928,6 +989,117 @@ function scanSurroundings(): void {
   bodies.length = n;
 
   refreshContacts();
+  stepManifest(st);
+  stepInterdiction(st);
+}
+
+/** How close counts as arrived at a destination world. */
+const DELIVER_RANGE = 6;
+
+/**
+ * Delivery. Fly the manifest to the world it is addressed to and it is
+ * discharged on arrival — there is no dock, no menu and no button, because
+ * arriving IS the verb. The destination has to be a world whose system is
+ * currently revealed, which is exactly the set the collision list already
+ * holds, so "close enough to deliver" and "close enough to crash into"
+ * agree by construction.
+ */
+function stepManifest(st: ReturnType<typeof useGame.getState>['s']): void {
+  const m = st.expedition.manifest;
+  if (!m) return;
+  const f = flightLive;
+  for (const body of bodies) {
+    if (body.label !== m.toName) continue;
+    bodyPosition(body, f.clock, TMP);
+    if (TMP.distanceTo(f.pos) <= DELIVER_RANGE + body.radius) {
+      actions.deliverManifest();
+      return;
+    }
+  }
+}
+
+// ————— Interdiction —————
+
+/**
+ * Somebody wants a word about your cargo.
+ *
+ * The risk exists BECAUSE you are carrying something: an empty ship is never
+ * interdicted, which keeps the pressure attached to the reward rather than
+ * taxing sightseeing. There is no damage model and no death — the three ways
+ * out are all things the existing flight model already does.
+ *
+ *   outrun   put distance between you; harder loaded, which is where the
+ *            mass you accepted at the board comes back for its answer
+ *   comply   stop, and it takes the cargo and the fee
+ *   deter    the Dispersal Field, if fitted, sends it away unharmed
+ */
+export const interdiction = {
+  active: false,
+  /** Where the patrol is, so the scene and HUD can point at it. */
+  pos: new Vector3(),
+  /** 0–1 how thoroughly it has lost interest. */
+  dispersal: 0,
+  sinceMs: 0,
+  nextAtMs: 0,
+};
+
+const PATROL_SPEED = 7.5;
+const PATROL_GIVE_UP = 95;
+
+function stepInterdiction(st: ReturnType<typeof useGame.getState>['s']): void {
+  const f = flightLive;
+  const now = performance.now();
+  const carrying = Boolean(st.expedition.manifest);
+
+  if (!interdiction.active) {
+    if (!carrying) {
+      // No cargo, no interest. The clock only runs while you have something.
+      interdiction.nextAtMs = Math.max(interdiction.nextAtMs, now + C.INTERDICTION_MIN_GAP_MS);
+      return;
+    }
+    if (now < interdiction.nextAtMs) return;
+    interdiction.active = true;
+    interdiction.dispersal = 0;
+    interdiction.sinceMs = now;
+    // It arrives behind and to one side, at the edge of comfortable.
+    interdiction.pos.copy(f.pos).addScaledVector(FWD, -55);
+    interdiction.pos.y += 12;
+    return;
+  }
+
+  // It follows. Slowly enough to be outrun, fast enough to matter.
+  TMP.copy(f.pos).sub(interdiction.pos);
+  const gap = TMP.length();
+  if (gap > 1e-4) interdiction.pos.addScaledVector(TMP.divideScalar(gap), PATROL_SPEED * 0.016);
+
+  if (flightInput.deter) {
+    const power = deterrentPower(st.expedition);
+    if (power > 0) {
+      interdiction.dispersal += 0.016 * power * 0.5;
+      if (interdiction.dispersal >= 1) {
+        endInterdiction(now);
+        actions.resolveInterdiction('deterred');
+        return;
+      }
+    }
+  }
+
+  if (gap > PATROL_GIVE_UP) {
+    endInterdiction(now);
+    actions.resolveInterdiction('outrun');
+    return;
+  }
+  // Complying is simply stopping and letting it catch up.
+  if (gap < 14 && f.speed < 1.2) {
+    endInterdiction(now);
+    actions.resolveInterdiction('complied');
+  }
+}
+
+function endInterdiction(now: number): void {
+  interdiction.active = false;
+  interdiction.dispersal = 0;
+  interdiction.nextAtMs = now + C.INTERDICTION_MIN_GAP_MS;
 }
 
 // ————— Camera application (called by CameraRig's flight branch) —————
@@ -1001,6 +1173,8 @@ function inputFromKeys(): void {
   flightInput.vert = (keys.has('Space') ? 1 : 0) - (keys.has('KeyC') ? 1 : 0);
   flightInput.boost = keys.has('ShiftLeft') || keys.has('ShiftRight');
   flightInput.engage = keys.has('KeyE');
+  // F: the Dispersal Field. Held, like everything else that takes nerve.
+  flightInput.deter = keys.has('KeyF');
   if (flightInput.brake > 0) flightInput.cruise = 0;
 }
 

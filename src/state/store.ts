@@ -249,6 +249,15 @@ export const actions = {
   buyRefit: (id: string) => dispatch({ type: 'buyRefit', id }),
   answerSituation: (uid: number, optionId: string) =>
     dispatch({ type: 'answerSituation', uid, optionId }),
+  acceptJob: (uid: number) => dispatch({ type: 'acceptJob', uid }),
+  abandonManifest: () => dispatch({ type: 'abandonManifest' }),
+  deliverManifest: () => dispatch({ type: 'deliverManifest' }),
+  prospectSeam: (id: string) => dispatch({ type: 'prospectSeam', id }),
+  placeRig: (id: string) => dispatch({ type: 'placeRig', id }),
+  collectRig: (id: string) => dispatch({ type: 'collectRig', id }),
+  startMegaproject: (id: string) => dispatch({ type: 'startMegaproject', id }),
+  resolveInterdiction: (outcome: 'outrun' | 'complied' | 'deterred') =>
+    dispatch({ type: 'resolveInterdiction', outcome }),
 };
 
 // Dev hook for headless verification and manual poking.

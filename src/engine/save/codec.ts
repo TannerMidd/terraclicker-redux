@@ -37,7 +37,20 @@ function cloneExpedition(expedition: GameState['expedition']): GameState['expedi
     boarded: { ...expedition.boarded },
     salvage: expedition.salvage,
     refits: { ...expedition.refits },
+    manifest: expedition.manifest ? { ...expedition.manifest } : null,
+    jobs: expedition.jobs.map((j) => ({ ...j })),
+    seams: { ...expedition.seams },
+    rigs: Object.fromEntries(
+      Object.entries(expedition.rigs).map(([k, v]) => [k, { ...v }]),
+    ),
+    interdictions: expedition.interdictions,
+    deliveries: expedition.deliveries,
+    nextJobMs: expedition.nextJobMs,
   };
+}
+
+function cloneMegaprojects(m: GameState['megaprojects']): GameState['megaprojects'] {
+  return Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v }]));
 }
 
 /** GameState → plain JSON-safe object (Decimals as strings). */
@@ -105,11 +118,17 @@ export function fromSave(shape: SaveShape): GameState {
       gauges: aspects(shape.planet.gauges),
       targets: aspects(shape.planet.targets),
     },
-    run: { ...shape.run, tuEarned: D(shape.run.tuEarned), standing: { ...shape.run.standing } },
+    run: {
+      ...shape.run,
+      tuEarned: D(shape.run.tuEarned),
+      standing: { ...shape.run.standing },
+      petitions: shape.run.petitions.map((p) => ({ ...p })),
+    },
     lifetime: { ...shape.lifetime, tuEarned: D(shape.lifetime.tuEarned) },
     situations: shape.situations.map((s2) => ({ ...s2 })),
     operations: cloneOperations(shape.operations),
     expedition: cloneExpedition(shape.expedition),
+    megaprojects: cloneMegaprojects(shape.megaprojects),
     subEtha: {
       log: shape.subEtha.log.map((e) => ({ ...e })),
       nextBroadcastMs: shape.subEtha.nextBroadcastMs,

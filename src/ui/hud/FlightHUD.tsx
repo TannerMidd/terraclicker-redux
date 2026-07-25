@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
-import { flightInput, flightLive, mouseSteer } from '../scene/flightControl';
+import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flightControl';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
 import { DEEP_FIELD } from '../../content/deepField';
 import { refitCost } from '../../engine/deepField';
+import { deterrentPower } from '../../engine/freight';
+import { FREIGHT_BY_ID } from '../../content/freight';
 import { actions, useGame } from '../../state/store';
 import * as audio from '../audio/audio';
 
@@ -42,6 +44,56 @@ export function rangeLabel(d: number): string {
  * PANIC sticker required by regulation. All gauges are driven imperatively
  * from flightLive at rAF speed, same pattern as UniverseHUD.
  */
+/**
+ * What is in the hold, at the helm, where the flying happens. Deliberately
+ * small: the manifest matters most as the reason the ship feels heavy and as
+ * the destination you are aiming at.
+ */
+function ManifestStrip() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const m = useGame.getState().s.expedition.manifest;
+  if (!m) return null;
+  const def = FREIGHT_BY_ID[m.id];
+  return (
+    <div className="fh-manifest">
+      <span className="fm-label">{def?.label ?? m.id}</span>
+      <span className="fm-to">→ {m.toName}</span>
+      <span className="fm-pay">{m.salvage} salvage</span>
+    </div>
+  );
+}
+
+/**
+ * A patrol has taken an interest. Three ways out, all of them things the ship
+ * can already do — nothing here shoots at anybody.
+ */
+function InterdictionBanner() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => force((n) => n + 1), 200);
+    return () => window.clearInterval(id);
+  }, []);
+  if (!interdiction.active) return null;
+  const power = deterrentPower(useGame.getState().s.expedition);
+  return (
+    <div className="fh-interdiction">
+      <div className="fi-kicker">customs interest</div>
+      <div className="fi-line">
+        Somebody would like a word about the hold. Outrun them, stop and hand it over, or
+        {power > 0 ? ' hold ' : ' fit a dispersal field to use '}
+        {power > 0 && <kbd>f</kbd>}
+        {power > 0 ? ' and make them lose interest.' : 'one.'}
+      </div>
+      {power > 0 && (
+        <div className="fi-bar" aria-hidden>
+          <i style={{ width: `${Math.min(100, interdiction.dispersal * 100)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FlightHUD() {
   const flight = useUiBus((b) => b.flightMode);
   if (!flight) return null;
@@ -405,6 +457,7 @@ function FlightHUDInner() {
         </button>
       </div>
 
+      <ManifestStrip />
       <div className="fh-sensors empty">
         <div className="fs-head">
           sensors
@@ -417,6 +470,7 @@ function FlightHUDInner() {
         </button>
       </div>
 
+      <InterdictionBanner />
       <div className="fh-console">
         <img className="fh-panic" src={BRAND_ASSETS.dontPanic} alt="DON'T PANIC" draggable={false} />
         <div className="fh-mid">

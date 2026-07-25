@@ -25,6 +25,7 @@ import {
   THRUST_MULT,
 } from '../content/refit';
 import type { ExpeditionState } from './types';
+import { createFreightState } from './freight';
 
 /** Distance-from-home band for each shell. The soft wall sits at 200u. */
 const SHELL_RANGE: Record<DeepFieldShell, readonly [number, number]> = {
@@ -161,7 +162,7 @@ export function sitePositionAt(
 // ————— Fresh state —————
 
 export function createExpeditionState(): ExpeditionState {
-  return { discovered: {}, boarded: {}, salvage: 0, refits: {} };
+  return { discovered: {}, boarded: {}, salvage: 0, refits: {}, ...createFreightState() };
 }
 
 // ————— Refit-derived ship capabilities —————

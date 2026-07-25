@@ -25,6 +25,19 @@ export const SENSOR_RANGE = [70, 110, 165, 250] as const;
 export const ANALYSIS_RATE = [1, 1.5, 2.25, 3.4] as const;
 /** Speed-cap multiplier by nacelle rank. */
 export const THRUST_MULT = [1, 1.25, 1.56, 1.95] as const;
+/**
+ * Cargo the hold will take, by rank. Rank 0 is no hold at all — hauling is
+ * something you fit the ship for, not something it came with.
+ */
+export const CARGO_CAPACITY = [0, 20, 45, 90] as const;
+/** Rigs that may stand at once, by rank. Rank 0 cannot place one. */
+export const RIG_LIMIT = [0, 1, 3, 6] as const;
+/**
+ * Deterrent strength by rank — how quickly a patrol loses interest. It
+ * disperses; it does not destroy. Rank 0 means talking your way out is the
+ * only way out.
+ */
+export const DETERRENT_POWER = [0, 1, 1.9, 3] as const;
 
 export const REFITS: readonly RefitDef[] = [
   {
@@ -62,6 +75,36 @@ export const REFITS: readonly RefitDef[] = [
     maxRank: 1,
     costs: [40],
     effect: (rank) => (rank > 0 ? 'jump to any scanned contact' : 'not fitted'),
+  },
+  {
+    id: 'cargoHold',
+    name: 'Cargo Hold',
+    guide:
+      'A hold, and the paperwork that lets you claim it is one. Freight is mass, and mass is a thing the ship notices in every turn you make afterwards.',
+    maxRank: 3,
+    costs: [10, 22, 44],
+    effect: (rank) =>
+      rank > 0 ? `carries ${CARGO_CAPACITY[rank]} tonnes` : 'no hold fitted',
+  },
+  {
+    id: 'rigBay',
+    name: 'Rig Bay',
+    guide:
+      'Carries survey rigs and the means to leave one behind. A rig, once planted, works whether or not anybody is watching, which is more than can be said for most of the crew.',
+    maxRank: 3,
+    costs: [12, 26, 52],
+    effect: (rank) =>
+      rank > 0 ? `${RIG_LIMIT[rank]} rig${RIG_LIMIT[rank] === 1 ? '' : 's'} on station` : 'no bay fitted',
+  },
+  {
+    id: 'deterrent',
+    name: 'Dispersal Field',
+    guide:
+      'Persuades an interested party to be interested in somewhere else. Harms nothing, damages nothing, and is deeply resented by everyone it works on.',
+    maxRank: 3,
+    costs: [16, 34, 68],
+    effect: (rank) =>
+      rank > 0 ? `disperses a patrol ×${DETERRENT_POWER[rank]!.toFixed(1)} faster` : 'not fitted',
   },
 ];
 

@@ -44,12 +44,31 @@ import { createExpeditionState, isBoarded, isDiscovered, refitCost } from './dee
 import { createSubEthaState, fileBroadcast, stepSubEtha } from './subEtha';
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { CHRONICLE } from '../content/subEtha';
+import { SEAM_BY_ID } from '../content/freight';
+import { MEGAPROJECT_BY_ID } from '../content/megaprojects';
 import {
   answerSituation,
   createSituationsState,
+  spawnPetition,
   spawnSituation,
+  stepPetitions,
   stepSituations,
 } from './situations';
+import {
+  acceptJob,
+  collectRig,
+  deliverManifest,
+  loseManifest,
+  placeRig,
+  prospectSeam,
+  refreshJobBoard,
+  stepRigs,
+} from './freight';
+import {
+  startMegaproject,
+  stepMegaprojectSalvage,
+  stepMegaprojects,
+} from './megaprojects';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -95,6 +114,7 @@ export function newGame(seed: number, nowWall: number): GameState {
       tuEarned: DZERO,
       completedPlanets: [],
       standing: {},
+      petitions: [],
     },
     lifetime: {
       tuEarned: DZERO,
@@ -109,11 +129,15 @@ export function newGame(seed: number, nowWall: number): GameState {
       vogonReadingsEndured: 0,
       situationsAnswered: 0,
       situationsIgnored: 0,
+      deliveries: 0,
+      rigsPlaced: 0,
+      megaprojectsBuilt: 0,
       prestiges: 0,
     },
     prestige: { bp: 0, bpEarned: 0, catalogue: {} },
     operations: createOperationsState(),
     expedition: createExpeditionState(),
+    megaprojects: {},
     subEtha: createSubEthaState(),
     buffs: [],
     bubbles: [],
@@ -124,6 +148,7 @@ export function newGame(seed: number, nowWall: number): GameState {
       nextBubbleMs: C.FIRST_BUBBLE_MS,
       nextEventMs: randRange(rng, 'events', C.FIRST_EVENT_MIN_MS, C.FIRST_EVENT_MAX_MS),
       nextSituationMs: randRange(rng, 'situations', C.SITUATION_FIRST_MIN_MS, C.SITUATION_FIRST_MAX_MS),
+      nextPetitionMs: randRange(rng, 'situations', C.PETITION_MIN_GAP_MS, C.PETITION_MAX_GAP_MS),
       nextVogonMs: C.VOGON_EARLIEST_MS + randRange(rng, 'vogons', 0, C.VOGON_MAX_GAP_MS - C.VOGON_MIN_GAP_MS),
       stallMs: 0,
       sinceBubbleCatchMs: 0,
@@ -310,6 +335,40 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       answerSituation(state, derived, effects, input.uid, input.optionId);
       break;
     }
+    case 'acceptJob': {
+      acceptJob(state, effects, input.uid);
+      break;
+    }
+    case 'abandonManifest': {
+      loseManifest(state, effects, 'abandoned');
+      break;
+    }
+    case 'deliverManifest': {
+      deliverManifest(state, effects);
+      break;
+    }
+    case 'prospectSeam': {
+      prospectSeam(state, effects, input.id);
+      break;
+    }
+    case 'placeRig': {
+      placeRig(state, effects, input.id);
+      break;
+    }
+    case 'collectRig': {
+      collectRig(state, effects, input.id);
+      break;
+    }
+    case 'startMegaproject': {
+      startMegaproject(state, effects, input.id);
+      break;
+    }
+    case 'resolveInterdiction': {
+      state.expedition.interdictions += 1;
+      if (input.outcome === 'complied') loseManifest(state, effects, 'complied');
+      effects.push({ t: 'interdicted', outcome: input.outcome });
+      break;
+    }
     case 'devSpawn': {
       if (input.what === 'situation') spawnSituation(state, derived, effects);
       else if (input.what === 'vogon') spawnVogons(state, derived, effects, false, true);
@@ -367,6 +426,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     completedPlanets: [],
     // A fresh portfolio: nothing is neglected yet, and nothing is owed.
     standing: {},
+    // The worlds that were asking went with the sale.
+    petitions: [],
   };
 
   // Catalogue perks that shape the new run.
@@ -521,6 +582,26 @@ function chronicleEffect(state: GameState, effect: SimEffect): void {
       break;
     case 'situationResolved':
       fileBroadcast(state, 'chronicle', CHRONICLE.situationResolved(effect.text));
+      break;
+    case 'manifestDelivered':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.manifestDelivered(effect.to, effect.salvage, effect.passenger),
+      );
+      break;
+    case 'rigPlaced':
+      fileBroadcast(state, 'chronicle', CHRONICLE.rigPlaced(SEAM_BY_ID[effect.id]?.name ?? effect.id));
+      break;
+    case 'megaprojectFinished':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.megaprojectFinished(MEGAPROJECT_BY_ID[effect.id]?.name ?? effect.id),
+      );
+      break;
+    case 'interdicted':
+      fileBroadcast(state, 'chronicle', CHRONICLE.interdicted(effect.outcome));
       break;
     case 'prestiged':
       fileBroadcast(state, 'chronicle', CHRONICLE.prestiged());
@@ -685,6 +766,15 @@ export function step(
       }
     }
 
+    // 2b) The two systems that deliberately keep working while nobody is
+    //     watching. A rig was left behind precisely so it would, and a
+    //     megaproject's whole point is being what happened while you were
+    //     gone — see engine/megaprojects.ts for why it also ignores
+    //     offline efficiency.
+    if (stepRigs(state, TICK)) dirty = true;
+    stepMegaprojectSalvage(state, TICK);
+    if (stepMegaprojects(state, effects, TICK)) dirty = true;
+
     // 3) Spawns (suppressed offline; the universe waits for an audience).
     if (!offline) {
       if ((state.timers.nextBubbleMs -= TICK) <= 0) spawnBubble(state, derived, effects);
@@ -707,6 +797,19 @@ export function step(
         dirty = true;
       }
       if (stepSituations(state, derived, effects, TICK)) dirty = true;
+      // Petitions queue instead of interrupting, so they may be more frequent.
+      if ((state.timers.nextPetitionMs -= TICK) <= 0) {
+        spawnPetition(state, effects);
+        dirty = true;
+      }
+      if (stepPetitions(state, derived, effects, TICK)) dirty = true;
+      // The freight board is a clock, not a decision — safe to run unattended,
+      // and it only ever offers work between worlds you actually delivered.
+      if ((state.expedition.nextJobMs -= TICK) <= 0) {
+        state.expedition.nextJobMs = C.JOB_REFRESH_MS;
+        refreshJobBoard(state);
+        dirty = true;
+      }
       const noticeAt = state.flags['earthNoticeAtMs'];
       if (typeof noticeAt === 'number' && state.gameTimeMs >= noticeAt) {
         if (state.vogon) {

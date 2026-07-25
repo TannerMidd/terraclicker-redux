@@ -283,6 +283,20 @@ export const CHRONICLE = {
   towel: () => 'A towel has entered your possession. The Guide considers the matter settled.',
   situationResolved: (text: string) => text,
   situationIgnored: (text: string) => text,
+  manifestDelivered: (to: string, salvage: number, passenger: boolean) =>
+    passenger
+      ? `A passenger was set down at ${to}, still talking. The Guide has taken a statement and filed it under "corroborated".`
+      : `Manifest discharged at ${to}. ${salvage} units of salvage, signed for by somebody who did not read it.`,
+  rigPlaced: (seam: string) =>
+    `A survey rig now stands at ${seam}. It has been left detailed instructions and will ignore all of them productively.`,
+  megaprojectFinished: (name: string) =>
+    `${name} is finished and standing. It will outlast this commission, the next one, and very probably you.`,
+  interdicted: (outcome: 'outrun' | 'complied' | 'deterred') =>
+    outcome === 'outrun'
+      ? 'A patrol was left behind at speed. It has filed a complaint about the speed.'
+      : outcome === 'deterred'
+        ? 'A patrol was dispersed without injury and with enormous resentment.'
+        : 'A patrol was complied with. The cargo is theirs now, and the paperwork was immaculate.',
 } as const;
 
 // ————— Rumours (the category that does real work) —————

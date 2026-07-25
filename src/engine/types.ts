@@ -157,6 +157,60 @@ export interface ExpeditionState {
   salvage: number;
   /** Refit id → rank owned. */
   refits: Record<string, number>;
+  /** What is in the hold right now, or nothing. */
+  manifest: ManifestState | null;
+  /** The job board, as currently offered. */
+  jobs: JobOffer[];
+  /** Seam id → when it was prospected. Placement-eligible thereafter. */
+  seams: Record<string, number>;
+  /** Seam id → the rig standing on it. */
+  rigs: Record<string, RigState>;
+  /** Lifetime count, for the Guide and the achievements. */
+  interdictions: number;
+  /** Lifetime deliveries, freight and passengers alike. */
+  deliveries: number;
+  nextJobMs: number;
+}
+
+/** One job as offered on the board. */
+export interface JobOffer {
+  /** Unique per offer, so accepting the right one is unambiguous. */
+  uid: number;
+  /** FreightDef id. */
+  id: string;
+  /** Origin and destination, as world lifetimeIndex (0 = the home planet). */
+  from: number;
+  to: number;
+  fromName: string;
+  toName: string;
+  /** Straight-line distance between the two seats, for the distance pay. */
+  distance: number;
+  /** Salvage on delivery, already including the distance component. */
+  salvage: number;
+  /** Sim time this offer leaves the board. */
+  expiresAtMs: number;
+}
+
+/** The accepted job, once it is in the hold. */
+export interface ManifestState extends JobOffer {
+  acceptedAtMs: number;
+}
+
+export interface RigState {
+  placedAtMs: number;
+  /** Salvage waiting to be collected, capped by the seam. */
+  banked: number;
+  /** Sim time the bank was last advanced. */
+  lastTickMs: number;
+}
+
+/** A megaproject under construction, or standing. */
+export interface MegaprojectState {
+  /** Sim time the commission was signed. */
+  startedAtMs: number;
+  /** Ms of construction credited so far — advances offline too. */
+  builtMs: number;
+  done: boolean;
 }
 
 /** One line on the Sub-Etha. `site` marks a rumour and makes it actionable. */
@@ -221,7 +275,16 @@ export interface GameState {
      * below 1 has visibly dimmed and contributes less; it can always recover.
      */
     standing: Record<string, number>;
+    /** Requests from delivered worlds, queued. Sold with the portfolio. */
+    petitions: SituationInstance[];
   };
+
+  /**
+   * Megaprojects. NOT under `run`: Magrathea buys the portfolio, not the
+   * monuments — a finished one keeps its effect across every commission that
+   * follows, which makes it the only permanent thing the player can build.
+   */
+  megaprojects: Record<string, MegaprojectState>;
 
   lifetime: {
     tuEarned: Decimal;
@@ -236,6 +299,9 @@ export interface GameState {
     vogonReadingsEndured: number;
     situationsAnswered: number;
     situationsIgnored: number;
+    deliveries: number;
+    rigsPlaced: number;
+    megaprojectsBuilt: number;
     prestiges: number;
   };
 
@@ -262,6 +328,7 @@ export interface GameState {
     nextBubbleMs: number;
     nextEventMs: number;
     nextSituationMs: number;
+    nextPetitionMs: number;
     nextVogonMs: number;
     /** ms since last acquisition (purchase/planet/upgrade) — rubber band. */
     stallMs: number;
@@ -301,8 +368,24 @@ export type Input =
   | { type: 'devGrant'; tu: string; gaugeFrac?: number }
   /** Dev/testing input: force a spawn. */
   | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' | 'situation' }
-  /** Answer an open situation with one of its options. */
-  | { type: 'answerSituation'; uid: number; optionId: string };
+  /** Answer an open situation (or petition) with one of its options. */
+  | { type: 'answerSituation'; uid: number; optionId: string }
+  /** Take a job off the board and into the hold. */
+  | { type: 'acceptJob'; uid: number }
+  /** Drop what is in the hold, forfeiting the fee. */
+  | { type: 'abandonManifest' }
+  /** Deliver the manifest — the helm calls this on arrival. */
+  | { type: 'deliverManifest' }
+  /** A held scan resolved a seam; it can take a rig now. */
+  | { type: 'prospectSeam'; id: string }
+  /** Spend salvage to leave a rig on a prospected seam. */
+  | { type: 'placeRig'; id: string }
+  /** Collect what a rig has banked. */
+  | { type: 'collectRig'; id: string }
+  /** Commission a megaproject. */
+  | { type: 'startMegaproject'; id: string }
+  /** An interdiction resolved at the helm. */
+  | { type: 'resolveInterdiction'; outcome: 'outrun' | 'complied' | 'deterred' };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -336,7 +419,16 @@ export type SimEffect =
   | { t: 'siteScanned'; id: string }
   | { t: 'siteBoarded'; id: string; salvage: number }
   | { t: 'refitInstalled'; id: string; rank: number }
-  | { t: 'situationOpened'; uid: number; id: string; world: string }
+  | { t: 'situationOpened'; uid: number; id: string; world: string; petition?: boolean }
+  | { t: 'jobAccepted'; uid: number; id: string; to: string }
+  | { t: 'manifestDelivered'; id: string; salvage: number; to: string; passenger: boolean }
+  | { t: 'manifestLost'; id: string; reason: 'complied' | 'abandoned' }
+  | { t: 'seamProspected'; id: string }
+  | { t: 'rigPlaced'; id: string }
+  | { t: 'rigCollected'; id: string; salvage: number }
+  | { t: 'megaprojectStarted'; id: string }
+  | { t: 'megaprojectFinished'; id: string }
+  | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' }
   | {
       t: 'situationResolved';
       uid: number;

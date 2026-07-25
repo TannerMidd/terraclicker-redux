@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { newGame, step } from '../src/engine/sim';
 import { serialize, deserialize, toSave } from '../src/engine/save/codec';
 import { C } from '../src/content/constants';
+import { createFreightState } from '../src/engine/freight';
 
 import { initRng } from '../src/engine/rng';
 import { deepFieldSites } from '../src/engine/deepField';
@@ -70,6 +71,7 @@ describe('save migrations', () => {
     delete rng['contracts'];
     delete rng['subetha'];
     delete rng['situations'];
+    delete rng['freight'];
     const legacyStreams = { ...rng };
 
     const result = deserialize(JSON.stringify(raw));
@@ -135,11 +137,14 @@ describe('save migrations', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.state.version).toBe(C.SAVE_VERSION);
+    // A logbook that has never been opened, plus the empty flight-economy
+    // state v9 adds — nothing was ever carried, prospected or commissioned.
     expect(result.state.expedition).toEqual({
       discovered: {},
       boarded: {},
       salvage: 0,
       refits: {},
+      ...createFreightState(),
     });
     // Placement is a pure function of the master seed, so an old universe
     // gains its landmarks exactly where they would always have been.
@@ -172,8 +177,9 @@ describe('save migrations', () => {
     delete raw['subEtha'];
     const rng = raw['rng'] as Record<string, unknown>;
     delete rng['subetha'];
-    // v6 also predates the situations stream (v7 -> v8).
+    // v6 also predates the situations (v7 -> v8) and freight (v8 -> v9) streams.
     delete rng['situations'];
+    delete rng['freight'];
     const legacyStreams = { ...rng };
 
     const result = deserialize(JSON.stringify(raw));

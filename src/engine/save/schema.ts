@@ -70,6 +70,26 @@ const completedPlanetRecord = z.object({
   installations: z.array(z.string()),
 });
 
+const situationInstance = z.object({
+  uid: z.number().int(),
+  id: z.string(),
+  remainingMs: z.number(),
+  world: z.number().int().min(0),
+  worldName: z.string(),
+});
+
+const jobOffer = z.object({
+  uid: z.number().int(),
+  id: z.string(),
+  from: z.number().int(),
+  to: z.number().int(),
+  fromName: z.string(),
+  toName: z.string(),
+  distance: z.number(),
+  salvage: z.number(),
+  expiresAtMs: z.number(),
+});
+
 export const saveSchema = z.object({
   version: z.number().int().min(1),
   seed: z.number().int(),
@@ -82,6 +102,7 @@ export const saveSchema = z.object({
     contracts: z.number(),
     subetha: z.number(),
     situations: z.number(),
+    freight: z.number(),
   }),
   gameTimeMs: z.number().min(0),
   createdAtWall: z.number(),
@@ -118,6 +139,7 @@ export const saveSchema = z.object({
     completedPlanets: z.array(completedPlanetRecord),
     /** World lifetimeIndex → standing. Sparse: only worlds below 1 appear. */
     standing: z.record(z.string(), z.number().min(0).max(1)),
+    petitions: z.array(situationInstance),
   }),
   lifetime: z.object({
     tuEarned: dec,
@@ -132,6 +154,9 @@ export const saveSchema = z.object({
     vogonReadingsEndured: z.number().int().min(0),
     situationsAnswered: z.number().int().min(0),
     situationsIgnored: z.number().int().min(0),
+    deliveries: z.number().int().min(0),
+    rigsPlaced: z.number().int().min(0),
+    megaprojectsBuilt: z.number().int().min(0),
     prestiges: z.number().int().min(0),
   }),
   prestige: z.object({
@@ -182,7 +207,29 @@ export const saveSchema = z.object({
     boarded: z.record(z.string(), z.number().min(0)),
     salvage: z.number().min(0),
     refits: z.record(z.string(), z.number().int().min(0)),
+    manifest: jobOffer.extend({ acceptedAtMs: z.number() }).nullable(),
+    jobs: z.array(jobOffer),
+    seams: z.record(z.string(), z.number().min(0)),
+    rigs: z.record(
+      z.string(),
+      z.object({
+        placedAtMs: z.number().min(0),
+        banked: z.number().min(0),
+        lastTickMs: z.number().min(0),
+      }),
+    ),
+    interdictions: z.number().int().min(0),
+    deliveries: z.number().int().min(0),
+    nextJobMs: z.number(),
   }),
+  megaprojects: z.record(
+    z.string(),
+    z.object({
+      startedAtMs: z.number().min(0),
+      builtMs: z.number().min(0),
+      done: z.boolean(),
+    }),
+  ),
   subEtha: z.object({
     log: z.array(
       z.object({
@@ -214,15 +261,7 @@ export const saveSchema = z.object({
     }),
   ),
   activeEvents: z.array(z.object({ id: z.string(), remainingMs: z.number() })),
-  situations: z.array(
-    z.object({
-      uid: z.number().int(),
-      id: z.string(),
-      remainingMs: z.number(),
-      world: z.number().int().min(0),
-      worldName: z.string(),
-    }),
-  ),
+  situations: z.array(situationInstance),
   vogon: z
     .object({
       remainingMs: z.number(),
@@ -234,6 +273,7 @@ export const saveSchema = z.object({
     nextBubbleMs: z.number(),
     nextEventMs: z.number(),
     nextSituationMs: z.number(),
+    nextPetitionMs: z.number(),
     nextVogonMs: z.number(),
     stallMs: z.number(),
     sinceBubbleCatchMs: z.number(),

@@ -27,6 +27,7 @@ import {
   type SituationOutcome,
 } from '../content/situations';
 import { EVENT_BY_ID } from '../content/events';
+import { PETITION_BY_ID, petitionsFor } from '../content/petitions';
 import { C } from '../content/constants';
 
 /** One situation, open and waiting for an answer. */
@@ -164,6 +165,10 @@ function applyOutcome(
   }
   if (outcome.standing && inst.world > 0) {
     setStanding(state, inst.world, standingOf(state, inst.world) + outcome.standing);
+    // Looking after a world is noticed by the people who commissioned it.
+    // Only generosity earns trust; neglect costs standing with the world and
+    // is its own punishment.
+    if (outcome.standing > 0) state.operations.reputation.magrathea += 1;
   }
   effects.push({
     t: 'situationResolved',
@@ -186,12 +191,16 @@ export function answerSituation(
   uid: number,
   optionId: string,
 ): void {
-  const idx = state.situations.findIndex((s) => s.uid === uid);
+  // A uid may belong to the urgent queue or the petition queue; they resolve
+  // identically, which is the whole reason petitions reuse this shape.
+  const petition = state.situations.findIndex((s) => s.uid === uid) < 0;
+  const list = petition ? state.run.petitions : state.situations;
+  const idx = list.findIndex((s) => s.uid === uid);
   if (idx < 0) return;
-  const inst = state.situations[idx]!;
-  const def = SITUATION_BY_ID[inst.id];
+  const inst = list[idx]!;
+  const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
   if (!def) {
-    state.situations.splice(idx, 1);
+    list.splice(idx, 1);
     return;
   }
   const option = def.options.find((o) => o.id === optionId);
@@ -206,7 +215,7 @@ export function answerSituation(
   if (tuCost) state.tu = state.tu.sub(tuCost);
   if (sciCost) state.science = state.science.sub(sciCost);
 
-  state.situations.splice(idx, 1);
+  list.splice(idx, 1);
   state.lifetime.situationsAnswered += 1;
   applyOutcome(state, derived, effects, option.outcome, inst);
 }
@@ -259,4 +268,83 @@ export function situationCosts(
 /** Kept for parity with the other subsystems' factory style. */
 export function createSituationsState(): SituationInstance[] {
   return [];
+}
+
+// ————————————————— Petitions —————————————————
+
+/**
+ * A petition is a situation a WORLD wrote, and it runs on everything above:
+ * the same def shape, the same options, the same resolution and the same
+ * standing. Three things differ, and all three are about tone rather than
+ * mechanism — it is queued instead of interrupting, it is keyed to what that
+ * world actually is, and letting one lapse only lets it slip.
+ *
+ * They live in `run.petitions` rather than `state.situations`, which is what
+ * keeps "one question at a time" true for the urgent kind while still letting
+ * three worlds be waiting on you.
+ */
+export function findOpen(state: GameState, uid: number): SituationInstance | null {
+  return (
+    state.situations.find((s) => s.uid === uid) ??
+    state.run.petitions.find((p) => p.uid === uid) ??
+    null
+  );
+}
+
+export function spawnPetition(state: GameState, effects: SimEffect[]): void {
+  state.timers.nextPetitionMs = randRange(
+    state.rng,
+    'situations',
+    C.PETITION_MIN_GAP_MS,
+    C.PETITION_MAX_GAP_MS,
+  );
+  if (state.run.petitions.length >= C.PETITION_QUEUE_MAX) return;
+  const worlds = state.run.completedPlanets;
+  if (worlds.length === 0) return;
+
+  // A world already out of sorts is the one most likely to write again.
+  const weighted = worlds.map((w) => ({
+    w,
+    weight: 1 + (STANDING_CEIL - standingOf(state, w.lifetimeIndex)) * 3,
+  }));
+  const world = pickWeighted(state.rng, 'situations', weighted).w;
+  const pool = petitionsFor(world.bottleneck, world.quirks).filter(
+    // Never ask the same world the same thing twice while it is still waiting.
+    (p) => !state.run.petitions.some((q) => q.id === p.id && q.world === world.lifetimeIndex),
+  );
+  if (pool.length === 0) return;
+
+  const def = pickWeighted(state.rng, 'situations', pool);
+  const uid = ++state.timers.nextIdCounter;
+  state.run.petitions.push({
+    uid,
+    id: def.id,
+    remainingMs: def.windowMs,
+    world: world.lifetimeIndex,
+    worldName: world.name,
+  });
+  effects.push({ t: 'situationOpened', uid, id: def.id, world: world.name, petition: true });
+}
+
+export function stepPetitions(
+  state: GameState,
+  derived: Derived,
+  effects: SimEffect[],
+  tickMs: number,
+): boolean {
+  if (state.run.petitions.length === 0) return false;
+  let dirty = false;
+  for (let i = state.run.petitions.length - 1; i >= 0; i--) {
+    const inst = state.run.petitions[i]!;
+    inst.remainingMs -= tickMs;
+    if (inst.remainingMs > 0) continue;
+    const def = PETITION_BY_ID[inst.id];
+    state.run.petitions.splice(i, 1);
+    if (def) {
+      state.lifetime.situationsIgnored += 1;
+      applyOutcome(state, derived, effects, def.ignored, inst);
+    }
+    dirty = true;
+  }
+  return dirty;
 }

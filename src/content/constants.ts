@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 8,
+  SAVE_VERSION: 9,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -52,6 +52,19 @@ export const C = {
   SITUATION_MAX_GAP_MS: 900_000, // 15 min
   SITUATION_FIRST_MIN_MS: 240_000, // the first one arrives early; it teaches
   SITUATION_FIRST_MAX_MS: 360_000,
+  // Petitions queue rather than interrupt, so they can be much more frequent
+  // than situations without ever feeling like an inbox.
+  PETITION_MIN_GAP_MS: 300_000, // 5 min
+  PETITION_MAX_GAP_MS: 600_000, // 10 min
+  PETITION_QUEUE_MAX: 3,
+  // How much a full hold adds to the runabout's inertia. Tuned so a loaded
+  // ship is noticeably heavier to stop without becoming unflyable.
+  CARGO_INERTIA: 0.85,
+  // How often the freight board is redrawn.
+  JOB_REFRESH_MS: 240_000,
+  // Interdiction: how long a patrol pursues before losing you on its own.
+  INTERDICTION_PURSUIT_MS: 45_000,
+  INTERDICTION_MIN_GAP_MS: 420_000,
   FIRST_BUBBLE_MS: 180_000, // guaranteed first bubble at ~3 min
 
   // Rubber band: if nothing acquired for this long, improbability rises
