@@ -9,6 +9,8 @@ import type { AspectId, CompletedPlanetRecord } from '../../engine/types';
 import { formatDuration } from '../../engine/num';
 import { AspectGlyph, guideIllustration } from '../assets';
 import { FieldManual } from './FieldManual';
+import { worldBiography, worldRecord, worldTraits } from '../../engine/worldRecords';
+import { standingOf } from '../../engine/situations';
 
 const ASPECT_LABEL: Record<AspectId, string> = {
   thermal: 'Thermal',
@@ -23,6 +25,40 @@ const ASPECT_CLASS: Record<AspectId, string> = {
   hydro: 'asp-hy',
   bio: 'asp-bi',
 };
+
+/**
+ * What the world is like now, as opposed to what it was on the day it was
+ * signed off. The card this sits inside is a delivery certificate; this is the
+ * part that keeps changing after the certificate was filed.
+ *
+ * Absent for worlds delivered before the archive existed, which is honest —
+ * they have no history because none was kept, and inventing one would be the
+ * Guide doing precisely what it accuses everybody else of.
+ */
+function WorldLife({ lifetimeIndex }: { lifetimeIndex: number }) {
+  const { s } = useGame.getState();
+  const record = worldRecord(s, lifetimeIndex);
+  if (!record) return null;
+  const standing = standingOf(s, lifetimeIndex);
+  const traits = worldTraits(record, standing);
+  return (
+    <div className="wm-life">
+      <div className="wm-traits">
+        {traits.map((t) => (
+          <span key={t} className={`wm-trait t-${t}`}>
+            {t}
+          </span>
+        ))}
+      </div>
+      <p className="wm-bio">{worldBiography(record, standing)}</p>
+      {record.history.length > 0 && (
+        <div className="wm-filed">
+          {record.history.length} {record.history.length === 1 ? 'entry' : 'entries'} on file
+        </div>
+      )}
+    </div>
+  );
+}
 
 function WorldMemory({
   world,
@@ -57,6 +93,7 @@ function WorldMemory({
         {ASPECT_LABEL[world.bottleneck]} was the primary bottleneck
       </div>
       {quirks.length > 0 && <div className="wm-quirks">{quirks.join(' / ')}</div>}
+      <WorldLife lifetimeIndex={world.lifetimeIndex} />
       {survey && (
         <div className="wm-survey">
           <b>Filed survey:</b> {survey.name}. {survey.text}

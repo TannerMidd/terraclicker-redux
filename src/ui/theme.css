@@ -2827,3 +2827,41 @@ button {
   background: var(--magrathea, #7fd1c8);
 }
 .so-chip.done { opacity: 0.45; text-decoration: line-through; }
+
+/* ————— The Office of Subsequent Consequences ————— */
+
+.wm-life {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed color-mix(in srgb, var(--ink-faint) 22%, transparent);
+}
+.wm-traits { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.wm-trait {
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--ink-faint);
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 28%, transparent);
+}
+.wm-trait.t-neglected {
+  color: var(--warn, #e8b26a);
+  border-color: color-mix(in srgb, var(--warn, #e8b26a) 45%, transparent);
+}
+.wm-trait.t-well-attended {
+  color: var(--magrathea, #7fd1c8);
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 45%, transparent);
+}
+.wm-bio {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+.wm-filed {
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}

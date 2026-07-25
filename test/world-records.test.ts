@@ -12,6 +12,8 @@ import {
   worldTraits,
 } from '../src/engine/worldRecords';
 import { C } from '../src/content/constants';
+import { PETITIONS } from '../src/content/petitions';
+import { SITUATIONS } from '../src/content/situations';
 import { D } from '../src/engine/num';
 import { BOTS, OPTS, TICK } from '../balance/bots';
 import type { CompletedPlanetRecord, GameState } from '../src/engine/types';
@@ -185,4 +187,40 @@ describe('v9 → v10 migration', () => {
     expect(out['version']).toBe(C.SAVE_VERSION);
     expect(out['worldRecords']).toEqual({});
   });
+});
+
+describe('worlds remember being answered, and being ignored', () => {
+  it('files an answered petition against the world that asked', () => {
+    const s = withWorlds(2);
+    const world = s.run.completedPlanets[0]!;
+    const def = PETITIONS[0]!;
+    s.run.petitions = [{
+      uid: 91, id: def.id, remainingMs: 60_000,
+      world: world.lifetimeIndex, worldName: world.name,
+    }];
+
+    step(s, 0, [{ type: 'answerSituation', uid: 91, optionId: def.options[0]!.id }], OPTS);
+
+    const history = worldRecord(s, world.lifetimeIndex)!.history;
+    expect(history.length).toBe(1);
+    expect(history[0]!.kind).toBe('petitionAnswered');
+    expect(history[0]!.id).toBe(def.id);
+  }, 60_000);
+
+  it('files neglect when a situation runs out unanswered', () => {
+    const s = withWorlds(2);
+    const world = s.run.completedPlanets[0]!;
+    s.situations = [{
+      uid: 92, id: SITUATIONS[0]!.id, remainingMs: 200,
+      world: world.lifetimeIndex, worldName: world.name,
+    }];
+
+    // Let the window close with nobody answering.
+    for (let i = 0; i < 6; i++) step(s, 250, [], OPTS);
+
+    const history = worldRecord(s, world.lifetimeIndex)!.history;
+    expect(history.some((e) => e.kind === 'petitionIgnored')).toBe(true);
+    // Which is exactly what the biography then says about it.
+    expect(worldTraits(worldRecord(s, world.lifetimeIndex)!, 0.5)).toContain('neglected');
+  }, 60_000);
 });

@@ -29,6 +29,7 @@ import {
 import { EVENT_BY_ID } from '../content/events';
 import { PETITION_BY_ID, petitionsFor } from '../content/petitions';
 import { C } from '../content/constants';
+import { recordWorldEvent } from './worldRecords';
 
 /** One situation, open and waiting for an answer. */
 export interface SituationInstance {
@@ -240,6 +241,15 @@ export function answerSituation(
 
   list.splice(idx, 1);
   state.lifetime.situationsAnswered += 1;
+  // The world remembers being answered. This is what turns a completed gauge
+  // into a place with a history — see engine/worldRecords.ts.
+  if (inst.world) {
+    recordWorldEvent(state, inst.world, {
+      kind: 'petitionAnswered',
+      id: inst.id,
+      atGameMs: state.gameTimeMs,
+    });
+  }
   applyOutcome(state, derived, effects, option.outcome, inst);
 }
 
@@ -263,6 +273,15 @@ export function stepSituations(
     state.situations.splice(i, 1);
     if (def) {
       state.lifetime.situationsIgnored += 1;
+      // Leaving one alone is a legitimate answer and never a free one. The
+      // world files that too, and its lights dim accordingly.
+      if (inst.world) {
+        recordWorldEvent(state, inst.world, {
+          kind: 'petitionIgnored',
+          id: inst.id,
+          atGameMs: state.gameTimeMs,
+        });
+      }
       applyOutcome(state, derived, effects, def.ignored, inst);
     }
     dirty = true;
@@ -365,6 +384,15 @@ export function stepPetitions(
     state.run.petitions.splice(i, 1);
     if (def) {
       state.lifetime.situationsIgnored += 1;
+      // Leaving one alone is a legitimate answer and never a free one. The
+      // world files that too, and its lights dim accordingly.
+      if (inst.world) {
+        recordWorldEvent(state, inst.world, {
+          kind: 'petitionIgnored',
+          id: inst.id,
+          atGameMs: state.gameTimeMs,
+        });
+      }
       applyOutcome(state, derived, effects, def.ignored, inst);
     }
     dirty = true;
