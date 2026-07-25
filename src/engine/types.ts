@@ -257,6 +257,17 @@ export interface MegaprojectState {
   /** Ms of construction credited so far — advances offline too. */
   builtMs: number;
   done: boolean;
+  /**
+   * Sim time the thing was finished, or null while it is still going up.
+   *
+   * Needed because `builtMs` and `gameTimeMs` are different clocks and always
+   * were: construction is credited in real elapsed time and deliberately
+   * ignores the offline cap, while game time only advances by the span the
+   * simulation actually ran. `startedAtMs + buildMs` therefore does not name
+   * the moment it finished, and anything reasoning about "did this happen
+   * while I was away" has to be told rather than left to infer.
+   */
+  doneAtMs: number | null;
 }
 
 /** One line on the Sub-Etha. `site` marks a rumour and makes it actionable. */

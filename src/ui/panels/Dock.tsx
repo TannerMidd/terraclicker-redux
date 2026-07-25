@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useGame } from '../../state/store';
+import { useUiBus } from '../fx/uiBus';
 import { C } from '../../content/constants';
 import { BUILDING_BY_ID } from '../../content/buildings';
 import { ShopPanel } from './ShopPanel';
@@ -21,6 +22,14 @@ export function Dock() {
   const { s, d } = useGame.getState();
   const started = s.lifetime.clicks > 0 || s.lifetime.tuEarned.gt(0);
   const [tab, setTab] = useState<Tab>(started ? 'Shop' : SETTINGS_TAB);
+
+  // Honour a deep link from elsewhere (the Morning Circular), once.
+  const dockRequest = useUiBus((b) => b.dockRequest);
+  useEffect(() => {
+    if (!dockRequest) return;
+    if ((TABS as readonly string[]).includes(dockRequest)) setTab(dockRequest as Tab);
+    useUiBus.getState().clearDockRequest();
+  }, [dockRequest]);
 
   const isUnlocked = (candidate: Tab): boolean => {
     switch (candidate) {

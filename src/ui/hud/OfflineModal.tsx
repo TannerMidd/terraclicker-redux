@@ -9,6 +9,55 @@ import { RESEARCH_BY_ID } from '../../content/research';
 import { useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
 import { Num } from '../bits';
+import { circularSummary } from '../../engine/circular';
+import { actions } from '../../state/store';
+import { useUiBus } from '../fx/uiBus';
+import type { CircularItem } from '../../engine/circular';
+
+/**
+ * The Morning Circular, at the top of the report, because it is the part that
+ * asks something of you. Everything below it is the accounting.
+ *
+ * Each line that can be acted on carries the action: pin it on the chart, or
+ * open the panel that answers it. A briefing that tells you a rig is full and
+ * then makes you go and find it is a briefing that has wasted your time.
+ */
+function Circular({ items, onGo }: { items: readonly CircularItem[]; onGo: () => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="m-circular">
+      <div className="mc-kicker">the morning circular</div>
+      <p className="mc-summary">{circularSummary(items)}</p>
+      <ul className="mc-list">
+        {items.map((item, i) => (
+          <li key={`${item.kind}-${i}`} className={`mc-${item.kind}`}>
+            <span>{item.text}</span>
+            {item.waypoint && (
+              <button
+                onClick={() => {
+                  actions.setWaypoint(item.waypoint!);
+                  onGo();
+                }}
+              >
+                pin it
+              </button>
+            )}
+            {!item.waypoint && item.panel && (
+              <button
+                onClick={() => {
+                  useUiBus.getState().setDockTab(item.panel!);
+                  onGo();
+                }}
+              >
+                open {item.panel.toLowerCase()}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 const ASPECT_LABELS = {
   thermal: 'Thermal',
   atmo: 'Atmospheric',
@@ -55,6 +104,7 @@ export function OfflineModal() {
         onClick={(event) => event.stopPropagation()}
       >
         <h2>While you were hitchhiking…</h2>
+        <Circular items={report.circular} onGo={dismiss} />
         <p className="m-body">
           The operation missed you productively for{' '}
           <b>{formatDuration(report.simulatedMs)}</b>

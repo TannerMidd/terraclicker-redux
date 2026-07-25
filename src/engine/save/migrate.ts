@@ -387,6 +387,26 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: { ...expedition, visited: {} } };
     },
   },
+  {
+    // v12 → v13: a finished megaproject records WHEN it finished, in sim time.
+    // Construction is credited in real elapsed time and ignores the offline
+    // cap, so `startedAtMs + buildMs` never named that moment and the Morning
+    // Circular could not tell a monument finished overnight from one that had
+    // been standing for a week. Anything already done predates this record and
+    // is marked 0 — long ago, and correctly not news.
+    from: 12,
+    migrate: (raw) => {
+      const mega =
+        typeof raw['megaprojects'] === 'object' && raw['megaprojects'] !== null
+          ? (raw['megaprojects'] as Record<string, Record<string, unknown>>)
+          : {};
+      const out: Record<string, unknown> = {};
+      for (const [id, m] of Object.entries(mega)) {
+        out[id] = { ...m, doneAtMs: m['done'] === true ? 0 : null };
+      }
+      return { ...raw, megaprojects: out };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

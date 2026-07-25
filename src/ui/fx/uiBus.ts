@@ -100,6 +100,15 @@ interface UiBus {
   /** Visit an object (or null to release the camera back to the journey). */
   setFocus: (f: FocusTarget | null) => void;
   setFlightMode: (on: boolean) => void;
+  /**
+   * A panel the Dock should switch to, set from outside it — the Morning
+   * Circular deep-links into panels, and the Dock's own tab was local state
+   * with no way in. Cleared by the Dock once honoured, so it is a request
+   * rather than a second source of truth.
+   */
+  dockRequest: string | null;
+  setDockTab: (tab: string) => void;
+  clearDockRequest: () => void;
   setFlightNearSystem: (index: number | null) => void;
 }
 
@@ -155,6 +164,9 @@ export const useUiBus = create<UiBus>((set) => ({
   },
   flightMode: false,
   flightNearSystem: null,
+  dockRequest: null,
+  setDockTab: (tab) => set({ dockRequest: tab }),
+  clearDockRequest: () => set({ dockRequest: null }),
   setFlightMode: (on) => {
     if (typeof document !== 'undefined') document.body.style.cursor = '';
     // Taking the helm releases any visit; handing it back clears the reveal.

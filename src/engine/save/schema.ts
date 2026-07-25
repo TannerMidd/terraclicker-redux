@@ -230,6 +230,7 @@ export const saveSchema = z.object({
       startedAtMs: z.number().min(0),
       builtMs: z.number().min(0),
       done: z.boolean(),
+      doneAtMs: z.number().min(0).nullable(),
     }),
   ),
   worldRecords: z.record(

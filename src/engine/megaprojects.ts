@@ -70,7 +70,7 @@ export function startMegaproject(state: GameState, effects: SimEffect[], id: str
   if (!def) return;
   if (!canStart(state, def)) return;
   state.tu = state.tu.sub(D(def.cost));
-  state.megaprojects[id] = { startedAtMs: state.gameTimeMs, builtMs: 0, done: false };
+  state.megaprojects[id] = { startedAtMs: state.gameTimeMs, builtMs: 0, done: false, doneAtMs: null };
   effects.push({ t: 'megaprojectStarted', id });
 }
 
@@ -92,6 +92,7 @@ export function stepMegaprojects(
     if (m.builtMs >= def.buildMs) {
       m.builtMs = def.buildMs;
       m.done = true;
+      m.doneAtMs = state.gameTimeMs;
       state.lifetime.megaprojectsBuilt += 1;
       effects.push({ t: 'megaprojectFinished', id: def.id });
     }

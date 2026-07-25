@@ -2686,3 +2686,54 @@ button {
   border-style: solid;
   border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
 }
+
+/* ————— The Morning Circular ————— */
+
+.m-circular {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--magrathea, #7fd1c8) 28%, transparent);
+  border-radius: 6px;
+}
+.mc-kicker {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--magrathea, #7fd1c8);
+}
+.mc-summary {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.mc-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.mc-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.mc-list li span { flex: 1; }
+.mc-list li button {
+  flex: none;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--ink-faint) 30%, transparent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.mc-list li button:hover {
+  color: var(--magrathea, #7fd1c8);
+  border-color: color-mix(in srgb, var(--magrathea, #7fd1c8) 55%, transparent);
+}
+/* Things that finished lead; things that are asking are the ones with weight. */
+.mc-list li.mc-built span { color: var(--ink); }
+.mc-list li.mc-asking span { color: var(--ink); }
+.mc-list li.mc-rumour span { color: var(--ink-faint); font-style: italic; }

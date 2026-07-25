@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { computeDerived, newGame, step, stepOffline } from '../engine/sim';
+import { buildCircular, type CircularItem } from '../engine/circular';
 import { deserialize, exportSave, importSave, serialize } from '../engine/save/codec';
 import type { Decimal } from '../engine/num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type Input, type SimEffect, type SystemSpecialty } from '../engine/types';
@@ -14,6 +15,8 @@ export type OfflineCompletedContract = Omit<Extract<SimEffect, { t: 'contractCom
 export type OfflineFailedContract = Omit<Extract<SimEffect, { t: 'contractFailed' }>, 't' | 'id'>;
 
 export interface OfflineReport {
+  /** The Morning Circular: what happened, and what it wants doing. */
+  circular: CircularItem[];
   simulatedMs: number;
   cappedMs: number;
   tuGained: Decimal;
@@ -80,6 +83,9 @@ function simulateAbsence(state: GameState, elapsed: number): {
 } {
   const scienceBefore = state.science;
   const planetsBefore = state.lifetime.planetsCompleted;
+  // Captured before the absence runs: the Circular reports what is new since
+  // the player last saw it, and after `stepOffline` that instant is gone.
+  const leftAtMs = state.gameTimeMs;
   const res = stepOffline(state, elapsed, opts());
   const planetNames = res.effects
     .filter((effect): effect is Extract<SimEffect, { t: 'planetComplete' }> => effect.t === 'planetComplete')
@@ -98,6 +104,7 @@ function simulateAbsence(state: GameState, elapsed: number): {
     report: {
       simulatedMs: res.simulatedMs,
       cappedMs: elapsed - res.simulatedMs,
+      circular: buildCircular(state, leftAtMs),
       tuGained: res.tuGained,
       scienceGained: state.science.sub(scienceBefore),
       planetsCompleted: state.lifetime.planetsCompleted - planetsBefore,
