@@ -1,4 +1,4 @@
-import { useMemo, useRef, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
@@ -6,6 +6,9 @@ import {
   BufferGeometry,
   Color,
   Group,
+  Mesh,
+  Line,
+  LineBasicMaterial,
   MeshBasicMaterial,
   PointsMaterial,
 } from 'three/webgpu';
@@ -13,21 +16,29 @@ import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import { mulberry } from '../../../engine/rng';
 import {
+  GALAXY_R,
   GALAXY_TILT,
   galaxyCorePoints,
   galaxyPoints,
   galaxyPosition,
   galaxySeed,
   memberSeatLocal,
+  MINI_SIZE,
   starClass,
   starColor,
+  visitOrbit,
 } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { focusOn, makeGlowSprite, visitHandlers } from './shared';
+import { distantGeometry, distantMaterial } from '../settledPlanet';
+import { focusOn, makeGlowSprite, visitHandlers, visitOrbitGeometry } from './shared';
+import { universeMotion } from './operationsVisual';
 
 const APP_T0 = performance.now();
 const DETAILED = 8; // most recent galaxies get the full treatment
 const MAX_SHOWN = 24; // older ones shine on as simple beacons
+
+/** Stand-in for a world whose material is still queued. Never drawn. */
+const PENDING_MATERIAL = new MeshBasicMaterial({ visible: false });
 
 /** Arm points colored core→edge with a seeded personality hue. */
 function armGeometry(seed: number): BufferGeometry {
@@ -41,7 +52,11 @@ function armGeometry(seed: number): BufferGeometry {
   const colors = new Float32Array(pos.length);
   const c = new Color();
   for (let i = 0; i < pos.length / 3; i++) {
-    const rad = Math.hypot(pos[i * 3]!, pos[i * 3 + 2]!) / 3.45;
+    // Normalised by the galaxy's own radius. This was a hardcoded 3.45 from
+    // when a whole galaxy was three units across, which after the re-scale
+    // put every point past the end of the ramp — the lerps overshot and the
+    // core→edge gradient collapsed into one flat edge colour.
+    const rad = Math.hypot(pos[i * 3]!, pos[i * 3 + 2]!) / GALAXY_R;
     c.copy(warm).lerp(cool, Math.min(1, rad * 2.2)).lerp(edge, Math.max(0, rad - 0.55) * 1.6);
     colors[i * 3] = c.r;
     colors[i * 3 + 1] = c.g;
@@ -51,8 +66,23 @@ function armGeometry(seed: number): BufferGeometry {
   return geo;
 }
 
-/** One member system's star inside a visited galaxy — the way further in. */
-function MemberStar({
+/**
+ * One member system inside a visited galaxy — a real system, at true scale.
+ *
+ * These used to be bare points of light: a galaxy was one place you could go
+ * and four dots that suggested places. There is room for the real thing now
+ * (a galaxy is 78 units across and a system 8), so each seat gets its star,
+ * its actual orbit ellipses and the five worlds you actually delivered,
+ * turning at the radii they turn at everywhere else.
+ *
+ * What it does NOT get is the civic layer — atmospheres, settlement lights,
+ * orbiting hardware, freight. From the galaxy's whole-disc framing a world is
+ * about four pixels across, so that detail would cost real work to render
+ * something nobody can see. Approaching hands the seat to FocusedSystem,
+ * which brings all of it. Detail by distance; the geometry underneath is
+ * identical either way, so the handover doesn't move anything.
+ */
+function MemberSystem({
   globalIndex,
   slot,
   gSeed,
@@ -75,7 +105,25 @@ function MemberStar({
   const glow = useMemo(() => makeGlowSprite(color.getHex(), 0.6), [color]);
   const pos = useMemo(() => memberSeatLocal(slot, gSeed), [slot, gSeed]);
   const root = useRef<Group>(null);
+  const spin = useRef<Group>(null);
+  const worlds = useRef<(Mesh | null)[]>([]);
   const born = useRef<number | null>(null);
+
+  // Orbit paths, shared with every other system in the game.
+  const lineMat = useMemo(
+    () => new LineBasicMaterial({ color: 0x8ca0c8, transparent: true, opacity: 0 }),
+    [],
+  );
+  const orbits = useMemo(
+    () =>
+      records.map((_, i) => {
+        const l = new Line(visitOrbitGeometry(i), lineMat);
+        l.raycast = () => null;
+        return l;
+      }),
+    [records, lineMat],
+  );
+  useEffect(() => () => lineMat.dispose(), [lineMat]);
 
   const dimK = useRef(1);
   useFrame((state, dt) => {
@@ -83,13 +131,41 @@ function MemberStar({
     if (!g) return;
     const t = state.clock.elapsedTime;
     if (born.current === null) born.current = t;
-    // Stars surface out of the arm-glow one by one as you arrive; while a
-    // sibling is inspected they recede to pinpricks (some sit uncomfortably
-    // near the visiting camera — this is a compressed galaxy, not a map).
+    // Systems surface out of the arm-glow one by one as you arrive.
     const k = Math.min(1, Math.max(0, (t - born.current - 0.25 - slot * 0.09) / 0.45));
-    dimK.current += ((dimmed ? 0.22 : 1) - dimK.current) * (1 - Math.exp(-dt * 5));
-    g.scale.setScalar((0.001 + (1 - Math.pow(1 - k, 3)) * 0.999) * dimK.current);
-    glow.opacity += ((dimmed ? 0.14 : 0.6) - glow.opacity) * (1 - Math.exp(-dt * 5));
+    g.scale.setScalar(k === 1 ? 1 : 0.001 + (1 - Math.pow(1 - k, 3)) * 0.999);
+    // While a sibling is inspected these lower their lights rather than
+    // shrinking away — a solar system twenty units off is SUPPOSED to look
+    // like a solar system now. Only the brightness yields the frame.
+    dimK.current += ((dimmed ? 0.3 : 1) - dimK.current) * (1 - Math.exp(-dt * 5));
+    glow.opacity = 0.6 * dimK.current;
+    lineMat.opacity = Math.min(1, (t - born.current) / 0.9) * 0.16 * dimK.current;
+
+    const drift = universeMotion.reduced ? 0 : t;
+    if (spin.current) spin.current.rotation.y = drift * 0.01;
+    for (let i = 0; i < worlds.current.length; i++) {
+      const w = worlds.current[i];
+      if (!w) continue;
+      // Same orbit math as FocusedSystem, so a world does not jump when the
+      // seat is handed over.
+      const o = visitOrbit(i);
+      const a = o.phase + drift * o.speed;
+      w.position.set(
+        Math.cos(a) * o.radius,
+        Math.sin(a) * o.radius * 0.22,
+        Math.sin(a) * o.radius * 0.6,
+      );
+      w.scale.setScalar(MINI_SIZE[records[i]!.size] * 0.85);
+      w.rotation.y = drift * 0.35;
+      // A world appears once its material has been built — a few per frame
+      // across the whole galaxy, so arriving never costs a freeze. Reasserted
+      // every frame rather than once, so a React re-render cannot undo it.
+      const mat = distantMaterial(records[i]!.type, t);
+      if (mat) {
+        if (w.material !== mat) w.material = mat;
+        w.visible = true;
+      }
+    }
   });
 
   const names = records.map((r) => r.name).slice(0, 2).join(', ');
@@ -110,8 +186,29 @@ function MemberStar({
           () => focusOn({ kind: 'system', index: globalIndex }),
         )}
       >
-        <sphereGeometry args={[0.48, 8, 8]} />
+        {/* Big enough to catch a click at galaxy framing, small enough not to
+            swallow one meant for the neighbouring seat. */}
+        <sphereGeometry args={[2.4, 10, 10]} />
       </mesh>
+      <group ref={spin}>
+        {orbits.map((l, i) => (
+          <primitive key={i} object={l} />
+        ))}
+        {records.map((rec, i) => (
+          // Shared sphere, own colours (distantGeometry); hidden until its
+          // material has been built, which the frame budget stages out.
+          <mesh
+            key={`${rec.seed}-${i}`}
+            ref={(el) => {
+              worlds.current[i] = el;
+            }}
+            visible={false}
+            geometry={distantGeometry()}
+            material={PENDING_MATERIAL}
+            raycast={() => null}
+          />
+        ))}
+      </group>
     </group>
   );
 }
@@ -232,7 +329,7 @@ function Galaxy({
         Array.from({ length: C.SYSTEMS_PER_GALAXY }, (_, k) => {
           const gi = index * C.SYSTEMS_PER_GALAXY + k;
           if (gi === drilledIndex) return null; // FocusedSystem holds this seat
-          return <MemberStar key={k} globalIndex={gi} slot={k} gSeed={seed} dimmed={drilled} />;
+          return <MemberSystem key={k} globalIndex={gi} slot={k} gSeed={seed} dimmed={drilled} />;
         })}
     </group>
   );

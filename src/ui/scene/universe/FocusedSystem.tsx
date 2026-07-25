@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   AdditiveBlending,
-  BufferAttribute,
-  BufferGeometry,
   DoubleSide,
   Group,
   Line,
@@ -23,7 +21,15 @@ import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { worldAnchors } from '../navControl';
 import { useLamp } from '../SceneLamps';
-import { focusOn, focusSystemIndex, inspectHandlers, makeGlowSprite, TYPE_LABEL, visitHandlers } from './shared';
+import {
+  focusOn,
+  focusSystemIndex,
+  inspectHandlers,
+  makeGlowSprite,
+  TYPE_LABEL,
+  visitHandlers,
+  visitOrbitGeometry,
+} from './shared';
 import { CloseupLife, OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 import { FreightLane } from './LivingLanes';
 import { formatDuration } from '../../../engine/num';
@@ -94,21 +100,6 @@ function memorySummary(
   if (record.completionMs > 0) details.push(`delivered in ${formatDuration(record.completionMs)}`);
   if (heritage) details.push('Heritage World · preserved in the Magrathean archive');
   return details.join(' / ');
-}
-
-/** Closed ellipse for a visit orbit (Line, not LineLoop — WebGPU renderer). */
-function orbitGeometry(radius: number): BufferGeometry {
-  const n = 80;
-  const pts = new Float32Array((n + 1) * 3);
-  for (let i = 0; i <= n; i++) {
-    const a = ((i % n) / n) * Math.PI * 2;
-    pts[i * 3] = Math.cos(a) * radius;
-    pts[i * 3 + 1] = Math.sin(a) * radius * 0.22;
-    pts[i * 3 + 2] = Math.sin(a) * radius * 0.6;
-  }
-  const geo = new BufferGeometry();
-  geo.setAttribute('position', new BufferAttribute(pts, 3));
-  return geo;
 }
 
 /** One remembered world, back at full presence, wearing its name. */
@@ -262,19 +253,14 @@ function FocusedSystemInner({ index }: { index: number }) {
   const orbits = useMemo(
     () =>
       records.map((_, i) => {
-        const l = new Line(orbitGeometry(orbit(i).radius), lineMat);
+        // Geometry is shared with every other system — do NOT dispose it.
+        const l = new Line(visitOrbitGeometry(i), lineMat);
         l.raycast = () => null;
         return l;
       }),
     [records, lineMat],
   );
-  useEffect(
-    () => () => {
-      orbits.forEach((l) => l.geometry.dispose());
-      lineMat.dispose();
-    },
-    [orbits, lineMat],
-  );
+  useEffect(() => () => lineMat.dispose(), [lineMat]);
 
   // Stale focus (prestige raced the click, records gone) — let the camera go.
   useEffect(() => {

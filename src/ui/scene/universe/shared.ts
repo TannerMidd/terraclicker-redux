@@ -1,10 +1,16 @@
 /** Shared bits for the universe view: glow sprites, tooltip plumbing, visits. */
-import { AdditiveBlending, CanvasTexture, SpriteMaterial } from 'three/webgpu';
+import {
+  AdditiveBlending,
+  BufferAttribute,
+  BufferGeometry,
+  CanvasTexture,
+  SpriteMaterial,
+} from 'three/webgpu';
 import type { ThreeEvent } from '@react-three/fiber';
 import { useUiBus, type FocusTarget } from '../../fx/uiBus';
 import { useGame } from '../../../state/store';
 import { C } from '../../../content/constants';
-import { BAND_STOPS } from '../universeLayout';
+import { BAND_STOPS, visitOrbit } from '../universeLayout';
 import { clickSuppressed, navLive } from '../navControl';
 import * as audio from '../../audio/audio';
 import { sceneTex } from '../spriteTextures';
@@ -93,6 +99,33 @@ export function makeTexSprite(
   });
   if (opts.additive) mat.blending = AdditiveBlending;
   return mat;
+}
+
+/**
+ * The five visit-orbit ellipses. `visitOrbit` depends only on the slot, so
+ * every system in the game draws the same five paths — build them once and
+ * share. Nobody may dispose these.
+ *
+ * Closed by repeating the first point: the WebGPU renderer rejects LineLoop.
+ */
+const orbitGeos: (BufferGeometry | null)[] = [null, null, null, null, null];
+
+export function visitOrbitGeometry(slot: number): BufferGeometry {
+  const hit = orbitGeos[slot];
+  if (hit) return hit;
+  const radius = visitOrbit(slot).radius;
+  const n = 80;
+  const pts = new Float32Array((n + 1) * 3);
+  for (let i = 0; i <= n; i++) {
+    const a = ((i % n) / n) * Math.PI * 2;
+    pts[i * 3] = Math.cos(a) * radius;
+    pts[i * 3 + 1] = Math.sin(a) * radius * 0.22;
+    pts[i * 3 + 2] = Math.sin(a) * radius * 0.6;
+  }
+  const geo = new BufferGeometry();
+  geo.setAttribute('position', new BufferAttribute(pts, 3));
+  orbitGeos[slot] = geo;
+  return geo;
 }
 
 /** Pointer handlers that surface a nameplate tooltip in the DOM HUD. */

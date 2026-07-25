@@ -288,9 +288,17 @@ export function focusFraming(
   const seat = focusSeat(target, masterSeed, galaxies);
   const galaxy = target.kind === 'galaxy';
   const dist = galaxy ? GALAXY_R * (wide ? 2.0 : 2.4) : SYSTEM_R * (wide ? 2.1 : 2.5);
+  // Lateral offset, so the subject is not viewed straight down -Z. It has to
+  // be a FRACTION of the way out, never a multiple of the seat's absolute
+  // position: this was `-seat.x * 0.05`, written when the whole universe was
+  // a few units across. At UNIVERSE_R = 260 it reaches ±13 against a y of
+  // 0.62, and normalising that gives a direction lying almost exactly along
+  // -X — which is why every visited galaxy arrived edge-on and every system
+  // was seen down the plane of its own orbits.
+  const lateral = -(seat.x / UNIVERSE_R) * 0.28;
   // Galaxies get a higher vantage so the disc reads as a spiral, not a blob.
   outCam
-    .set(-seat.x * 0.05, galaxy ? 0.62 : 0.44, 1)
+    .set(lateral, galaxy ? 0.62 : 0.44, 1)
     .normalize()
     .multiplyScalar(dist)
     .add(seat);
