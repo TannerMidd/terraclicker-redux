@@ -82,6 +82,39 @@ Regression reference. `npm run balance 90` reproduces the bot rows.
 - BP divergence: non-finite at **prestige 19** (~171 sim minutes). Knee at
   BP ≈ 1400, crossed between prestige 16 (1527 BP) and 17 (3770 BP).
 
+### After 0.1 (BP made additive)
+
+| Bot | end TU | TU/s | planets | notes |
+|---|---|---|---|---|
+| greedy-clicker | 75.6M | 5.11M | 40 | unchanged |
+| idler | 10.9M | 90.9K | 26 | unchanged |
+| aspect-optimizer | 155M | 5.34M | 41 | unchanged |
+| afk-then-binge | 105M | 184K | 31 | unchanged |
+| operations-manager | 625M | **34.2M** | 48 | 25 contracts, 30 BP |
+| earliest-prestige | 3.65K | 47.9 | 5 (95 lifetime) | 3 prestiges |
+| catalogue-spender | 5.32K | 684 | 12 (102 lifetime) | 3 prestiges, perks bought |
+
+The four bots that never prestige are **identical to baseline**, because
+`bpEarned` is 0 for all of them and the BP line was 1.0 under either curve. The
+first ninety minutes of a first run is untouched by this change. Tests: 150.
+
+Two findings worth carrying forward:
+
+- **The Operations gap fell from 129× to 6.7× on its own** (34.2M vs 5.11M
+  TU/s). Most of that gap was never the specialty multipliers — it was the
+  divergence loop amplifying an early production lead through 90 minutes of
+  compounding purchases. 6.7× sits inside the 3–8× band 0.2 was aiming for, so
+  **0.2 must re-measure before touching `SYSTEM_SPECIALTY_PRODUCTION_MULT`**;
+  applying a second fix to a problem that one fix already solved would
+  over-correct it into irrelevance.
+- **No harness bot had ever spent a Blueprint.** DESIGN.md M3's acceptance
+  criterion — "run 2 ≥45% faster to prior peak" — was therefore never exercised
+  in CI. Measured now: 26.4% on passive BP alone, **43.1%** once perks are
+  bought (and three of the nine perks a naive spender buys are offline-only, so
+  they contribute nothing to a foreground measurement). A `catalogue-spender`
+  bot now lives in the harness so this stays visible. Turning that band into a
+  CI assertion belongs to 0.5.
+
 ## Phase 0 — Economic reality permit
 
 Nothing else is meaningful until the numbers survive Thursday.

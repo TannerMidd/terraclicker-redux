@@ -13,12 +13,22 @@ import { D, DZERO, Decimal } from './num';
 import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions } from './types';
 import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
 
-/** BP that a prestige right now would award. */
+/**
+ * BP that a prestige right now would award.
+ *
+ * The cube root is taken in log space rather than through `toNumber()`. A run
+ * that earns more than ~1e308 TU converts to `Infinity` as a JS number, and
+ * `Infinity^(1/3)` is still `Infinity` — which lands in `prestige.bp`, spreads
+ * to every multiplier that reads it, and saves to disk. Going through
+ * `log10()` keeps the arithmetic inside Decimal, where the value fits; the
+ * final guard catches anything left.
+ */
 export function prestigeBpFor(state: GameState): number {
   const fromTu = state.run.tuEarned.div(D(C.PRESTIGE_TU_DIVISOR));
-  const tuPart = fromTu.gt(0) ? Math.pow(fromTu.toNumber(), C.PRESTIGE_TU_EXP) : 0;
+  const tuPart = fromTu.gt(0) ? Math.pow(10, fromTu.log10() * C.PRESTIGE_TU_EXP) : 0;
   const planetPart = C.PRESTIGE_PER_PLANET * state.run.planetsCompleted;
-  return Math.floor(tuPart + planetPart);
+  const total = tuPart + planetPart;
+  return Number.isFinite(total) ? Math.floor(total) : Number.MAX_SAFE_INTEGER;
 }
 /** Each successful commission raises the depth expected by Magrathean appraisal. */
 export function prestigeRequiredSystems(state: GameState): number {
@@ -244,7 +254,16 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   // ——— global production multiplier chain ———
   let prodMult = allMult
     .mul(1 + C.ACHIEVEMENT_BONUS * Object.keys(state.achievements).length)
-    .mul(Decimal.pow(1 + C.BP_PASSIVE, state.prestige.bpEarned))
+    // DESIGN.md §7: "every BP ever earned gives +2% global production" — that
+    // is additive, and it has to stay additive. Compounding it (1.02^bp) makes
+    // this line and `prestigeBpFor` a closed loop: production is exponential in
+    // BP, BP is a root of production, so BP_next ≈ (1.02^BP / 1e12)^(1/3),
+    // which is doubly exponential. It diverges the moment 1.02^BP outruns the
+    // 1e12 divisor — around BP 1400 — and reached Infinity by prestige 19 in
+    // the harness, roughly three hours of adversarial play. The cube root
+    // looks like damping but only divides the exponent by three; nothing
+    // short of breaking the loop fixes it.
+    .mul(1 + C.BP_PASSIVE * state.prestige.bpEarned)
     // Standing scales what your finished worlds are worth to you. Every world
     // starts at 1 and this is exactly 1 until something is actually
     // neglected, so a player who never lets a situation lapse sees the same

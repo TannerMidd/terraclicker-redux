@@ -6,9 +6,10 @@
  * acquisition timelines, income doubling, stall windows, BP outcomes.
  */
 import { newGame, step, computeDerived } from '../src/engine/sim';
-import { bulkCost, upgradeVisible } from '../src/engine/economy';
+import { bulkCost, upgradeVisible, prestigeEligible } from '../src/engine/economy';
 import { specialtiesForSystem } from '../src/engine/operations';
 import { BUILDINGS } from '../src/content/buildings';
+import { CATALOGUE } from '../src/content/catalogue';
 import { UPGRADES } from '../src/content/upgrades';
 import { format, formatDuration } from '../src/engine/num';
 import { ASPECTS, type AspectId, type GameState, type Input } from '../src/engine/types';
@@ -97,6 +98,32 @@ function operationsManager(state: GameState, tick: number): Input[] {
   return inputs;
 }
 
+/**
+ * Files the sale the moment it is available, then actually spends what it was
+ * paid. Every other bot here banks Blueprints forever, which meant the single
+ * criterion the whole prestige layer is judged by — DESIGN.md M3, "run 2 >=45%
+ * faster to prior peak" — was never once exercised by the harness. Perks are
+ * bought cheapest-first so the early ranks, which is where the acceleration
+ * actually comes from, land first.
+ */
+function catalogueSpender(state: GameState, tick: number): Input[] {
+  const inputs: Input[] = [{ type: 'click' }];
+  if (tick % 20 === 0) inputs.push(...buyer(state, bottleneck(state)));
+  if (prestigeEligible(state)) inputs.push({ type: 'prestige' });
+
+  if (tick % 8 === 0) {
+    const affordable = CATALOGUE.map((perk) => {
+      const rank = state.prestige.catalogue[perk.id] ?? 0;
+      return { perk, rank, cost: perk.costs[rank] };
+    })
+      .filter((e) => e.rank < e.perk.maxRank && e.cost !== undefined && state.prestige.bp >= e.cost)
+      .sort((a, b) => (a.cost as number) - (b.cost as number));
+    const next = affordable[0];
+    if (next) inputs.push({ type: 'buyPerk', id: next.perk.id });
+  }
+  return inputs;
+}
+
 const BOTS: Record<string, Bot> = {
   'greedy-clicker': (s, t) => {
     const inputs: Input[] = [{ type: 'click' }];
@@ -118,6 +145,7 @@ const BOTS: Record<string, Bot> = {
     return inputs;
   },
   'operations-manager': (s, t) => operationsManager(s, t),
+  'catalogue-spender': (s, t) => catalogueSpender(s, t),
   'earliest-prestige': (s, t) => {
     const inputs: Input[] = [{ type: 'click' }];
     if (t % 20 === 0) inputs.push(...buyer(s));
@@ -172,6 +200,9 @@ function runBot(name: string, bot: Bot, minutes: number): void {
     `  end: ${format(state.tu)} TU · ${format(d.tuPerSec)}/s · planets ${state.run.planetsCompleted} (${state.lifetime.planetsCompleted} lifetime) · prestiges ${state.lifetime.prestiges} · BP on reset ${d.prestigeBp}`,
   );
   console.log(`  BP earned: ${state.prestige.bpEarned} | systems required now: ${d.prestigeRequiredSystems}`);
+  const ranks = Object.entries(state.prestige.catalogue).filter(([, r]) => r > 0);
+  if (ranks.length > 0)
+    console.log(`  catalogue: ${state.prestige.bp} BP unspent | ${ranks.map(([id, r]) => `${id} ${r}`).join(', ')}`);
   console.log(`  operations: ${state.operations.completed.length} contracts | routes ${d.dispatchesUsed}/${d.dispatchSlots} | heritage ${state.operations.heritageWorlds.length}`);
   console.log(`  max stall: ${formatDuration(maxStall)} · income doublings: ${doublings.length}`);
   for (const m of milestones.slice(0, 24)) {
