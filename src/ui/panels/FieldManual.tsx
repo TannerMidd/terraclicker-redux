@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react';
 import { C } from '../../content/constants';
 import { FACTION_META } from '../../content/contracts';
+import { CARGO_CAPACITY, RIG_LIMIT } from '../../content/refit';
+import { SEAMS } from '../../content/freight';
+import { MEGAPROJECTS } from '../../content/megaprojects';
+import { STANDING_FLOOR } from '../../engine/situations';
 
 /**
  * The Guide's practical entry on playing the game. Every number is read from
@@ -73,7 +77,7 @@ export function FieldManual() {
           </p>
         </Entry>
 
-        <Entry title="Bubbles, events, and Vogons">
+        <Entry title="Bubbles, situations, and Vogons">
           <p>
             <b>Improbability bubbles</b> drift by every{' '}
             {Math.round(C.BUBBLE_MIN_GAP_MS / 1000)}&ndash;
@@ -83,17 +87,132 @@ export function FieldManual() {
             one and the next is guaranteed golden.
           </p>
           <p>
-            <b>Events</b> arrive every {minutes(C.EVENT_MIN_GAP_MS)}&ndash;
-            {minutes(C.EVENT_MAX_GAP_MS)} minutes with temporary boons or nuisances.{' '}
+            <b>Situations</b> arrive every {minutes(C.SITUATION_MIN_GAP_MS)}&ndash;
+            {minutes(C.SITUATION_MAX_GAP_MS)} minutes, name one of the worlds you
+            delivered, and ask you something. Each option costs real production or research
+            time, and each leaves a mark. Leaving one alone is a legitimate answer and
+            never a free one — the card says what kind of thing is at stake before you
+            decide.
+          </p>
+          <p>
+            Nothing hands you a production boon at random any more. Every temporary boost
+            in the game is now something a situation gave you for choosing well, and
+            everything that used to make events more frequent makes <em>situations</em>{' '}
+            more frequent instead.
+          </p>
+          <p>
             <b>Vogon constructor fleets</b> occasionally stop by to read poetry
             (−{Math.round(C.VOGON_DEBUFF * 100)}% production); click all{' '}
             {C.VOGON_SHIPS} ships to cut the reading short.
           </p>
           <p>
             The <b>Vortex</b> panel tracks your local anomaly pressure — Heart of Gold
-            drives raise it, improving event cadence and bubble quality. If you buy
-            nothing for {minutes(C.STALL_MS)} minutes, the universe takes pity and
-            improbability rises on its own.
+            drives raise it, improving cadence and bubble quality. If you buy nothing for{' '}
+            {minutes(C.STALL_MS)} minutes, the universe takes pity and improbability rises
+            on its own.
+          </p>
+        </Entry>
+
+        <Entry title="Standing: what a world thinks of you">
+          <p>
+            Every delivered world has <b>standing</b>, and it starts full. Answer what a
+            world asks and it rises; let requests lapse and it falls. A world whose
+            standing has dropped visibly puts its lights out — fewer settlements burning on
+            the night side, in the same places they always were — and contributes less to
+            what your finished worlds are worth.
+          </p>
+          <p>
+            Nothing is ever destroyed. Standing is floored at{' '}
+            {Math.round(STANDING_FLOOR * 100)}%, and a world lights back up as soon as you
+            start looking after it again.
+          </p>
+        </Entry>
+
+        <Entry title="Petitions: worlds that write to you">
+          <p>
+            A finished world files a <b>petition</b> every{' '}
+            {minutes(C.PETITION_MIN_GAP_MS)}&ndash;{minutes(C.PETITION_MAX_GAP_MS)} minutes
+            about something only that world would care about — keyed to the bottleneck it
+            was delivered against, and to its quirks. Up to {C.PETITION_QUEUE_MAX} can be
+            waiting at once; they queue rather than interrupt, because these are requests,
+            not emergencies.
+          </p>
+          <p>
+            They are gentler than situations in both directions. Answering lifts standing,
+            often for very little. A world that stops writing to you is the real penalty.
+          </p>
+        </Entry>
+
+        <Entry title="The hold: freight and passengers">
+          <p>
+            Fit a <b>Cargo Hold</b> at the helm — press <kbd>r</kbd> in flight, and pay in
+            salvage — and the <b>Freight Board</b> in Operations starts posting work
+            between worlds you have actually delivered. Accept a job, fly to the
+            destination world, and it discharges the moment you arrive. There is no dock
+            and no button.
+          </p>
+          <p>
+            Freight is <b>mass</b>, and mass is the whole mechanic: a loaded runabout takes
+            longer to get moving and much longer to stop, and the approach governor needs
+            more room to save you from whatever you are pointed at. The hold takes{' '}
+            {CARGO_CAPACITY[1]}, {CARGO_CAPACITY[2]} then {CARGO_CAPACITY[3]} tonnes by
+            rank. Passengers weigh almost nothing and pay in Guide entries rather than
+            salvage.
+          </p>
+          <p>
+            The board refreshes every {minutes(C.JOB_REFRESH_MS)} minutes. A job you have
+            already accepted is never taken back by a timer.
+          </p>
+        </Entry>
+
+        <Entry title="Mining: prospect, rig, come back">
+          <p>
+            There are <b>{SEAMS.length} seams</b> out in the dark, placed by your
+            universe&rsquo;s master seed alone — they were there before your first
+            commission and they never move. Lock one at the helm and hold <kbd>e</kbd> to
+            prospect it.
+          </p>
+          <p>
+            Fit a <b>Rig Bay</b> and you can spend salvage to leave a rig standing on a
+            prospected seam. It is a real structure, permanently in the sky, and it works
+            whether or not the game is open — banking salvage up to its own cap and then
+            waiting. Fly back and hold <kbd>e</kbd> to collect. The bay holds{' '}
+            {RIG_LIMIT[1]}, {RIG_LIMIT[2]} then {RIG_LIMIT[3]} rigs by rank.
+          </p>
+        </Entry>
+
+        <Entry title="Customs, and how to leave">
+          <p>
+            Carrying a manifest makes you interesting to people who inspect manifests. A
+            patrol only ever takes an interest in <em>cargo</em>, so an empty ship is never
+            stopped and sightseeing is never taxed.
+          </p>
+          <p>
+            Three ways out, none involving weapons. <b>Outrun</b> it — harder loaded, which
+            is where the mass you accepted comes back for its answer. <b>Comply</b> by
+            stopping, and lose the cargo and the fee. Or fit a <b>Dispersal Field</b> and
+            hold <kbd>f</kbd> until it loses interest, which harms nobody and is enormously
+            resented.
+          </p>
+        </Entry>
+
+        <Entry title="Megaprojects: the things that take days">
+          <p>
+            Commissioned with TU in Operations, then built over <b>real days</b> —
+            including the days you are not here. Alone among everything in this game, a
+            megaproject makes progress while the tab is shut, at full rate, because being
+            what happened while you were gone is the entire point of it.
+          </p>
+          <p>
+            They are gated on <b>faction reputation</b>, which is what reputation is now
+            for. You earn it by completing contracts, by flying freight for a faction, and
+            by looking after the worlds that write to you.
+          </p>
+          <p>
+            A finished megaproject is <b>not sold with the commission</b>. Magrathea buys
+            the portfolio; it does not buy the monuments. It keeps its effect across every
+            commission that follows, stands in the sky over your home world, and is the
+            only permanent thing you can build. There are {MEGAPROJECTS.length} of them.
           </p>
         </Entry>
 

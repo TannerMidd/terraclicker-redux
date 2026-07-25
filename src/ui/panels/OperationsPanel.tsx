@@ -213,6 +213,9 @@ export function OperationsPanel() {
         </>
       )}
 
+      <MegaprojectSection />
+      <FreightSection />
+      <RigSection />
       <div className="panel-h">System Dispatch</div>
       <div className="dispatch-head">
         <p className="panel-sub">
@@ -290,9 +293,6 @@ export function OperationsPanel() {
         )}
       </div>
 
-      <MegaprojectSection />
-      <FreightSection />
-      <RigSection />
       <div className="panel-h">Heritage Registry</div>
       <div className="heritage-rule">
         Designate one completed world in Guide → Commission Atlas before selling the commission.
