@@ -228,6 +228,8 @@ export const saveSchema = z.object({
     deliveries: z.number().int().min(0),
     nextJobMs: z.number(),
     unscheduled: z.record(z.string(), z.number().min(0)),
+    role: z.string(),
+    infrastructure: z.record(z.string(), z.number().int().min(0)),
     pinned: z.string().nullable(),
     visited: z.record(z.string(), z.number().min(0)),
   }),

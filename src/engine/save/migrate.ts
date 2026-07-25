@@ -492,6 +492,20 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: { ...exp, unscheduled: {} } };
     },
   },
+  {
+    // v19 → v20: ship roles and salvage-built infrastructure. Everyone starts
+    // on General Duties with nothing standing, which is exactly the ship they
+    // already had — a role is a configuration over the refits, so this changes
+    // nothing about an existing runabout until somebody chooses otherwise.
+    from: 19,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      return { ...raw, expedition: { ...exp, role: 'general', infrastructure: {} } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

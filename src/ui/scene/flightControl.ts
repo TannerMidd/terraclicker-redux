@@ -56,6 +56,7 @@ import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
 import { pinnedWaypoint, type WaypointRef } from '../../engine/waypoints';
 import { handlingFor } from '../../engine/handling';
+import { loadoutEffects } from '../../engine/loadouts';
 import { solveNav, type NavSolution } from '../../engine/navigation';
 import { flightPrefs, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
@@ -421,7 +422,8 @@ export function stepFlight(dt: number, t: number): void {
   const authority = f.ramp * (f.paused ? 0 : 1);
 
   // Steering → turn rates → orientation. Roll is cosmetic bank.
-  const turn = handlingFor(useGame.getState().s.expedition).turnMult;
+  const expeditionNow = useGame.getState().s.expedition;
+  const turn = handlingFor(expeditionNow).turnMult * loadoutEffects(expeditionNow).agility;
   const yawTarget = -steerCurve(input.steerX) * YAW_RATE_MAX * authority * turn;
   const pitchTarget = -steerCurve(input.steerY) * PITCH_RATE_MAX * authority * turn;
   const rateK = 1 - Math.exp(-dt * RATE_RESP);
@@ -470,7 +472,11 @@ export function stepFlight(dt: number, t: number): void {
   const boosting = input.boost && authority > 0;
   f.boostBlend += ((boosting ? 1 : 0) - f.boostBlend) * (1 - Math.exp(-dt * 4));
   const cap = Math.min(
-    boosting ? Math.min(rangeCap * BOOST_MULT, BOOST_CAP) : rangeCap,
+    (boosting ? Math.min(rangeCap * BOOST_MULT, BOOST_CAP) : rangeCap)
+      // A courier is stripped for speed; a hauler is not. The role never
+      // touches the approach governor, so nothing here can make a body easier
+      // to fly into.
+      * loadoutEffects(useGame.getState().s.expedition).speed,
     approachCap,
   );
 

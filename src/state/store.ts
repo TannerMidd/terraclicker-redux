@@ -277,6 +277,8 @@ export const actions = {
   pickUpManifest: () => dispatch({ type: 'pickUpManifest' }),
   attendInPerson: (uid: number) => dispatch({ type: 'attendInPerson', uid }),
   boardUnscheduled: (id: string) => dispatch({ type: 'boardUnscheduled', id }),
+  setRole: (id: string) => dispatch({ type: 'setRole', id }),
+  buildInfrastructure: (id: string) => dispatch({ type: 'buildInfrastructure', id }),
 };
 
 // Dev hook for headless verification and manual poking.

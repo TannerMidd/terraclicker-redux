@@ -36,6 +36,7 @@ import {
 import { CARGO_CAPACITY, REFIT_BY_ID, RIG_LIMIT, DETERRENT_POWER } from '../content/refit';
 import type { DeepFieldDef } from '../content/deepField';
 import { C } from '../content/constants';
+import { loadoutEffects } from './loadouts';
 import { mulberry, pickWeighted, randRange } from './rng';
 import type { ExpeditionState, GameState, SimEffect } from './types';
 
@@ -49,7 +50,10 @@ function rankOf(expedition: ExpeditionState, id: string): number {
 
 /** Tonnes the hold will take. Zero until a hold is actually fitted. */
 export function cargoCapacity(expedition: ExpeditionState): number {
-  return CARGO_CAPACITY[rankOf(expedition, 'cargoHold')] ?? 0;
+  // The refit sets what the hold IS; the role and any depots set how much goes
+  // into it today. Nothing bought is ever taken away — see engine/loadouts.ts.
+  const base = CARGO_CAPACITY[rankOf(expedition, 'cargoHold')] ?? 0;
+  return base * loadoutEffects(expedition).capacity;
 }
 
 /** How many rigs may stand at once. */
@@ -308,8 +312,10 @@ export function stepRigs(state: GameState, tickMs: number): boolean {
     const rig = rigs[id]!;
     const def = SEAM_BY_ID[id];
     if (!def) continue;
-    if (rig.banked >= def.cap) continue;
-    rig.banked = Math.min(def.cap, rig.banked + (def.yieldPerHour * tickMs) / 3_600_000);
+    // A survey station tells the seam to keep going a while longer.
+    const cap = def.cap * loadoutEffects(state.expedition).rigCap;
+    if (rig.banked >= cap) continue;
+    rig.banked = Math.min(cap, rig.banked + (def.yieldPerHour * tickMs) / 3_600_000);
     rig.lastTickMs = state.gameTimeMs;
     changed = true;
   }
@@ -346,7 +352,7 @@ export function bankedTotal(expedition: ExpeditionState): number {
 export function createFreightState(): Pick<
   ExpeditionState,
   | 'manifest' | 'jobs' | 'seams' | 'rigs' | 'interdictions' | 'deliveries' | 'nextJobMs'
-  | 'pinned' | 'visited' | 'unscheduled'
+  | 'pinned' | 'visited' | 'unscheduled' | 'role' | 'infrastructure'
 > {
   return {
     manifest: null,
@@ -359,5 +365,7 @@ export function createFreightState(): Pick<
     pinned: null,
     visited: {},
     unscheduled: {},
+    role: 'general',
+    infrastructure: {},
   };
 }

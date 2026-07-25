@@ -211,6 +211,10 @@ export interface ExpeditionState {
    * because the objects themselves expire with it. See engine/unscheduled.ts.
    */
   unscheduled: Record<string, number>;
+  /** Ship role id. A configuration over the refits, never a replacement. */
+  role: string;
+  /** Structure id → how many are standing. Built with salvage. */
+  infrastructure: Record<string, number>;
   /**
    * Waypoint id the helm is currently pointed at, or null. Resolved through
    * the live registry every read, so an expired job or a collected rig leaves
@@ -496,7 +500,9 @@ export type Input =
   | { type: 'pickUpManifest' }
   /** Resolve a request by having gone there. See engine/bridge.ts. */
   | { type: 'attendInPerson'; uid: number }
-  | { type: 'boardUnscheduled'; id: string };
+  | { type: 'boardUnscheduled'; id: string }
+  | { type: 'setRole'; id: string }
+  | { type: 'buildInfrastructure'; id: string };
 
 export type SimEffect =
   | { t: 'planetComplete'; name: string; lifetimeIndex: number; bonus: Decimal }
@@ -544,6 +550,7 @@ export type SimEffect =
   | { t: 'manifestPickedUp'; id: string; from: string }
   | { t: 'attendedInPerson'; world: string; id: string }
   | { t: 'unscheduledBoarded'; id: string; text: string }
+  | { t: 'infrastructureBuilt'; id: string }
   | {
       t: 'situationResolved';
       uid: number;

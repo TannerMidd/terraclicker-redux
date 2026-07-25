@@ -12,6 +12,7 @@
  * vectors.
  */
 import { mulberry } from './rng';
+import { loadoutEffects } from './loadouts';
 import {
   DEEP_FIELD,
   DEEP_FIELD_BY_ID,
@@ -175,7 +176,9 @@ function rankOf(expedition: ExpeditionState, id: string): number {
 
 /** How far the sensors see. Everything beyond this is simply not there. */
 export function sensorRange(expedition: ExpeditionState): number {
-  return SENSOR_RANGE[rankOf(expedition, 'sensors')] ?? SENSOR_RANGE[0];
+  const base = SENSOR_RANGE[rankOf(expedition, 'sensors')] ?? SENSOR_RANGE[0];
+  // Role and relay buoys both reach further; neither replaces the refit.
+  return (base ?? 0) * loadoutEffects(expedition).sensors;
 }
 
 /** Scan rate multiplier — divides the catalogue's scanSeconds. */

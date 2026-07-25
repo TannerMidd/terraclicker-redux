@@ -73,6 +73,7 @@ import { charterOffersFor, signCharter } from './charters';
 import { answerPhase } from './programmes';
 import { attendInPerson } from './bridge';
 import { boardUnscheduled } from './unscheduled';
+import { buildInfrastructure, setRole } from './loadouts';
 import {
   createStandingOrders,
   sanitizeOrders,
@@ -417,6 +418,14 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       // is a queue that silently does nothing, which is worse than a rejected
       // edit because it looks like it worked.
       if (standingOrdersUnlocked(state)) state.standingOrders = sanitizeOrders(input.orders);
+      break;
+    }
+    case 'setRole': {
+      setRole(state, input.id);
+      break;
+    }
+    case 'buildInfrastructure': {
+      buildInfrastructure(state, effects, input.id);
       break;
     }
     case 'boardUnscheduled': {
