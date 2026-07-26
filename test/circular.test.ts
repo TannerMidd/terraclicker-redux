@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newGame, step, stepOffline } from '../src/engine/sim';
 import { buildCircular, circularSummary } from '../src/engine/circular';
+import { rigCapacity } from '../src/engine/freight';
 import { MEGAPROJECT_BY_ID } from '../src/content/megaprojects';
 import { SEAM_BY_ID } from '../src/content/freight';
 import { D } from '../src/engine/num';
@@ -51,8 +52,11 @@ describe('the Morning Circular', () => {
     const s = newGame(99, 0);
     const seamId = Object.keys(SEAM_BY_ID)[0]!;
     const def = SEAM_BY_ID[seamId]!;
+    s.expedition.infrastructure['survey-station'] = 1;
     s.expedition.rigs[seamId] = { banked: def.cap, lastTickMs: 0, placedAtMs: 0 };
 
+    expect(buildCircular(s, 0).some((i) => i.kind === 'full')).toBe(false);
+    s.expedition.rigs[seamId]!.banked = rigCapacity(s.expedition, seamId);
     const item = buildCircular(s, 0).find((i) => i.kind === 'full');
     expect(item).toBeDefined();
     expect(item!.text).toContain('full');

@@ -65,7 +65,6 @@ export function attendInPerson(
 ): boolean {
   const match = attendable(state).find((a) => a.uid === uid);
   if (!match) return false;
-  if (state.expedition.visited[waypointId('world', match.world)] === undefined) return false;
 
   const list = state.situations.some((s) => s.uid === uid)
     ? state.situations
@@ -75,6 +74,10 @@ export function attendInPerson(
   const inst = list[idx]!;
   const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
   if (!def) return false;
+
+  const visitedAt = state.expedition.visited[waypointId('world', match.world)];
+  const openedAt = state.gameTimeMs - Math.max(0, def.windowMs - inst.remainingMs);
+  if (visitedAt === undefined || visitedAt < openedAt) return false;
 
   list.splice(idx, 1);
   state.lifetime.situationsAnswered += 1;

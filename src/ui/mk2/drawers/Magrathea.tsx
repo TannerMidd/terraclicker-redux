@@ -97,6 +97,13 @@ function DossierBriefs() {
           </button>
         );
       })}
+      <button className="dr-card offer standard" onClick={() => actions.declineDossier()}>
+        <div className="dr-card-name">Standard Commission</div>
+        <div className="dr-card-body">
+          File no special brief. No production, cost, science, completion, or appraisal rule changes.
+        </div>
+        <div className="dr-card-note">CLOSE THE BRIEF TRAY FOR THIS COMMISSION</div>
+      </button>
     </>
   );
 }

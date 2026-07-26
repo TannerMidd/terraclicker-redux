@@ -16,6 +16,7 @@
  * flight layer reads these and applies them.
  */
 import { FREIGHT_BY_ID } from '../content/freight';
+import { isCarrying } from './freight';
 import type { ExpeditionState } from './types';
 
 export interface HandlingProfile {
@@ -46,7 +47,7 @@ export const NEUTRAL_HANDLING: HandlingProfile = {
 /** What the current manifest does to the ship. Empty hold flies as it always did. */
 export function handlingFor(expedition: ExpeditionState): HandlingProfile {
   const manifest = expedition.manifest;
-  if (!manifest) return NEUTRAL_HANDLING;
+  if (!manifest || !isCarrying(expedition)) return NEUTRAL_HANDLING;
   const def = FREIGHT_BY_ID[manifest.id];
   const traits = def?.handling ?? [];
   if (traits.length === 0) return NEUTRAL_HANDLING;

@@ -44,7 +44,14 @@ function PhaseQuestion({ id }: { id: string }) {
     </div>
   );
 }
-import { cargoCapacity, rigLimit, rigsStanding } from '../../engine/freight';
+import {
+  cargoCapacity,
+  currentManifestLeg,
+  rigCapacity,
+  rigLimit,
+  rigsStanding,
+} from '../../engine/freight';
+import { findWaypoint, manifestWaypointId } from '../../engine/waypoints';
 import { actions, useGame } from '../../state/store';
 
 export function MegaprojectSection() {
@@ -127,6 +134,11 @@ export function FreightSection() {
   const capacity = cargoCapacity(exp);
   const manifest = exp.manifest;
   const manifestDef = manifest ? FREIGHT_BY_ID[manifest.id] : null;
+  const leg = currentManifestLeg(s);
+  const objectiveId = manifest ? manifestWaypointId(manifest) : null;
+  const objectiveAvailable =
+    objectiveId !== null && findWaypoint(s, objectiveId) !== null;
+  const objectivePinned = objectiveId !== null && exp.pinned === objectiveId;
 
   return (
     <>
@@ -148,11 +160,35 @@ export function FreightSection() {
             {manifestDef ? ` · ${manifestDef.mass}t` : ''}
           </div>
           <div className="mf-hint">
-            Fly to {manifest.toName} and it discharges on arrival. Its system has to be revealed
-            for the port to see you.
+            {leg?.phase === 'collect' ? (
+              <>
+                Fly first to <b>{leg.targetName}</b> to collect it. The hold is empty until
+                pickup. Its system has to be revealed for the port to see you.
+              </>
+            ) : (
+              <>
+                Cargo aboard. Fly to <b>{leg?.targetName ?? manifest.toName}</b>; it
+                discharges on arrival. Its system has to be revealed for the port to see you.
+              </>
+            )}
           </div>
+          {objectiveAvailable && objectiveId && (
+            <>
+              <button
+                className="btn"
+                aria-pressed={objectivePinned}
+                onClick={() => actions.setWaypoint(objectivePinned ? null : objectiveId)}
+              >
+                {objectivePinned
+                  ? `Unpin ${leg?.targetName ?? 'objective'}`
+                  : leg?.phase === 'collect'
+                    ? `Pin collection · ${leg.targetName}`
+                    : `Pin delivery · ${leg?.targetName ?? manifest.toName}`}
+              </button>{' '}
+            </>
+          )}
           <button className="btn ghost" onClick={() => actions.abandonManifest()}>
-            Jettison the manifest
+            {leg?.phase === 'collect' ? 'Withdraw from the job' : 'Jettison the manifest'}
           </button>
         </div>
       ) : exp.jobs.length === 0 ? (
@@ -213,7 +249,7 @@ export function RigSection() {
           {ids.map((id) => {
             const seam = SEAM_BY_ID[id];
             const rig = exp.rigs[id]!;
-            const cap = seam?.cap ?? 1;
+            const cap = Math.max(1, rigCapacity(exp, id));
             return (
               <div className="rig-item" key={id}>
                 <div className="rig-head">
@@ -224,7 +260,7 @@ export function RigSection() {
                   <i style={{ width: `${Math.min(100, (rig.banked / cap) * 100)}%` }} />
                 </div>
                 <div className="rig-meta">
-                  {seam ? `${seam.yieldPerHour}/hr · holds ${seam.cap}` : ''}
+                  {seam ? `${seam.yieldPerHour}/hr · holds ${Math.floor(cap)}` : ''}
                   {rig.banked >= cap ? ' · full, and waiting' : ''}
                 </div>
               </div>

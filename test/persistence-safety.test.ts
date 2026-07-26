@@ -69,6 +69,38 @@ describe.sequential('local persistence safety', () => {
     expect(storage.getItem(QUARANTINE_KEY)).toBe(rejected);
   });
 
+  it('reports only a confirmed main-slot write as saved', async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    vi.resetModules();
+
+    const store = await import('../src/state/store');
+    expect(store.useGame.getState().lastSavedAt).toBeNull();
+
+    store.saveNow();
+
+    expect(store.useGame.getState().lastSavedAt).toEqual(expect.any(Number));
+    expect(store.useGame.getState().saveError).toBeNull();
+    expect(storage.getItem(SAVE_KEY)).not.toBeNull();
+  });
+
+  it('surfaces a rejected write and preserves the last real save timestamp', async () => {
+    const storage = memoryStorage();
+    storage.setItem = (key) => {
+      if (key === SAVE_KEY) throw new Error('quota');
+    };
+    vi.stubGlobal('localStorage', storage);
+    vi.resetModules();
+
+    const store = await import('../src/state/store');
+    const before = store.useGame.getState().s.savedAtWall;
+    store.saveNow();
+
+    expect(store.useGame.getState().lastSavedAt).toBeNull();
+    expect(store.useGame.getState().saveError).toMatch(/storage rejected/i);
+    expect(store.useGame.getState().s.savedAtWall).toBe(before);
+  });
+
   it('treats an explicit hard reset as permission to leave recovery mode', async () => {
     const rejected = '{"version":2,"seed":23063,"prestige":{"bp":13}}';
     const storage = memoryStorage({ [SAVE_KEY]: rejected });

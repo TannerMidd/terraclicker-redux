@@ -44,6 +44,10 @@ interface GameStore {
   loadError: string | null;
   /** True when a rejected save is quarantined and automatic writes must stop. */
   persistenceBlocked: boolean;
+  /** Wall-clock of the last confirmed main-save write in this session. */
+  lastSavedAt: number | null;
+  /** A visible persistence failure; null after the next confirmed write. */
+  saveError: string | null;
   offlineReport: OfflineReport | null;
   dismissOfflineReport: () => void;
 }
@@ -219,6 +223,8 @@ export const useGame = create<GameStore>((set) => ({
   booted: true,
   loadError: initial.loadError,
   persistenceBlocked: initial.persistenceBlocked,
+  lastSavedAt: null,
+  saveError: null,
   offlineReport: initial.report,
   dismissOfflineReport: () => set({ offlineReport: null }),
 }));
@@ -243,6 +249,7 @@ export const actions = {
   buyUpgrade: (id: string) => dispatch({ type: 'buyUpgrade', id }),
   startResearch: (id: string) => dispatch({ type: 'startResearch', id }),
   chooseSurvey: (id: string) => dispatch({ type: 'chooseSurvey', id }),
+  declineSurvey: () => dispatch({ type: 'declineSurvey' }),
   catchBubble: (id: number) => dispatch({ type: 'catchBubble', id }),
   hitVogonShip: (id: number) => dispatch({ type: 'hitVogonShip', id }),
   prestige: () => dispatch({ type: 'prestige' }),
@@ -270,8 +277,10 @@ export const actions = {
   setWaypoint: (id: string | null) => dispatch({ type: 'setWaypoint', id }),
   markVisited: (id: string) => dispatch({ type: 'markVisited', id }),
   setFlag: (id: string, value: number) => dispatch({ type: 'setFlag', id, value }),
+  completeFirstSortie: () => dispatch({ type: 'completeFirstSortie' }),
   setStandingOrders: (orders: StandingOrders) => dispatch({ type: 'setStandingOrders', orders }),
   acceptDossier: (id: string) => dispatch({ type: 'acceptDossier', id }),
+  declineDossier: () => dispatch({ type: 'declineDossier' }),
   signCharter: (systemIndex: number, id: string) => dispatch({ type: 'signCharter', systemIndex, id }),
   answerPhase: (id: string, optionId: string) => dispatch({ type: 'answerPhase', id, optionId }),
   pickUpManifest: () => dispatch({ type: 'pickUpManifest' }),
@@ -299,11 +308,28 @@ let lastBackupAt = 0;
 
 export function saveNow(): void {
   const { s, persistenceBlocked } = useGame.getState();
-  if (persistenceBlocked) return;
+  if (persistenceBlocked) {
+    useGame.setState({ saveError: 'Autosave is paused while rejected save data is protected.' });
+    return;
+  }
+
   const now = Date.now();
-  s.savedAtWall = now;
+  const previousSavedAt = s.savedAtWall;
+  let json: string;
   try {
-    const json = serialize(s);
+    // The timestamp belongs to the write. If no write lands, put the prior
+    // timestamp back so offline progress never trusts a save that did not exist.
+    s.savedAtWall = now;
+    json = serialize(s);
+  } catch {
+    s.savedAtWall = previousSavedAt;
+    useGame.setState({ saveError: 'The current game state could not be serialized.' });
+    return;
+  }
+
+  // Backup rotation is best-effort. A backup problem must not prevent the main
+  // slot from being refreshed when that write is still available.
+  try {
     const previousMain = localStorage.getItem(SAVE_KEY);
     if (
       previousMain
@@ -317,15 +343,28 @@ export function saveNow(): void {
       localStorage.setItem(BACKUP_KEYS[0]!, previousMain);
       lastBackupAt = now;
     }
+  } catch {
+    /* the confirmed main write below remains the source of truth */
+  }
+
+  try {
     localStorage.setItem(SAVE_KEY, json);
+  } catch {
+    s.savedAtWall = previousSavedAt;
+    useGame.setState({ saveError: 'Browser storage rejected the save. Export a copy from Settings.' });
+    return;
+  }
+
+  try {
     const backup0 = localStorage.getItem(BACKUP_KEYS[0]!);
     if (!backup0 || !deserialize(backup0).ok) {
       localStorage.setItem(BACKUP_KEYS[0]!, json);
       lastBackupAt = now;
     }
   } catch {
-    /* storage full or unavailable; the show goes on */
+    /* main save is confirmed even if the backup slot is unavailable */
   }
+  useGame.setState({ lastSavedAt: now, saveError: null });
 }
 
 export function exportToClipboard(): string {
@@ -336,7 +375,10 @@ export function importFromText(text: string): string | null {
   const r = importSave(text);
   if (!r.ok) return r.error;
   lastBackupAt = 0;
-  useGame.setState({ s: r.state, offlineReport: null, loadError: null, persistenceBlocked: false });
+  useGame.setState({
+    s: r.state, offlineReport: null, loadError: null, persistenceBlocked: false,
+    lastSavedAt: null, saveError: null,
+  });
   saveNow();
   publish();
   return null;
@@ -351,7 +393,10 @@ export function hardReset(): void {
     /* fine */
   }
   lastBackupAt = 0;
-  useGame.setState({ s: freshGame(), offlineReport: null, loadError: null, persistenceBlocked: false });
+  useGame.setState({
+    s: freshGame(), offlineReport: null, loadError: null, persistenceBlocked: false,
+    lastSavedAt: null, saveError: null,
+  });
   publish();
 }
 

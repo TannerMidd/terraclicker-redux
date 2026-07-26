@@ -19,12 +19,17 @@ export function SurveyModal() {
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-label={`Orbital Survey - ${s.planet.name}`}
+        aria-labelledby="survey-title"
+        aria-describedby="survey-explainer survey-commitment"
       >
+        <span id="survey-title" className="sr-only">Orbital Survey - {s.planet.name}</span>
         <h2>Orbital Survey — {s.planet.name}</h2>
-        <p className="m-body">
-          Three probes report back. Their findings disagree, as probes do. Commission one report
-          as official:
+        <p className="m-body" id="survey-explainer">
+          Three probes report back. Their findings disagree, as probes do. Choose the report whose
+          listed effect best serves this world.
+        </p>
+        <p className="survey-decision-note" id="survey-commitment">
+          Selecting files immediately. The bonus and record apply only to this world.
         </p>
         <div className="survey-options">
           {options.map((id, index) => {
@@ -39,9 +44,18 @@ export function SurveyModal() {
               >
                 <div className="so-name">{sv.name}</div>
                 <div className="so-text">{sv.text}</div>
+                <span className="so-action">FILE THIS REPORT</span>
               </button>
             );
           })}
+        </div>
+        <div className="survey-decline">
+          <button className="survey-skip" onClick={() => actions.declineSurvey()}>
+            PROCEED UNSURVEYED
+          </button>
+          <span>
+            No survey bonus is filed, and this world will not count toward surveyed-world contracts.
+          </span>
         </div>
       </div>
     </div>

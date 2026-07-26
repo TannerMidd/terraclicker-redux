@@ -3,13 +3,15 @@ import {
   ACTION_LABELS,
   AXIS_ROLES,
   AXIS_ROLE_LABELS,
-  DEFAULT_BINDINGS,
+  bindingLabel,
+  FLIGHT_ACTIONS,
+  flightBindingConflict,
   flightPrefs,
-  keyLabel,
   readDevices,
   readPad,
   resetFlightPrefs,
   saveFlightPrefs,
+  STANDARD_PAD_BINDINGS,
   type AxisRole,
   type FlightAction,
   type FlightPrefs,
@@ -175,6 +177,7 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
     bindings: { ...flightPrefs().bindings },
   }));
   const [capturing, setCapturing] = useState<FlightAction | null>(null);
+  const [bindingError, setBindingError] = useState<string | null>(null);
   const [padSeen, setPadSeen] = useState(false);
 
   const update = (next: FlightPrefs) => {
@@ -187,17 +190,40 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
     if (!capturing) return;
     const onKey = (e: KeyboardEvent) => {
       e.preventDefault();
-      e.stopPropagation();
-      if (e.code === 'Escape') {
+      e.stopImmediatePropagation();
+      if (e.code === 'Escape' && capturing !== 'exit') {
+        setBindingError(null);
         setCapturing(null);
         return;
       }
+      const conflict = flightBindingConflict(capturing, e.code, prefs.bindings);
+      if (conflict) {
+        setBindingError(conflict.message);
+        return;
+      }
       update({ ...prefs, bindings: { ...prefs.bindings, [capturing]: [e.code] } });
+      setBindingError(null);
       setCapturing(null);
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [capturing, prefs]);
+
+  // A panel consumes Escape or the remapped disembark key before flight can.
+  useEffect(() => {
+    if (capturing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      const boundExit =
+        prefs.bindings.exit.includes(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (e.code !== 'Escape' && !boundExit) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [capturing, onClose, prefs.bindings.exit]);
 
   // A pad that is plugged in but idle is still worth acknowledging.
   useEffect(() => {
@@ -205,7 +231,7 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
     return () => window.clearInterval(id);
   }, []);
 
-  const actions = Object.keys(DEFAULT_BINDINGS) as FlightAction[];
+  const actions = FLIGHT_ACTIONS;
 
   return (
     <div className="fh-refit fh-controls" role="dialog" aria-label="Helm controls">
@@ -217,10 +243,15 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
       </div>
 
       <p className="fc-note">
-        Requisition form 11-C. Any physical key may be assigned to any control. The
-        department notes that it has never received this form completed correctly and has
-        stopped expecting to.
+        Requisition form 11-C. Choose any unreserved physical key; cockpit panels and
+        browser commands keep their own shortcuts. <kbd>{bindingLabel(prefs.bindings.exit)}</kbd>{' '}
+        disembarks. Escape closes an open panel first.
       </p>
+      {bindingError && (
+        <p className="fc-note" role="alert">
+          {bindingError}
+        </p>
+      )}
 
       <div className="fc-binds">
         {actions.map((action) => (
@@ -228,11 +259,15 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
             <span className="fc-label">{ACTION_LABELS[action]}</span>
             <button
               className={`fc-key${capturing === action ? ' listening' : ''}`}
-              onClick={() => setCapturing(action)}
+              aria-label={`Rebind ${ACTION_LABELS[action]}; currently ${bindingLabel(prefs.bindings[action])}`}
+              onClick={() => {
+                setBindingError(null);
+                setCapturing(action);
+              }}
             >
               {capturing === action
                 ? 'press a key…'
-                : prefs.bindings[action].map(keyLabel).join(' / ')}
+                : bindingLabel(prefs.bindings[action])}
             </button>
           </div>
         ))}
@@ -274,7 +309,9 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
           <span>
             <b>Accept a gamepad</b>
             <em>
-              Left stick slides, right stick steers, triggers throttle.{' '}
+              Left stick slides, right stick steers; {STANDARD_PAD_BINDINGS.thrust} thrusts,{' '}
+              {STANDARD_PAD_BINDINGS.engage} engages, {STANDARD_PAD_BINDINGS.jump} jumps, and{' '}
+              {STANDARD_PAD_BINDINGS.exit} closes a panel or disembarks.{' '}
               {padSeen ? 'One is connected.' : 'None detected.'}
             </em>
           </span>
@@ -300,6 +337,8 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
         className="fc-reset"
         onClick={() => {
           resetFlightPrefs();
+          setCapturing(null);
+          setBindingError(null);
           setPrefs({ ...flightPrefs(), bindings: { ...flightPrefs().bindings } });
         }}
       >

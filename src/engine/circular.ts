@@ -22,6 +22,7 @@
 import { MEGAPROJECT_BY_ID } from '../content/megaprojects';
 import { SEAM_BY_ID } from '../content/freight';
 import { SITUATION_BY_ID } from '../content/situations';
+import { rigCapacity } from './freight';
 import { waypointId } from './waypoints';
 import { openPhases } from './programmes';
 import type { GameState } from './types';
@@ -88,7 +89,7 @@ export function buildCircular(state: GameState, sinceMs: number): CircularItem[]
   // 3. Rigs that filled and stopped. A full rig is a reason to fly.
   for (const [id, rig] of Object.entries(state.expedition.rigs)) {
     const def = SEAM_BY_ID[id];
-    if (!def || rig.banked < def.cap) continue;
+    if (!def || rig.banked < rigCapacity(state.expedition, id)) continue;
     items.push({
       kind: 'full',
       text: `The rig on ${def.name} is full and has stopped, politely, mid-shift.`,

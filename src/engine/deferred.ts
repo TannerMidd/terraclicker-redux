@@ -29,7 +29,7 @@
  * wall-clock time because it is a construction contract; the salvage it yields
  * afterwards is unbounded income and stays subject to the same cap as TU.
  * Rigs are the interesting case and they qualify: a rig's yield is bounded by
- * `def.cap`, so it fills, saturates, and waits. That is a structure reaching a
+ * its effective capacity, so it fills, saturates, and waits. That is a structure reaching a
  * state, not an income stream running unattended.
  */
 import { stepRigs } from './freight';

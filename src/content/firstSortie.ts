@@ -1,20 +1,11 @@
 /**
  * The first sortie.
  *
- * Taking the helm currently drops you into open space with a control legend.
- * A legend is reference material: it tells you which key does what, and
- * nothing about what any of it is *for*. Nobody has ever learned to fly from
- * one.
- *
- * So the first time a pilot takes the helm, the Guide walks them through one
- * short round trip that uses every verb the ship has and ends where it began:
- * launch, fly to something, scan it, come home. Five steps, each one satisfied
- * by doing the thing rather than by dismissing a box, and the whole thing
- * abandonable at any point by simply flying off — which is itself a lesson
- * about what kind of game this is.
- *
- * Tone: an induction pamphlet written by somebody who has done this a great
- * many times and has stopped being impressed by space.
+ * A control legend says which key does what; it does not teach what flight is
+ * for. The first time a pilot takes the helm, the Guide therefore assigns one
+ * seeded, reachable contact and walks them through a complete round trip.
+ * Every step refers to the same object, progress survives leaving the helm,
+ * and the induction ends with enough salvage for a first refit decision.
  */
 
 export interface SortieStep {
@@ -23,15 +14,13 @@ export interface SortieStep {
   text: string;
   /** The short instruction under it. */
   hint: string;
-  /**
-   * How the step is satisfied. Checked against live flight state each sweep;
-   * every one of these is a thing the ship could already do.
-   */
+  /** A real state transition rather than a dismissible explanation. */
   goal:
     | { kind: 'moveAway'; distance: number }
-    | { kind: 'pinAnything' }
-    | { kind: 'approachPin'; within: number }
-    | { kind: 'scanAnything' }
+    | { kind: 'lockTrainingContact' }
+    | { kind: 'scanTrainingContact' }
+    | { kind: 'approachTrainingContact' }
+    | { kind: 'boardTrainingContact' }
     | { kind: 'returnHome'; within: number };
 }
 
@@ -40,49 +29,60 @@ export const FIRST_SORTIE: readonly SortieStep[] = [
     id: 'launch',
     text:
       'The runabout is yours for the afternoon. It has been signed for, which is the '
-      + 'binding part. Take it away from the planet before you do anything clever.',
-    hint: 'Thrust forward until the planet is behind you.',
-    goal: { kind: 'moveAway', distance: 14 },
+      + 'binding part. The launch computer has put a training contact dead ahead.',
+    hint: 'Thrust forward. The planet is already behind you.',
+    goal: { kind: 'moveAway', distance: 5 },
   },
   {
-    id: 'pin',
+    id: 'acquire',
     text:
-      'Open the chart and pin something. Anywhere will do — the department is not '
-      + 'fussy about destinations, only about there being one on file.',
-    hint: 'Chart panel → pin any entry.',
-    goal: { kind: 'pinAnything' },
-  },
-  {
-    id: 'fly',
-    text:
-      'The ribbon along the top of the canopy now points at it, with the range and an '
-      + 'arrival estimate. Fly until you are alongside. Watch the estimate: if it stops '
-      + 'counting down you are no longer going there, whatever the nose says.',
-    hint: 'Follow the bearing marker until you arrive.',
-    goal: { kind: 'approachPin', within: 10 },
+      'The sensor slate gives direction as well as range. Bring the highlighted contact '
+      + 'under the centre reticle until the console names it as your target.',
+    hint: 'Turn toward the TRAINING contact and centre it in the reticle.',
+    goal: { kind: 'lockTrainingContact' },
   },
   {
     id: 'scan',
     text:
-      'Now find something and look at it properly. Hold the engage key with a contact '
-      + 'under the reticle until the sweep completes. Most of what is out here has never '
-      + 'been surveyed, largely because nobody has been bored enough.',
-    hint: 'Hold engage on any sensor contact.',
-    goal: { kind: 'scanAnything' },
+      'Hold the engage control while the contact stays under the reticle. The console will '
+      + 'hold station while it works. Release engage once the sweep is filed.',
+    hint: 'Hold ENGAGE to scan, then release it.',
+    goal: { kind: 'scanTrainingContact' },
+  },
+  {
+    id: 'approach',
+    text:
+      'The contact is now pinned and the bearing ribbon points at it. Approach until the '
+      + 'boarding prompt appears, then brake. Arriving slowly is still arriving.',
+    hint: 'Follow the ribbon and brake inside the boarding envelope.',
+    goal: { kind: 'approachTrainingContact' },
+  },
+  {
+    id: 'board',
+    text:
+      'The scan and the visit are separate filings. Now press engage once to board and '
+      + 'recover what the previous owner no longer appears to need.',
+    hint: 'Release ENGAGE, then press it once to board.',
+    goal: { kind: 'boardTrainingContact' },
   },
   {
     id: 'home',
     text:
-      'That is the whole job. Come back to the planet and the sortie is filed. The form '
-      + 'is already complete; it was completed before you left.',
-    hint: 'Return to the planet you started from.',
-    goal: { kind: 'returnHome', within: 12 },
+      'The home world is pinned. Follow the ribbon back until the planet fills the glass. '
+      + 'The form is already complete; it was completed before you left.',
+    hint: 'Return within 5u of home. Brake before the scenery becomes paperwork.',
+    goal: { kind: 'returnHome', within: 5 },
   },
 ];
 
 export const SORTIE_COMPLETE_TEXT =
   'Sortie logged. You are now, in the only sense the department recognises, a pilot. '
-  + 'The runabout is yours whenever the desk becomes unbearable.';
+  + 'The runabout is yours whenever the desk becomes unbearable. The refit bay now has '
+  + 'enough salvage for your first practical decision.';
 
 /** Flag on the save marking the induction as done. */
 export const SORTIE_FLAG = 'firstSortieDone';
+/** Saved zero-based checklist index. Kept separate for old saves where `done = 1`. */
+export const SORTIE_PROGRESS_FLAG = 'firstSortieStep';
+/** The induction guarantees at least this much salvage after the recovered object pays. */
+export const SORTIE_STARTER_SALVAGE = 5;

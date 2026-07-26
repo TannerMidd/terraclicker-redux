@@ -466,7 +466,23 @@
 .dr-law b { display: block; font-size: 12.5px; font-weight: 600; }
 .dr-law em { display: block; font-style: normal; font-size: 11.5px; color: var(--ink-dim); margin-top: 1px; }
 .dr-card.offer { display: block; width: calc(100% - 36px); text-align: left; }
-.dr-card.offer:hover { border-left-color: var(--magrathea); background: rgba(179, 107, 255, .06); }
+.dr-card.offer.standard {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ink-faint) 32%, transparent);
+}
+.dr-card.offer.standard .dr-card-note { color: var(--ink-label); }.dr-card.offer:hover { border-left-color: var(--magrathea); background: rgba(179, 107, 255, .06); }
+.dr-statute-stage { margin-top: 13px; }
+.dr-statute-stage + .dr-statute-stage { padding-top: 10px; border-top: 1px solid var(--line-faint); }
+.dr-card-cta { display: block; margin-top: 8px; font-family: var(--mono); font-size: 8.5px; letter-spacing: .12em; color: var(--brass-lit); }
+.dr-disclosure { margin: 14px 18px 0; border: 1px solid var(--line-2); background: rgba(255, 255, 255, .012); }
+.dr-disclosure summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; cursor: pointer; color: var(--ink-dim); font-size: 11.5px; }
+.dr-disclosure summary:hover { color: var(--ink); }
+.dr-disclosure summary b { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+.dr-disclosure-body { padding: 0 10px 10px; border-top: 1px solid var(--line-soft); }
+.dr-statute-modal { width: min(520px, calc(100vw - 32px)); }
+.dr-statute-terms { margin: 11px 0 0; padding: 9px 10px; border-left: 2px solid var(--magrathea); background: rgba(179, 107, 255, .06); color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
+.dr-statute-warning { margin: 12px 0 0; padding-left: 20px; color: var(--ink-dim); font-size: 12px; line-height: 1.55; }
+.dr-enact { border-color: var(--magrathea) !important; color: var(--magrathea) !important; }
 
 /* Reservation clauses: met, or a percentage of the way to having happened. */
 .dr-clause {

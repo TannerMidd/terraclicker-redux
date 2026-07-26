@@ -2,8 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { newGame, step } from '../src/engine/sim';
 import { serialize, deserialize } from '../src/engine/save/codec';
 import { runMigrations } from '../src/engine/save/migrate';
-import { findWaypoint, pinnedWaypoint, waypointId, waypoints } from '../src/engine/waypoints';
+import {
+  findWaypoint,
+  manifestWaypointId,
+  pinnedWaypoint,
+  waypointId,
+  waypoints,
+} from '../src/engine/waypoints';
+import { currentManifestLeg, pickUpManifest, rigCapacity } from '../src/engine/freight';
 import { C } from '../src/content/constants';
+import { SEAM_BY_ID } from '../src/content/freight';
 import { BOTS, OPTS, TICK } from '../balance/bots';
 import type { GameState } from '../src/engine/types';
 
@@ -41,6 +49,69 @@ describe('the waypoint registry', () => {
     expect(list.filter((w) => w.kind === 'system').length).toBe(s.run.systems);
   }, 60_000);
 
+  it('advances one stable freight pin from collection to delivery', () => {
+    const s = withWorlds(2);
+    const [origin, destination] = s.run.completedPlanets;
+    expect(origin).toBeDefined();
+    expect(destination).toBeDefined();
+    if (!origin || !destination) return;
+
+    // A second commission has lifetime ids that no longer equal local layout
+    // indexes. The objective must resolve through the current run's records.
+    origin.lifetimeIndex = 101;
+    destination.lifetimeIndex = 205;
+    s.expedition.manifest = {
+      uid: 77,
+      id: 'test-freight',
+      from: origin.lifetimeIndex,
+      to: destination.lifetimeIndex,
+      fromName: origin.name,
+      toName: destination.name,
+      distance: 1,
+      salvage: 1,
+      expiresAtMs: 999,
+      acceptedAtMs: 0,
+      pickedUpAtMs: null,
+    };
+
+    const pin = manifestWaypointId(s.expedition.manifest);
+    const collect = findWaypoint(s, pin);
+    expect(currentManifestLeg(s)).toMatchObject({
+      phase: 'collect',
+      targetLifetimeIndex: origin.lifetimeIndex,
+      targetName: origin.name,
+    });
+    expect(waypoints(s)[1]?.id).toBe(pin);
+    expect(collect?.label).toBe(origin.name);
+    expect(collect?.detail).toContain('collect');
+    expect(collect?.ref).toEqual({ at: 'focus', kind: 'world', index: 0 });
+
+    step(s, 0, [{ type: 'setWaypoint', id: pin }], OPTS);
+    expect(pickUpManifest(s, [])).toBe(true);
+
+    const deliver = findWaypoint(s, pin);
+    expect(currentManifestLeg(s)).toMatchObject({
+      phase: 'deliver',
+      targetLifetimeIndex: destination.lifetimeIndex,
+      targetName: destination.name,
+    });
+    expect(deliver?.id).toBe(pin);
+    expect(deliver?.label).toBe(destination.name);
+    expect(deliver?.detail).toContain('deliver');
+    expect(deliver?.ref).toEqual({ at: 'focus', kind: 'world', index: 1 });
+    expect(pinnedWaypoint(s)?.label).toBe(destination.name);
+  }, 60_000);
+
+  it('does not advertise unaccepted board offers as flight targets', () => {
+    const s = newGame(1, 0);
+    s.expedition.jobs = [{
+      uid: 3, id: 'x', from: 0, to: 0, fromName: 'a', toName: 'b',
+      distance: 1, salvage: 1, expiresAtMs: 999,
+    }];
+    expect(findWaypoint(s, waypointId('job', 3))).toBeNull();
+    expect(waypoints(s).filter((w) => w.kind === 'job')).toHaveLength(0);
+  });
+
   it('is a pure function of state — same universe, same list', () => {
     const s = withWorlds(3);
     expect(waypoints(s)).toEqual(waypoints(s));
@@ -49,18 +120,21 @@ describe('the waypoint registry', () => {
     expect(s.rng).toEqual(rngBefore); // a chart is not a dice roll
   }, 60_000);
 
-  it('distinguishes a prospected seam from one with a rig on it', () => {
+  it('distinguishes a seam from a rig and reports effective capacity', () => {
     const s = newGame(1, 0);
-    const seamId = 'orbital-scrap';
+    const seamId = Object.keys(SEAM_BY_ID)[0]!;
+    const seam = SEAM_BY_ID[seamId]!;
     s.expedition.seams[seamId] = 0;
-    const bare = waypoints(s).find((w) => w.kind === 'seam');
-    if (bare) {
-      expect(bare.detail).toContain('no rig');
-      s.expedition.rigs[seamId] = { banked: 0, lastTickMs: 0, placedAtMs: 0 };
-      const withRig = waypoints(s).find((w) => w.kind === 'rig');
-      expect(withRig).toBeDefined();
-      expect(waypoints(s).find((w) => w.kind === 'seam')).toBeUndefined();
-    }
+    expect(waypoints(s).find((w) => w.kind === 'seam')?.detail).toContain('no rig');
+
+    s.expedition.infrastructure['survey-station'] = 1;
+    s.expedition.rigs[seamId] = { banked: seam.cap, lastTickMs: 0, placedAtMs: 0 };
+    const filling = waypoints(s).find((w) => w.kind === 'rig');
+    expect(filling?.detail).toBe('80% full');
+    expect(waypoints(s).find((w) => w.kind === 'seam')).toBeUndefined();
+
+    s.expedition.rigs[seamId]!.banked = rigCapacity(s.expedition, seamId);
+    expect(waypoints(s).find((w) => w.kind === 'rig')?.detail).toBe('full, waiting');
   });
 
   it('pins only what exists, and clears on request', () => {
@@ -82,18 +156,19 @@ describe('the waypoint registry', () => {
 
   it('quietly forgets a pin whose subject has gone', () => {
     const s = newGame(1, 0);
-    s.expedition.jobs = [{
+    s.expedition.manifest = {
       uid: 3, id: 'x', from: 0, to: 0, fromName: 'a', toName: 'b',
       distance: 1, salvage: 1, expiresAtMs: 999,
-    }];
-    const jobPin = waypointId('job', 3);
+      acceptedAtMs: 0, pickedUpAtMs: null,
+    };
+    const jobPin = manifestWaypointId(s.expedition.manifest);
     expect(findWaypoint(s, jobPin)).not.toBeNull();
     step(s, 0, [{ type: 'setWaypoint', id: jobPin }], OPTS);
     expect(pinnedWaypoint(s)).not.toBeNull();
 
-    // The offer expires off the board. The pin is stale but must not throw or
-    // point the helm at nothing.
-    s.expedition.jobs = [];
+    // Completing or abandoning the active job leaves a stale id. It must not
+    // throw or point the helm at nothing.
+    s.expedition.manifest = null;
     expect(pinnedWaypoint(s)).toBeNull();
     expect(s.expedition.pinned).toBe(jobPin); // the id survives; the target does not
   });

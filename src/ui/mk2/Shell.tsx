@@ -23,7 +23,12 @@ import { actions, useGame } from '../../state/store';
 import { heroScreen, useUiBus } from '../fx/uiBus';
 import { Num, useSmoothTu } from '../bits';
 import { format, formatDuration } from '../../engine/num';
-import { ASPECTS, type AspectId } from '../../engine/types';
+import {
+  ASPECTS,
+  type AspectId,
+  type Derived,
+  type GameState,
+} from '../../engine/types';
 import { BUILDINGS, BUILDING_BY_ID } from '../../content/buildings';
 import { buildingCost } from '../../engine/economy';
 import { EVENT_BY_ID } from '../../content/events';
@@ -34,7 +39,14 @@ import { findWaypoint, waypointId } from '../../engine/waypoints';
 import { BAND_LABELS, BAND_STOPS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
 import { C } from '../../content/constants';
-import { FACTION_META } from '../../content/contracts';
+import {
+  CONTRACT_TEMPLATE_META,
+  FACTION_META,
+  objectiveTarget,
+} from '../../content/contracts';
+import { RESEARCH } from '../../content/research';
+import { statuteOffers } from '../../engine/statutes';
+import { currentManifestLeg } from '../../engine/freight';
 import { Drawer, DRAWERS, type DrawerId } from './drawers';
 import './mk2.css';
 
@@ -47,6 +59,225 @@ const CABINETS: readonly (readonly DrawerId[])[] = [
   ['chart', 'guide', 'vortex'],
   ['settings'],
 ];
+export type AttentionKind =
+  | 'answer'
+  | 'contract'
+  | 'manifest'
+  | 'dossier'
+  | 'charter'
+  | 'statute'
+  | 'prestige'
+  | 'research'
+  | 'rig'
+  | 'offer';
+
+export interface AttentionItem {
+  id: string;
+  kind: AttentionKind;
+  priority: number;
+  title: string;
+  detail: string;
+  drawer?: DrawerId;
+  tone: 'urgent' | 'deadline' | 'decision' | 'active' | 'ready' | 'quiet';
+  dueMs?: number;
+}
+
+function availableResearch(state: GameState) {
+  return RESEARCH.filter((project) => {
+    if (state.research.completed.includes(project.id)) return false;
+    if (
+      project.requiresResearch
+      && !state.research.completed.includes(project.requiresResearch)
+    ) return false;
+    if (project.requiresBuilding) {
+      for (const [id, count] of Object.entries(project.requiresBuilding)) {
+        if ((state.buildings[id] ?? 0) < count) return false;
+      }
+    }
+    return true;
+  });
+}
+
+/**
+ * One truthful queue for the whole desk. Nothing here invents work: every row
+ * corresponds to a live engine state and points at the drawer that owns it.
+ */
+export function buildAttentionItems(state: GameState, derived: Derived): AttentionItem[] {
+  const items: AttentionItem[] = [];
+
+  const petitions = [...state.run.petitions].sort((a, b) => a.remainingMs - b.remainingMs);
+  const answers = [...state.situations, ...petitions];
+  const firstAnswer = state.situations[0] ?? petitions[0];
+  if (firstAnswer) {
+    const def = SITUATION_BY_ID[firstAnswer.id] ?? PETITION_BY_ID[firstAnswer.id];
+    items.push({
+      id: `answer-${firstAnswer.uid}`,
+      kind: 'answer',
+      priority: 0,
+      title: def?.name ?? 'A decision needs an answer',
+      detail: `${answers.length} waiting / ${formatDuration(Math.max(0, firstAnswer.remainingMs))} left`,
+      tone: 'urgent',
+      dueMs: Math.max(0, firstAnswer.remainingMs),
+    });
+  }
+
+  const active = state.operations.active;
+  if (active) {
+    const target = objectiveTarget(active.offer.objective);
+    const due =
+      active.deadlineAtGameMs === null
+        ? undefined
+        : Math.max(0, active.deadlineAtGameMs - state.gameTimeMs);
+    const template = CONTRACT_TEMPLATE_META[active.offer.templateId];
+    items.push({
+      id: `contract-${active.offer.id}`,
+      kind: 'contract',
+      priority: due !== undefined && due <= 60_000 ? 5 : due !== undefined ? 10 : 24,
+      title: `${template.name} filing`,
+      detail: `${active.progress}/${target}${due === undefined ? ' / no deadline' : ` / ${formatDuration(due)} left`}`,
+      drawer: 'operations',
+      tone: due === undefined ? 'active' : 'deadline',
+      dueMs: due,
+    });
+  }
+
+  const leg = currentManifestLeg(state);
+  if (leg) {
+    const { manifest } = leg;
+    const collecting = leg.phase === 'collect';
+    items.push({
+      id: `manifest-${manifest.uid}`,
+      kind: 'manifest',
+      priority: 20,
+      title: collecting
+        ? `Collect at ${leg.targetName}`
+        : `Deliver to ${leg.targetName}`,
+      detail: `${manifest.salvage} salvage / ${collecting ? 'outbound pickup' : 'cargo aboard'}`,
+      drawer: 'operations',
+      tone: 'active',
+    });
+  }
+
+  if (!state.run.dossier && state.run.dossierOffers.length > 0) {
+    items.push({
+      id: 'dossier',
+      kind: 'dossier',
+      priority: 30,
+      title: 'Commission briefs remain open',
+      detail: `${state.run.dossierOffers.length} dossiers / applies until the portfolio is sold`,
+      drawer: 'magrathea',
+      tone: 'decision',
+    });
+  }
+
+  const charterSystems = Object.entries(state.run.charterOffers)
+    .filter(([, offers]) => offers.length > 0);
+  if (charterSystems.length > 0) {
+    const choices = charterSystems.reduce((sum, [, offers]) => sum + offers.length, 0);
+    items.push({
+      id: 'charter',
+      kind: 'charter',
+      priority: 31,
+      title: 'Sign system articles',
+      detail: `${charterSystems.length} system${charterSystems.length === 1 ? '' : 's'} / ${choices} articles`,
+      drawer: 'magrathea',
+      tone: 'decision',
+    });
+  }
+
+  const statutes = statuteOffers(state);
+  const statuteStages = new Set(statutes.map((statute) => statute.stage)).size;
+  if (statutes.length > 0) {
+    items.push({
+      id: 'statute',
+      kind: 'statute',
+      priority: 32,
+      title: 'A statute is before the house',
+      detail: `${statuteStages} stage${statuteStages === 1 ? '' : 's'} / ${statutes.length} acts / permanent once enacted`,
+      drawer: 'vortex',
+      tone: 'decision',
+    });
+  }
+
+  if (derived.prestigeEligible) {
+    items.push({
+      id: 'prestige-ready',
+      kind: 'prestige',
+      priority: 40,
+      title: 'Portfolio eligible for sale',
+      detail: `+${derived.prestigeBp} BP / starts commission ${state.lifetime.prestiges + 2}`,
+      drawer: 'magrathea',
+      tone: 'ready',
+    });
+  }
+
+  const research = availableResearch(state);
+  const hasLab = (state.buildings.researchLab ?? 0) > 0;
+  if (!state.research.active && hasLab && research.length > 0) {
+    const affordable = research.filter((project) => state.science.gte(project.costScience)).length;
+    items.push({
+      id: 'research-idle',
+      kind: 'research',
+      priority: 50,
+      title: 'Research is idle',
+      detail: `${research.length} open / ${affordable} affordable / ${format(state.science)} science`,
+      drawer: 'research',
+      tone: affordable > 0 ? 'ready' : 'quiet',
+    });
+  }
+
+  const rigs = Object.values(state.expedition.rigs);
+  const readyRigs = rigs.filter((rig) => Math.floor(rig.banked) > 0);
+  const banked = readyRigs.reduce((sum, rig) => sum + Math.floor(rig.banked), 0);
+  if (readyRigs.length > 0) {
+    items.push({
+      id: 'rigs-ready',
+      kind: 'rig',
+      priority: 60,
+      title: `${readyRigs.length} survey rig${readyRigs.length === 1 ? '' : 's'} ready`,
+      detail: `${banked} salvage banked / collect in the field`,
+      drawer: 'operations',
+      tone: 'ready',
+    });
+  }
+
+  if (!active && state.operations.offers.length > 0) {
+    items.push({
+      id: 'contract-offers',
+      kind: 'offer',
+      priority: 70,
+      title: 'Choose an Operations filing',
+      detail: `${state.operations.offers.length} offer${state.operations.offers.length === 1 ? '' : 's'} on the board`,
+      drawer: 'operations',
+      tone: 'quiet',
+    });
+  }
+
+  const magratheaVisible =
+    state.lifetime.prestiges > 0
+    || state.run.systems > 0
+    || state.run.tuEarned.gte(C.PRESTIGE_TU_DIVISOR * 0.1);
+  if (!derived.prestigeEligible && magratheaVisible) {
+    const remaining = Math.max(
+      0,
+      derived.prestigeRequiredSystems * C.PLANETS_PER_SYSTEM - state.run.planetsCompleted,
+    );
+    items.push({
+      id: 'prestige-progress',
+      kind: 'prestige',
+      priority: 90,
+      title: 'Build the portfolio',
+      detail: `${remaining} world${remaining === 1 ? '' : 's'} to eligibility / provisional +${derived.prestigeBp} BP`,
+      drawer: 'magrathea',
+      tone: 'quiet',
+    });
+  }
+
+  return items.sort((a, b) =>
+    a.priority - b.priority
+    || (a.dueMs ?? Number.POSITIVE_INFINITY) - (b.dueMs ?? Number.POSITIVE_INFINITY)
+    || a.title.localeCompare(b.title));
+}
 
 const ASPECT_META: Record<AspectId, { label: string; color: string; a0: number; a1: number }> = {
   thermal: { label: 'THERMAL', color: 'var(--thermal)', a0: -160, a1: -96 },
@@ -67,9 +298,19 @@ function TopBezel() {
   const rev = useGame((g) => g.rev);
   void rev;
   const { s } = useGame.getState();
+  const persistenceBlocked = useGame((game) => game.persistenceBlocked);
+  const lastSavedAt = useGame((game) => game.lastSavedAt);
+  const saveError = useGame((game) => game.saveError);
   const standing = (Object.keys(FACTION_META) as (keyof typeof FACTION_META)[])
     .map((f) => s.operations.reputation[f] ?? 0)
     .join(' / ');
+  const saveKind = persistenceBlocked ? 'blocked' : saveError ? 'error' : lastSavedAt === null ? 'pending' : 'saved';
+  const saveLabel = persistenceBlocked ? 'PAUSED' : saveError ? 'FAILED' : lastSavedAt === null ? 'PENDING' : 'SAVED';
+  const saveDetail = persistenceBlocked
+    ? 'Autosave paused to protect rejected save data. Open Settings for recovery.'
+    : saveError ?? (lastSavedAt === null
+      ? 'The first local autosave has not completed yet.'
+      : `Saved locally ${formatDuration(Math.max(0, Date.now() - lastSavedAt))} ago.`);
 
   return (
     <div className="mk2-top">
@@ -90,11 +331,14 @@ function TopBezel() {
         </div>
       </div>
       <span style={{ flex: 1 }} />
-      <div className="mk2-autosave">
+      <div
+        className={`mk2-autosave ${saveKind}`}
+        title={saveDetail}
+        aria-label={saveDetail}
+      >
         <span className="k" style={{ fontSize: 8.5, letterSpacing: '.18em' }}>Autosave</span>
-        <i style={{ background: 'var(--bio)' }} />
-        <i style={{ background: 'var(--atmo)', animationDelay: '.9s' }} />
-        <i style={{ background: 'var(--improbable)', animationDelay: '1.8s' }} />
+        <b>{saveLabel}</b>
+        <i aria-hidden />
       </div>
     </div>
   );
@@ -188,7 +432,7 @@ function useNextPurchase(): { label: string; ms: number } | null {
   return best;
 }
 
-function BottomBezel() {
+function BottomBezel({ attention, onOpen }: { attention: AttentionItem | null; onOpen: (id: DrawerId) => void }) {
   const next = useNextPurchase();
   const rev = useGame((g) => g.rev);
   void rev;
@@ -217,13 +461,34 @@ function BottomBezel() {
 
   return (
     <div className="mk2-bottom">
-      {next && (
-        <div className="mk2-next">
+      {attention?.drawer ? (
+        <button
+          className={`mk2-next tone-${attention.tone}`}
+          onClick={() => onOpen(attention.drawer!)}
+          title={`${attention.title}. ${attention.detail}`}
+        >
           <span className="k" style={{ fontSize: 8.5 }}>Next</span>
-          <b>{next.label}</b>
-          <span className="v">~{formatDuration(next.ms)}</span>
+          <b>{attention.title}</b>
+          <span className="v">{attention.detail}</span>
+          <span className="mk2-next-open">OPEN {DRAWERS[attention.drawer].code}</span>
+        </button>
+      ) : attention ? (
+        <div
+          className={`mk2-next tone-${attention.tone}`}
+          title={`${attention.title}. ${attention.detail}`}
+        >
+          <span className="k" style={{ fontSize: 8.5 }}>Next</span>
+          <b>{attention.title}</b>
+          <span className="v">{attention.detail}</span>
+          <span className="mk2-next-open">ANSWER ON DESK</span>
         </div>
-      )}
+      ) : next ? (
+        <div className="mk2-next">
+          <span className="k" style={{ fontSize: 8.5 }}>Forecast</span>
+          <b>{next.label}</b>
+          <span className="v">affordable in ~{formatDuration(next.ms)}</span>
+        </div>
+      ) : null}
       <div className="mk2-ticker">
         <span className="mk2-ticker-label">SUB-ETHA</span>
         <div className="mk2-ticker-run">
@@ -417,6 +682,71 @@ function AnswerCard({
   );
 }
 
+function PriorityQueue({
+  items,
+  onOpen,
+  answerVisible,
+}: {
+  items: readonly AttentionItem[];
+  onOpen: (id: DrawerId) => void;
+  answerVisible: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const queue = answerVisible ? items.filter((item) => item.kind !== 'answer') : items;
+  if (queue.length === 0) return null;
+
+  const collapsedCount = answerVisible ? 2 : 3;
+  const shown = expanded ? queue : queue.slice(0, collapsedCount);
+  const hidden = Math.max(0, queue.length - shown.length);
+
+  return (
+    <section className="mk2-priorities" aria-label="Priority queue">
+      <header className="mk2-priorities-head">
+        <span className="k">{answerVisible ? 'After this' : 'Next up'}</span>
+        <span className="mk2-priorities-count">{queue.length} ITEM{queue.length === 1 ? '' : 'S'}</span>
+        {queue.length > collapsedCount && (
+          <button
+            onClick={() => setExpanded((value) => !value)}
+            aria-expanded={expanded}
+          >
+            {expanded ? 'SHOW LESS' : `SHOW ALL +${queue.length - collapsedCount}`}
+          </button>
+        )}
+      </header>
+      <div className="mk2-priorities-list">
+        {shown.map((item, index) => {
+          const body = (
+            <>
+              <span className="mk2-priority-rank">{String(index + 1).padStart(2, '0')}</span>
+              <span className="mk2-priority-copy">
+                <b>{item.title}</b>
+                <span>{item.detail}</span>
+              </span>
+              {item.drawer && (
+                <span className="mk2-priority-open">OPEN {DRAWERS[item.drawer].code}</span>
+              )}
+            </>
+          );
+          return item.drawer ? (
+            <button
+              key={item.id}
+              className={`mk2-priority tone-${item.tone}`}
+              onClick={() => onOpen(item.drawer!)}
+              aria-label={`${item.title}. ${item.detail}. Open ${DRAWERS[item.drawer].title}.`}
+            >
+              {body}
+            </button>
+          ) : (
+            <div key={item.id} className={`mk2-priority tone-${item.tone}`}>
+              {body}
+            </div>
+          );
+        })}
+        {!expanded && hidden > 0 && <span className="mk2-priorities-hidden">{hidden} MORE ON FILE</span>}
+      </div>
+    </section>
+  );
+}
 // ————— The filing tray —————
 
 /**
@@ -649,20 +979,18 @@ function useUnlocked(): (id: DrawerId) => boolean {
 function RightRail({
   open,
   onPick,
+  attentionItems,
 }: {
   open: DrawerId | null;
   onPick: (id: DrawerId) => void;
+  attentionItems: readonly AttentionItem[];
 }) {
-  const rev = useGame((g) => g.rev);
-  void rev;
-  const { s, d } = useGame.getState();
   const unlocked = useUnlocked();
-
-  const attention: Partial<Record<DrawerId, boolean>> = {
-    magrathea: d.prestigeEligible,
-    research: !s.research.active && s.science.gte(15) && s.buildings['researchLab'] !== undefined,
-    operations: !s.operations.active && s.operations.offers.length > 0,
-  };
+  const attention: Partial<Record<DrawerId, number>> = {};
+  for (const item of attentionItems) {
+    if (!item.drawer) continue;
+    attention[item.drawer] = (attention[item.drawer] ?? 0) + 1;
+  }
 
   return (
     <nav className="mk2-rail" aria-label="Guide drawers">
@@ -677,17 +1005,19 @@ function RightRail({
           >
             {items.map((id) => {
               const meta = DRAWERS[id];
+              const attentionCount = attention[id] ?? 0;
               return (
                 <button
                   key={id}
                   className={`mk2-drawer${open === id ? ' on' : ''}`}
                   onClick={() => onPick(id)}
-                  title={meta.title}
+                  title={attentionCount > 0 ? `${meta.title} / ${attentionCount} item${attentionCount === 1 ? '' : 's'} need attention` : meta.title}
+                  aria-label={attentionCount > 0 ? `${meta.title}, ${attentionCount} item${attentionCount === 1 ? '' : 's'} need attention` : meta.title}
                   aria-pressed={open === id}
                 >
                   <span className="mk2-drawer-code">{meta.code}</span>
                   <span className="mk2-drawer-label">{meta.rail}</span>
-                  {attention[id] && <i className="mk2-drawer-badge" />}
+                  {attentionCount > 0 && <i className="mk2-drawer-badge" aria-hidden />}
                 </button>
               );
             })}
@@ -737,7 +1067,7 @@ function Panel({ id, onClose }: { id: DrawerId; onClose: () => void }) {
 export function Mk2Shell() {
   const rev = useGame((g) => g.rev);
   void rev;
-  const { s } = useGame.getState();
+  const { s, d } = useGame.getState();
   const started = s.lifetime.clicks > 0 || s.lifetime.tuEarned.gt(0);
   const [open, setOpen] = useState<DrawerId | null>(started ? 'shop' : 'settings');
   const dockRequest = useUiBus((b) => b.dockRequest);
@@ -752,6 +1082,8 @@ export function Mk2Shell() {
 
   const urgent = s.situations[0];
   const petitions = s.run.petitions;
+  const attentionItems = buildAttentionItems(s, d);
+  const answerVisible = Boolean(urgent || petitions[0]);
 
   return (
     <div className={`mk2${open ? '' : ' panel-closed'}`}>
@@ -765,17 +1097,26 @@ export function Mk2Shell() {
 
       <TopBezel />
       <LeftSpine />
-      <BottomBezel />
+      <BottomBezel attention={attentionItems[0] ?? null} onOpen={(id) => setOpen(id)} />
 
       <Binnacle />
       <div className="mk2-column">
         <Lamps />
         {urgent && <AnswerCard inst={urgent} />}
         {!urgent && petitions[0] && <AnswerCard inst={petitions[0]} />}
+        <PriorityQueue
+          items={attentionItems}
+          onOpen={(id) => setOpen(id)}
+          answerVisible={answerVisible}
+        />
         <FilingTray />
       </div>
 
-      <RightRail open={open} onPick={(id) => setOpen((v) => (v === id ? null : id))} />
+      <RightRail
+        open={open}
+        onPick={(id) => setOpen((v) => (v === id ? null : id))}
+        attentionItems={attentionItems}
+      />
       {open && <Panel id={open} onClose={() => setOpen(null)} />}
       {!open && (
         <button className="mk2-reopen" onClick={() => setOpen('shop')}>

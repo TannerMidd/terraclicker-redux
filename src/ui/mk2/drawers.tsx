@@ -12,6 +12,8 @@
 import { useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
 import { C } from '../../content/constants';
+import { currentManifestLeg } from '../../engine/freight';
+import { statuteOffers } from '../../engine/statutes';
 import { Installations } from './drawers/Installations';
 import { Research } from './drawers/Research';
 import { Operations } from './drawers/Operations';
@@ -110,13 +112,21 @@ export const DRAWERS: Record<DrawerId, DrawerMeta> = {
     rail: 'OPS',
     eyebrow: 'The business',
     title: 'Operations',
-    dek: 'Filings, routes, monuments, and the worlds you intend to be remembered by. Everything here outlives the commission that started it.',
+    dek: 'Start with Filings for contracts and deadlines. Works holds freight, rigs, and monuments; Dispatch assigns system routes; Heritage records what survives a sale.',
     ledger: () => {
       const { s } = useGame.getState();
+      const leg = currentManifestLeg(s);
+      const rigs = Object.values(s.expedition.rigs);
+      const ready = rigs.filter((rig) => Math.floor(rig.banked) > 0).length;
+      const contract = s.operations.active
+        ? 'ACTIVE'
+        : s.operations.offers.length > 0
+          ? `${s.operations.offers.length} OFFER${s.operations.offers.length === 1 ? '' : 'S'}`
+          : 'NONE';
       return [
-        { k: 'FILED', v: s.operations.active ? 'ONE OPEN' : 'NONE', color: s.operations.active ? 'var(--atmo)' : undefined },
-        { k: 'ON THE BOARD', v: String(s.operations.offers.length) },
-        { k: 'HERITAGE', v: `${s.operations.heritageWorlds.length} / 8` },
+        { k: 'CONTRACT', v: contract, color: s.operations.active ? 'var(--atmo)' : undefined },
+        { k: 'FREIGHT', v: leg ? leg.phase.toUpperCase() : s.expedition.jobs.length > 0 ? `${s.expedition.jobs.length} JOBS` : 'NONE', color: leg ? 'var(--atmo)' : undefined },
+        { k: 'RIGS', v: ready > 0 ? `${ready} READY` : rigs.length > 0 ? `${rigs.length} OUT` : 'NONE', color: ready > 0 ? 'var(--bio)' : undefined },
       ];
     },
   },
@@ -159,7 +169,7 @@ export const DRAWERS: Record<DrawerId, DrawerMeta> = {
     ledger: () => {
       const { s } = useGame.getState();
       return [
-        { k: 'ENTRIES', v: String(s.achievements.length), color: 'var(--improbable)' },
+        { k: 'ENTRIES', v: String(Object.keys(s.achievements).length), color: 'var(--improbable)' },
         { k: 'WORLDS MADE', v: String(s.lifetime.planetsCompleted) },
         { k: 'CLICKS', v: format(s.lifetime.clicks) },
       ];
@@ -170,13 +180,15 @@ export const DRAWERS: Record<DrawerId, DrawerMeta> = {
     rail: 'VORTEX',
     eyebrow: 'Perspective',
     title: 'Total Perspective Vortex',
-    dek: 'The complete and unabridged scale of what you have done, rendered at a size the human mind is not equipped for.',
+    dek: 'Decisions first: statutes permanently change every commission. The perspective reading and complete lifetime record follow below.',
     ledger: () => {
       const { s } = useGame.getState();
+      const offers = statuteOffers(s);
+      const openStages = new Set(offers.map((offer) => offer.stage)).size;
       return [
+        { k: 'STATUTES', v: openStages > 0 ? `${openStages} OPEN` : `${s.lifetime.statutes.length} ENACTED`, color: openStages > 0 ? 'var(--magrathea)' : undefined },
         { k: 'LIFETIME TU', v: format(s.lifetime.tuEarned) },
         { k: 'GALAXIES', v: String(s.run.galaxies) },
-        { k: 'SYSTEMS', v: String(s.run.systems) },
       ];
     },
   },

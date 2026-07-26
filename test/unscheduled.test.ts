@@ -56,11 +56,10 @@ describe('the Unscheduled Objects Register', () => {
     }
   });
 
-  it('appears on the chart with somewhere to go', () => {
+  it('stays off the chart until flight has an arrival interaction for it', () => {
     const s = newGame(7, 0);
     const listed = waypoints(s).filter((w) => w.kind === 'unscheduled');
-    expect(listed.length).toBe(UNSCHEDULED_PER_COMMISSION);
-    expect(listed[0]!.ref.at).toBe('point');
+    expect(listed).toHaveLength(0);
   });
 
   it('pays salvage and a Guide line, never TU', () => {

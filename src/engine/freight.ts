@@ -38,7 +38,7 @@ import type { DeepFieldDef } from '../content/deepField';
 import { C } from '../content/constants';
 import { loadoutEffects } from './loadouts';
 import { mulberry, pickWeighted, randRange } from './rng';
-import type { ExpeditionState, GameState, SimEffect } from './types';
+import type { ExpeditionState, GameState, ManifestState, SimEffect } from './types';
 
 // ————— Refit-derived capabilities —————
 
@@ -61,6 +61,12 @@ export function rigLimit(expedition: ExpeditionState): number {
   return RIG_LIMIT[rankOf(expedition, 'rigBay')] ?? 0;
 }
 
+/** Salvage a rig may bank at this seam before it stops. */
+export function rigCapacity(expedition: ExpeditionState, id: string): number {
+  const base = SEAM_BY_ID[id]?.cap ?? 0;
+  return base * loadoutEffects(expedition).rigCap;
+}
+
 /** How fast a patrol loses interest. Zero means you have no field fitted. */
 export function deterrentPower(expedition: ExpeditionState): number {
   return DETERRENT_POWER[rankOf(expedition, 'deterrent')] ?? 0;
@@ -68,6 +74,37 @@ export function deterrentPower(expedition: ExpeditionState): number {
 
 export function rigsStanding(expedition: ExpeditionState): number {
   return Object.keys(expedition.rigs).length;
+}
+
+export type ManifestLegPhase = 'collect' | 'deliver';
+
+/**
+ * The one current freight objective.
+ *
+ * Accepting a job does not teleport its payload into the hold: the first leg
+ * is always back to the origin to collect it. Once collected, the same
+ * manifest advances to its delivery leg. UI and navigation consume this
+ * selector instead of each re-interpreting `pickedUpAtMs`.
+ */
+export interface CurrentManifestLeg {
+  phase: ManifestLegPhase;
+  manifest: ManifestState;
+  targetLifetimeIndex: number;
+  targetName: string;
+}
+
+export function currentManifestLeg(
+  state: Pick<GameState, 'expedition'>,
+): CurrentManifestLeg | null {
+  const manifest = state.expedition.manifest;
+  if (!manifest) return null;
+  const collecting = manifest.pickedUpAtMs === null;
+  return {
+    phase: collecting ? 'collect' : 'deliver',
+    manifest,
+    targetLifetimeIndex: collecting ? manifest.from : manifest.to,
+    targetName: collecting ? manifest.fromName : manifest.toName,
+  };
 }
 
 /**
@@ -157,13 +194,17 @@ export function acceptJob(state: GameState, effects: SimEffect[], uid: number): 
   // Accepted, not collected. The cargo is still sitting at its origin, and
   // fetching it is the first half of the job.
   exp.manifest = { ...job, acceptedAtMs: state.gameTimeMs, pickedUpAtMs: null };
-  effects.push({ t: 'jobAccepted', uid, id: job.id, to: job.toName });
+  effects.push({ t: 'jobAccepted', uid, id: job.id, from: job.fromName });
 }
 
 export function deliverManifest(state: GameState, effects: SimEffect[]): void {
   const exp = state.expedition;
-  const m = exp.manifest;
-  if (!m) return;
+  const leg = currentManifestLeg(state);
+  // Arrival at the destination cannot discharge cargo that is still waiting
+  // at its origin. Keeping this guard in the engine makes the state machine
+  // true even when an input is dispatched outside the flight layer.
+  if (!leg || leg.phase !== 'deliver') return;
+  const m = leg.manifest;
   const def = FREIGHT_BY_ID[m.id];
   exp.manifest = null;
   exp.deliveries += 1;
@@ -313,7 +354,7 @@ export function stepRigs(state: GameState, tickMs: number): boolean {
     const def = SEAM_BY_ID[id];
     if (!def) continue;
     // A survey station tells the seam to keep going a while longer.
-    const cap = def.cap * loadoutEffects(state.expedition).rigCap;
+    const cap = rigCapacity(state.expedition, id);
     if (rig.banked >= cap) continue;
     rig.banked = Math.min(cap, rig.banked + (def.yieldPerHour * tickMs) / 3_600_000);
     rig.lastTickMs = state.gameTimeMs;
@@ -329,8 +370,9 @@ export function stepRigs(state: GameState, tickMs: number): boolean {
  * the hold is unaffected.
  */
 export function pickUpManifest(state: GameState, effects: SimEffect[]): boolean {
-  const m = state.expedition.manifest;
-  if (!m || m.pickedUpAtMs !== null) return false;
+  const leg = currentManifestLeg(state);
+  if (!leg || leg.phase !== 'collect') return false;
+  const m = leg.manifest;
   m.pickedUpAtMs = state.gameTimeMs;
   effects.push({ t: 'manifestPickedUp', id: m.id, from: m.fromName });
   return true;

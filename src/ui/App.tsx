@@ -11,6 +11,10 @@ import { EVENT_BY_ID } from '../content/events';
 import { SITUATION_BY_ID } from '../content/situations';
 import { ACHIEVEMENT_BY_ID } from '../content/achievements';
 import { RESEARCH_BY_ID } from '../content/research';
+import { DEEP_FIELD_BY_ID } from '../content/deepField';
+import { REFIT_BY_ID } from '../content/refit';
+import { FREIGHT_BY_ID, SEAM_BY_ID } from '../content/freight';
+import { INFRASTRUCTURE_BY_ID } from '../content/loadouts';
 import {
   CONTRACT_TEMPLATE_META,
   FACTION_META,
@@ -289,6 +293,176 @@ function useEffectWiring(): void {
             audio.upgradeSting();
             break;
           }
+          case 'siteScanned': {
+            const def = DEEP_FIELD_BY_ID[e.id];
+            bus.addToast({
+              kind: 'info',
+              kicker: 'CONTACT RESOLVED',
+              title: def?.name ?? 'Deep-field contact filed',
+              body: 'The Guide entry is now permanent. Approach slowly to board it.',
+              ttlMs: 5200,
+            });
+            audio.upgradeSting();
+            break;
+          }
+          case 'siteBoarded': {
+            const def = DEEP_FIELD_BY_ID[e.id];
+            bus.flash();
+            bus.addToast({
+              kind: 'achievement',
+              kicker: `+${e.salvage} SALVAGE`,
+              title: def?.name ?? 'Recovery complete',
+              body: def?.boarding ?? 'The recovered material has been entered in the ship ledger.',
+              ttlMs: 6200,
+            });
+            audio.achievementSting();
+            break;
+          }
+          case 'refitInstalled': {
+            const def = REFIT_BY_ID[e.id];
+            bus.addToast({
+              kind: 'info',
+              kicker: 'REFIT INSTALLED',
+              title: `${def?.name ?? e.id} · rank ${e.rank}`,
+              body: def?.effect(e.rank) ?? 'The runabout is measurably different.',
+              ttlMs: 4600,
+            });
+            audio.upgradeSting();
+            break;
+          }
+          case 'jobAccepted': {
+            const def = FREIGHT_BY_ID[e.id];
+            bus.addToast({
+              kind: 'info',
+              kicker: 'MANIFEST FILED · LEG 1 OF 2',
+              title: `Collect ${def?.label ?? 'the consignment'} at ${e.from}`,
+              body: 'The cargo is still at its origin. The active leg is available in the cockpit and Chart.',
+              ttlMs: 6000,
+            });
+            break;
+          }
+          case 'manifestPickedUp':
+            bus.addToast({
+              kind: 'info',
+              kicker: 'HOLD LOADED · LEG 2 OF 2',
+              title: `Collected at ${e.from}`,
+              body: 'Navigation has advanced to the delivery destination. Handling traits now apply.',
+              ttlMs: 5600,
+            });
+            audio.upgradeSting();
+            break;
+          case 'manifestDelivered':
+            bus.flash();
+            bus.addToast({
+              kind: 'achievement',
+              kicker: `DELIVERED · +${e.salvage} SALVAGE`,
+              title: e.to,
+              body: e.passenger
+                ? 'The passenger has left the runabout with their luggage and most of their opinions.'
+                : 'The hold is empty and the fee has cleared.',
+              ttlMs: 6200,
+            });
+            audio.achievementSting();
+            break;
+          case 'manifestLost':
+            bus.addToast({
+              kind: 'info',
+              kicker: 'MANIFEST CLOSED UNPAID',
+              title: e.reason === 'complied' ? 'Cargo surrendered to customs' : 'Cargo abandoned',
+              body: 'No main-economy resources were lost. The freight fee was forfeited.',
+              ttlMs: 5600,
+            });
+            audio.upgradeSting();
+            break;
+          case 'seamProspected': {
+            const seam = SEAM_BY_ID[e.id];
+            bus.addToast({
+              kind: 'info',
+              kicker: 'SEAM PROSPECTED',
+              title: seam?.name ?? 'Resource seam',
+              body: 'Return inside the working envelope to place a rig deliberately.',
+              ttlMs: 4800,
+            });
+            break;
+          }
+          case 'rigPlaced': {
+            const seam = SEAM_BY_ID[e.id];
+            bus.addToast({
+              kind: 'info',
+              kicker: 'RIG ON STATION',
+              title: seam?.name ?? 'Survey rig placed',
+              body: 'It works online and offline. The cockpit will report when salvage is banked.',
+              ttlMs: 5200,
+            });
+            audio.upgradeSting();
+            break;
+          }
+          case 'rigCollected':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: `RIG COLLECTED · +${e.salvage} SALVAGE`,
+              title: SEAM_BY_ID[e.id]?.name ?? 'Survey rig',
+              body: 'The bank is empty and the rig has resumed work.',
+              ttlMs: 5000,
+            });
+            audio.achievementSting();
+            break;
+          case 'interdicted': {
+            const outcome = {
+              outrun: 'Patrol lost in your wake',
+              complied: 'Inspection concluded with the hold empty',
+              deterred: 'Dispersal field successful',
+              decoyed: 'Decoy accepted',
+              eclipsed: 'Patrol lost behind local mass',
+              permitted: 'Transit permit accepted',
+              wake: 'Improbability wake obscured the manifest',
+            }[e.outcome];
+            bus.addToast({
+              kind: e.outcome === 'complied' ? 'info' : 'achievement',
+              kicker: 'CUSTOMS OUTCOME',
+              title: outcome,
+              body: e.outcome === 'complied'
+                ? 'The cargo and its fee are gone; the runabout is unharmed.'
+                : 'The manifest remains aboard.',
+              ttlMs: 5600,
+            });
+            if (e.outcome === 'complied') audio.upgradeSting();
+            else audio.achievementSting();
+            break;
+          }
+          case 'infrastructureBuilt': {
+            const def = INFRASTRUCTURE_BY_ID[e.id];
+            bus.addToast({
+              kind: 'achievement',
+              kicker: 'FLIGHT NETWORK EXPANDED',
+              title: def?.name ?? e.id,
+              body: def?.text ?? 'The structure is standing and its flight-only effect is active.',
+              ttlMs: 5600,
+            });
+            audio.upgradeSting();
+            break;
+          }
+          case 'sortieCompleted':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: 'FIRST SORTIE FILED',
+              title: 'Pilot status: sufficiently official',
+              body: e.salvage > 0
+                ? `Starter allocation +${e.salvage} salvage. The Sensor Array is now affordable.`
+                : 'The recovered salvage already covers a first refit decision.',
+              ttlMs: 7200,
+            });
+            audio.completeSting();
+            break;
+          case 'attendedInPerson':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: 'ATTENDANCE RECORDED',
+              title: e.world,
+              body: 'The request now recognises that the visit happened after it was filed.',
+              ttlMs: 5200,
+            });
+            break;
           case 'prestiged':
             bus.flash();
             bus.warp();

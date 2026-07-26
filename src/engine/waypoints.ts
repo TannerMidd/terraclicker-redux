@@ -28,8 +28,8 @@
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { SEAM_BY_ID } from '../content/freight';
 import { C } from '../content/constants';
-import { hasBoardedUnscheduled, unscheduledFor } from './unscheduled';
-import type { GameState } from './types';
+import { currentManifestLeg, rigCapacity } from './freight';
+import type { GameState, ManifestState } from './types';
 
 export type WaypointKind =
   | 'home'
@@ -69,10 +69,14 @@ export function waypointId(kind: WaypointKind, key: string | number): string {
   return `${kind}:${key}`;
 }
 
+export function manifestWaypointId(manifest: Pick<ManifestState, 'uid'>): string {
+  return waypointId('job', manifest.uid);
+}
+
 /**
- * Everything addressable right now, in a stable order: home, the worlds of
- * this commission, their systems, charted landmarks, prospected seams, rigs
- * standing in the field, and whatever the job board is currently offering.
+ * Everything addressable right now, in a stable order: home, the active
+ * freight objective, this commission's worlds and systems, charted landmarks,
+ * prospected seams, and rigs standing in the field.
  */
 export function waypoints(state: GameState): Waypoint[] {
   const list: Waypoint[] = [];
@@ -85,6 +89,27 @@ export function waypoints(state: GameState): Waypoint[] {
     ref: { at: 'home' },
     known: true,
   });
+
+  // Put the active objective before its underlying world so consumers that
+  // match by label still select the stable job id. That one pin then advances
+  // from collection to delivery without asking the pilot to pin it again.
+  const leg = currentManifestLeg(state);
+  if (leg) {
+    const ref = worldRef(state, leg.targetLifetimeIndex);
+    if (ref) {
+      list.push({
+        id: manifestWaypointId(leg.manifest),
+        kind: 'job',
+        label: leg.targetName,
+        detail:
+          leg.phase === 'collect'
+            ? 'collect at origin · hold empty'
+            : 'cargo aboard · deliver',
+        ref,
+        known: true,
+      });
+    }
+  }
 
   // The id is keyed on lifetimeIndex, which is stable forever; the *ref* uses
   // the position within this commission, because that is what `focusSeat`
@@ -131,13 +156,14 @@ export function waypoints(state: GameState): Waypoint[] {
     if (!def) continue;
     const rig = state.expedition.rigs[id];
     if (rig) {
+      const cap = rigCapacity(state.expedition, id);
       list.push({
         id: waypointId('rig', id),
         kind: 'rig',
         label: `${def.name} — rig`,
-        detail: rig.banked >= def.cap
+        detail: rig.banked >= cap
           ? 'full, waiting'
-          : `${Math.floor((rig.banked / def.cap) * 100)}% full`,
+          : `${Math.floor((rig.banked / cap) * 100)}% full`,
         ref: { at: 'site', id },
         known: true,
       });
@@ -153,47 +179,17 @@ export function waypoints(state: GameState): Waypoint[] {
     }
   }
 
-  // Unscheduled objects: this commission's oddities, while they last.
-  for (const object of unscheduledFor(state)) {
-    list.push({
-      id: waypointId('unscheduled', object.id),
-      kind: 'unscheduled',
-      label: 'Unscheduled object',
-      detail: hasBoardedUnscheduled(state, object.id) ? 'looked into' : object.text,
-      ref: { at: 'point', pos: object.pos },
-      known: true,
-    });
-  }
-
-  const manifest = state.expedition.manifest;
-  if (manifest) {
-    list.push({
-      id: waypointId('job', manifest.uid),
-      kind: 'job',
-      label: manifest.toName,
-      detail: 'in the hold — deliver',
-      ref: worldRef(manifest.to),
-      known: true,
-    });
-  }
-  for (const job of state.expedition.jobs) {
-    list.push({
-      id: waypointId('job', job.uid),
-      kind: 'job',
-      label: `${job.fromName} → ${job.toName}`,
-      detail: 'offered',
-      ref: worldRef(job.from),
-      known: true,
-    });
-  }
-
   return list;
 }
 
-/** A world lifetimeIndex as the flight layer means it — 0 is the home planet. */
-function worldRef(lifetimeIndex: number): WaypointRef {
+/** Resolve a stable lifetime id to this commission's local flight-layout index. */
+function worldRef(state: GameState, lifetimeIndex: number): WaypointRef | null {
   if (lifetimeIndex <= 0) return { at: 'home' };
-  return { at: 'focus', kind: 'world', index: lifetimeIndex - 1 };
+  const index = state.run.completedPlanets.findIndex(
+    (world) => world.lifetimeIndex === lifetimeIndex,
+  );
+  if (index < 0) return null;
+  return { at: 'focus', kind: 'world', index };
 }
 
 export function findWaypoint(state: GameState, id: string): Waypoint | null {
@@ -201,9 +197,9 @@ export function findWaypoint(state: GameState, id: string): Waypoint | null {
 }
 
 /**
- * The pinned waypoint, if it still exists. A job that expired or a rig that
- * was collected leaves a dangling pin; resolving through the live list means
- * the cockpit quietly forgets it rather than pointing at nothing.
+ * The pinned waypoint, if it still exists. A completed job or removed rig can
+ * leave a dangling pin; resolving through the live list means the cockpit
+ * quietly forgets it rather than pointing at nothing.
  */
 export function pinnedWaypoint(state: GameState): Waypoint | null {
   const id = state.expedition.pinned;

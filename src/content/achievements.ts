@@ -219,6 +219,34 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     hidden: true,
     cond: (s) => Object.keys(s.expedition.discovered).length >= DEEP_FIELD.length,
   },
+  {
+    id: 'first-boarding',
+    name: 'Previous Owner Unknown',
+    guide:
+      'Boarded a resolved contact and recovered what nobody present could prove was theirs.',
+    cond: (s) => Object.keys(s.expedition.boarded).length >= 1,
+  },
+  {
+    id: 'first-delivery',
+    name: 'Not Just Sightseeing',
+    guide:
+      'Completed a freight run by actually carrying the thing from one real place to another.',
+    cond: (s) => s.expedition.deliveries >= 1,
+  },
+  {
+    id: 'customs-1',
+    name: 'Nothing to Declare Eventually',
+    guide:
+      'Resolved a customs pursuit at the helm. The resulting form has been filed under movement.',
+    cond: (s) => s.expedition.interdictions >= 1,
+  },
+  {
+    id: 'rig-1',
+    name: 'Remote Working',
+    guide:
+      'Left a survey rig on a seam to continue being industrious without supervision.',
+    cond: (s) => s.lifetime.rigsPlaced >= 1,
+  },
 
   // — Towel —
   {

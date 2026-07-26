@@ -147,9 +147,10 @@ export function FieldManual() {
           <p>
             Fit a <b>Cargo Hold</b> at the helm — press <kbd>r</kbd> in flight, and pay in
             salvage — and the <b>Freight Board</b> in Operations starts posting work
-            between worlds you have actually delivered. Accept a job, fly to the
-            destination world, and it discharges the moment you arrive. There is no dock
-            and no button.
+            between worlds you have actually delivered. Accept a job, fly first to its
+            origin to collect the payload, then fly to its destination to discharge it.
+            The freight pin follows whichever leg is current. There is no dock and no
+            load or unload button.
           </p>
           <p>
             Freight is <b>mass</b>, and mass is the whole mechanic: a loaded runabout takes

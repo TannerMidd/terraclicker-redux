@@ -6,8 +6,10 @@ import {
   cargoCapacity,
   massFactor,
   refreshJobBoard,
+  rigCapacity,
   rigLimit,
   seamSites,
+  stepRigs,
 } from '../src/engine/freight';
 import { buildProgress, isBuilt, megaprojectEffects } from '../src/engine/megaprojects';
 import { MEGAPROJECTS } from '../src/content/megaprojects';
@@ -60,6 +62,7 @@ describe('the seal between the two economies', () => {
     const rep = s.operations.reputation[def.faction];
 
     step(s, 0, [{ type: 'acceptJob', uid: job.uid }], OPTS);
+    step(s, 0, [{ type: 'pickUpManifest' }], OPTS);
     step(s, 0, [{ type: 'deliverManifest' }], OPTS);
 
     expect(s.expedition.salvage).toBe(salvage + job.salvage);
@@ -97,6 +100,28 @@ describe('the hold', () => {
     step(s, 0, [{ type: 'acceptJob', uid: a!.uid }], OPTS);
     step(s, 0, [{ type: 'acceptJob', uid: b!.uid }], OPTS);
     expect(s.expedition.manifest!.uid).toBe(a!.uid);
+  });
+
+  it('cannot deliver cargo before collecting it from the origin', () => {
+    const s = withWorlds(141);
+    fit(s, 'cargoHold', 3);
+    refreshJobBoard(s);
+    const job = s.expedition.jobs[0]!;
+    const salvage = s.expedition.salvage;
+    const deliveries = s.expedition.deliveries;
+
+    step(s, 0, [{ type: 'acceptJob', uid: job.uid }], OPTS);
+    const premature = step(s, 0, [{ type: 'deliverManifest' }], OPTS);
+
+    expect(s.expedition.manifest?.uid).toBe(job.uid);
+    expect(s.expedition.salvage).toBe(salvage);
+    expect(s.expedition.deliveries).toBe(deliveries);
+    expect(premature.effects.some((effect) => effect.t === 'manifestDelivered')).toBe(false);
+
+    step(s, 0, [{ type: 'pickUpManifest' }], OPTS);
+    step(s, 0, [{ type: 'deliverManifest' }], OPTS);
+    expect(s.expedition.manifest).toBeNull();
+    expect(s.expedition.salvage).toBe(salvage + job.salvage);
   });
 
   it('makes the ship heavier to fly, and only while actually loaded', () => {
@@ -204,7 +229,21 @@ describe('mining', () => {
     expect(afterAnHour).toBeGreaterThan(0);
 
     stepOffline(s, 400 * HOUR, OPTS);
-    expect(s.expedition.rigs[seam.id]!.banked).toBeLessThanOrEqual(seam.cap + 1e-6);
+    expect(s.expedition.rigs[seam.id]!.banked).toBeLessThanOrEqual(rigCapacity(s.expedition, seam.id) + 1e-6);
+  });
+
+  it('uses survey stations in the one effective rig-capacity calculation', () => {
+    const s = newGame(201, 0);
+    const seam = SEAMS[0]!;
+    expect(rigCapacity(s.expedition, seam.id)).toBe(seam.cap);
+
+    s.expedition.infrastructure['survey-station'] = 2;
+    const cap = rigCapacity(s.expedition, seam.id);
+    expect(cap).toBeCloseTo(seam.cap * 1.25 ** 2);
+
+    s.expedition.rigs[seam.id] = { banked: 0, lastTickMs: 0, placedAtMs: 0 };
+    stepRigs(s, 400 * HOUR);
+    expect(s.expedition.rigs[seam.id]!.banked).toBeCloseTo(cap);
   });
 
   it('hands the bank over when you come back for it', () => {

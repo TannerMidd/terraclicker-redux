@@ -4,17 +4,21 @@ import { flightInput, flightLive, helmChart, interdiction, mouseSteer } from '..
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
-import { flightPrefs, keyLabel } from '../scene/flightBindings';
+import { flightPrefs, keyLabel, type FlightAction } from '../scene/flightBindings';
 import { FirstSortie } from './FirstSortie';
+import { SubEthaTicker } from './SubEthaTicker';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
 import { DEEP_FIELD } from '../../content/deepField';
 import { refitCost } from '../../engine/deepField';
-import { deterrentPower } from '../../engine/freight';
+import { currentManifestLeg, deterrentPower } from '../../engine/freight';
 import { FREIGHT_BY_ID } from '../../content/freight';
 import { actions, useGame } from '../../state/store';
 import * as audio from '../audio/audio';
+import { waypointId } from '../../engine/waypoints';
+import { INFRASTRUCTURE, SHIP_ROLES, type InfrastructureDef } from '../../content/loadouts';
+import { ATTENDANCE_SALVAGE, attendable } from '../../engine/bridge';
 
 /** How the console describes your velocity, in ascending order of pride. */
 function speedLabel(frac: number, boosting: boolean, station: boolean): string {
@@ -87,16 +91,52 @@ function HelmChart({ onClose }: { onClose: () => void }) {
         })}
       </div>
       <div className="fh-chart-foot">
-        Pin one and the ribbon carries the bearing. <b>H</b> holds the course to anywhere you
+        Pin one and the ribbon carries the bearing. <b>{boundKey('courseHold')}</b> holds the course to anywhere you
         have already been.
       </div>
     </div>
   );
 }
 
-/** Whatever key currently engages a contact, as the console would say it. */
+/** Whatever key currently performs an action, as the console would say it. */
+function boundKey(action: FlightAction): string {
+  return keyLabel(flightPrefs().bindings[action][0] ?? '').toUpperCase();
+}
+
 function engageKey(): string {
-  return keyLabel(flightPrefs().bindings.engage[0] ?? 'KeyE').toUpperCase();
+  return boundKey('engage');
+}
+
+function directionLabel(bearing: number, elevation: number): string {
+  const deg = Math.round(Math.abs(bearing) * 180 / Math.PI);
+  const elev = Math.round(Math.abs(elevation) * 180 / Math.PI);
+  const horizontal = deg < 6 ? '↑' : bearing < 0 ? `↖ ${deg}°` : `↗ ${deg}°`;
+  if (elev < 7) return horizontal;
+  return `${horizontal} ${elevation < 0 ? '↓' : '↑'}${elev}°`;
+}
+
+function infrastructureEffect(def: InfrastructureDef): string {
+  const pct = Math.round((def.effect.v - 1) * 100);
+  if (def.effect.kind === 'sensors') return `+${pct}% sensor reach each`;
+  if (def.effect.kind === 'capacity') return `+${pct}% cargo capacity each`;
+  return `+${pct}% rig bank capacity each`;
+}
+
+/** Recent filings remain visible at the helm, where their effects occurred. */
+function FlightEventFeed() {
+  const toasts = useUiBus((bus) => bus.toasts);
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toast-stack fh-flight-events" role="status" aria-live="polite">
+      {toasts.slice(-2).map((toast) => (
+        <div key={toast.id} className={`toast ${toast.kind}`}>
+          {toast.kicker && <div className="t-kicker">{toast.kicker}</div>}
+          <div className="t-title">{toast.title}</div>
+          {toast.body && <div className="t-body">{toast.body}</div>}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /** Range at which the console upgrades “nearest:” to “off …”. */
@@ -129,28 +169,36 @@ export function rangeLabel(d: number): string {
  * the destination you are aiming at.
  */
 function ManifestStrip() {
-  const rev = useGame((g) => g.rev);
+  const rev = useGame((game) => game.rev);
   void rev;
-  const m = useGame.getState().s.expedition.manifest;
-  if (!m) return null;
-  const def = FREIGHT_BY_ID[m.id];
-  const waiting = m.pickedUpAtMs === null;
-  const hold = handlingLabel(handlingFor(useGame.getState().s.expedition));
-
-  /**
-   * A job names two worlds and used to leave you to find them, which is the
-   * whole of the complaint about missions being unclear: the objective was
-   * always legible and the DESTINATION never was. The leg you are actually on
-   * is pinnable from here, so "collect at Eden I" becomes a bearing.
-   */
-  const target = helmChart().find((r) => r.label === (waiting ? m.fromName : m.toName));
+  const state = useGame.getState().s;
+  const leg = currentManifestLeg(state);
+  if (!leg) {
+    const pin = state.expedition.pinned;
+    const request = attendable(state)
+      .find((candidate) => waypointId('world', candidate.world) === pin);
+    if (!request) return null;
+    return (
+      <div className="fh-manifest attendance" role="status">
+        <span className="fm-label">personal attendance</span>
+        <span className="fm-step">ARRIVE TO RESOLVE</span>
+        <span className="fm-to">{request.name}</span>
+        <span className="fm-pay">+{ATTENDANCE_SALVAGE} salvage</span>
+      </div>
+    );
+  }
+  const manifest = leg.manifest;
+  const def = FREIGHT_BY_ID[manifest.id];
+  const waiting = leg.phase === 'collect';
+  const hold = handlingLabel(handlingFor(state.expedition));
+  const objectiveId = waypointId('job', manifest.uid);
+  const target = helmChart(500).find((row) => row.id === objectiveId);
 
   return (
     <div className={`fh-manifest${waiting ? ' waiting' : ''}`}>
-      <span className="fm-label">{def?.label ?? m.id}</span>
-      <span className="fm-to">
-        {waiting ? `collect at ${m.fromName}` : `→ ${m.toName}`}
-      </span>
+      <span className="fm-label">{def?.label ?? manifest.id}</span>
+      <span className="fm-step">{waiting ? '1 · COLLECT' : '2 · DELIVER'}</span>
+      <span className="fm-to">{leg.targetName}</span>
       {target && (
         <button
           className={`fm-pin${target.pinned ? ' on' : ''}`}
@@ -158,16 +206,15 @@ function ManifestStrip() {
           title={`Carry a bearing to ${target.label}`}
         >
           {target.pinned
-            ? `${target.distance < 1000 ? `${target.distance.toFixed(0)}u` : `${(target.distance / 1000).toFixed(1)}ku`} ahead`
-            : 'pin it'}
+            ? `${target.distance < 1000 ? `${target.distance.toFixed(0)}u` : `${(target.distance / 1000).toFixed(1)}ku`} · pinned`
+            : 'pin objective'}
         </button>
       )}
       {!waiting && hold && <span className="fm-hold">{hold}</span>}
-      <span className="fm-pay">{m.salvage} salvage</span>
+      <span className="fm-pay">{manifest.salvage} salvage</span>
     </div>
   );
 }
-
 /**
  * A patrol has taken an interest. Three ways out, all of them things the ship
  * can already do — nothing here shoots at anybody.
@@ -175,19 +222,24 @@ function ManifestStrip() {
 function InterdictionBanner() {
   const [, force] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => force((n) => n + 1), 200);
+    const id = window.setInterval(() => force((value) => value + 1), 160);
     return () => window.clearInterval(id);
   }, []);
   if (!interdiction.active) return null;
   const power = deterrentPower(useGame.getState().s.expedition);
+  const seconds = Math.max(0, Math.ceil(interdiction.remainingMs / 1000));
   return (
-    <div className="fh-interdiction">
-      <div className="fi-kicker">customs interest</div>
+    <div className="fh-interdiction" role="status" aria-live="assertive">
+      <div className="fi-kicker">customs pursuit</div>
+      <div className="fi-status">
+        patrol {Math.round(interdiction.gap)}u astern · {seconds}s until they give up
+      </div>
       <div className="fi-line">
-        Somebody would like a word about the hold. Outrun them, stop and hand it over, or
-        {power > 0 ? ' hold ' : ' fit a dispersal field to use '}
-        {power > 0 && <kbd>f</kbd>}
-        {power > 0 ? ' and make them lose interest.' : 'one.'}
+        Outrun them, stop and surrender the hold, or
+        {power > 0 ? <> hold <kbd>{boundKey('deter')}</kbd> to disperse them.</> : ' fit a Dispersal Field for a third option.'}
+      </div>
+      <div className="fi-escape" aria-hidden>
+        <i style={{ width: `${Math.min(100, interdiction.gap / 95 * 100)}%` }} />
       </div>
       {power > 0 && (
         <div className="fi-bar" aria-hidden>
@@ -197,7 +249,6 @@ function InterdictionBanner() {
     </div>
   );
 }
-
 /**
  * Civil Navigation, Provisional — the bearing ribbon.
  *
@@ -244,9 +295,10 @@ function NavRibbon() {
         name.current.textContent = flightLive.navLabel;
       }
       if (readout.current) {
+        const hold = flightLive.courseHold ? ' · COURSE HOLD' : '';
         const text = nav.overshooting
-          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · too fast to stop`
-          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${etaLabel(nav.etaSeconds)}`;
+          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · too fast to stop${hold}`
+          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${etaLabel(nav.etaSeconds)}${hold}`;
         if (readout.current.textContent !== text) readout.current.textContent = text;
       }
       el.classList.toggle('hot', nav.overshooting);
@@ -358,7 +410,7 @@ function RefitConsole({ onClose }: { onClose: () => void }) {
         <div>
           <div className="fr-title">Sirius Cybernetics Refit Bay</div>
           <div className="fr-sub">
-            {found}/{DEEP_FIELD.length} landmarks filed · salvage is good for nothing else
+            {found}/{DEEP_FIELD.length} landmarks filed · salvage funds the ship and its flight network
           </div>
         </div>
         <div className="fr-salvage">
@@ -395,6 +447,51 @@ function RefitConsole({ onClose }: { onClose: () => void }) {
           );
         })}
       </div>
+
+      <div className="fr-section-head">
+        <b>Mission configuration</b>
+        <span>free to switch · every fitted refit remains fitted</span>
+      </div>
+      <div className="fr-role-list">
+        {SHIP_ROLES.map((role) => (
+          <button
+            key={role.id}
+            className={`fr-role${s.expedition.role === role.id ? ' on' : ''}`}
+            onClick={() => actions.setRole(role.id)}
+            aria-pressed={s.expedition.role === role.id}
+          >
+            <b>{role.name}</b>
+            <span>{role.text}</span>
+            <em>speed ×{role.speed.toFixed(2)} · hold ×{role.capacity.toFixed(2)} · sensors ×{role.sensors.toFixed(2)} · turn ×{role.agility.toFixed(2)}</em>
+          </button>
+        ))}
+      </div>
+
+      <div className="fr-section-head">
+        <b>Flight infrastructure</b>
+        <span>permanent salvage-built support</span>
+      </div>
+      <div className="fr-infra-list">
+        {INFRASTRUCTURE.map((def) => {
+          const count = s.expedition.infrastructure[def.id] ?? 0;
+          const maxed = count >= def.max;
+          const afford = salvage >= def.cost;
+          return (
+            <div key={def.id} className={`fr-infra${maxed ? ' maxed' : ''}`}>
+              <div><b>{def.name}</b><em>{count}/{def.max} standing</em></div>
+              <span>{def.text}</span>
+              <small>{infrastructureEffect(def)}</small>
+              <button
+                disabled={maxed || !afford}
+                onClick={() => actions.buildInfrastructure(def.id)}
+              >
+                {maxed ? 'network complete' : `${def.cost} salvage`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
       <button className="fr-close" onClick={onClose}>
         back to the helm <kbd>r</kbd>
       </button>
@@ -418,8 +515,17 @@ function FlightHUDInner() {
   const contacts = useRef<HTMLDivElement>(null);
   /** Live sensor rows, so distances update without rebuilding the list. */
   const rows = useRef<
-    { id: string; scanned: boolean; boarded: boolean; dist: HTMLElement }[]
+    {
+      id: string;
+      scanned: boolean;
+      boarded: boolean;
+      training: boolean;
+      row: HTMLButtonElement;
+      dist: HTMLElement;
+      direction: HTMLElement;
+    }[]
   >([]);
+  const touchAction = useRef<HTMLButtonElement>(null);
   const [refit, setRefit] = useState(false);
   const [controls, setControls] = useState(false);
   const [chart, setChart] = useState(false);
@@ -429,18 +535,39 @@ function FlightHUDInner() {
   );
   const salvage = useGame((g) => g.s.expedition.salvage);
 
-  // R opens the refit bay. Everything else at the helm is flightControl's.
+  // Equipment overlays capture the exit binding before CameraRig may disembark.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el?.closest?.('input, textarea, select, [contenteditable]')) return;
-      if (e.code === 'KeyR') setRefit((v) => !v);
-      if (e.code === 'KeyK') setControls((v) => !v);
-      if (e.code === 'KeyM') setChart((v) => !v);
+      if (flightPrefs().bindings.exit.includes(e.code)) {
+        if (controls) setControls(false);
+        else if (refit) setRefit(false);
+        else if (chart) setChart(false);
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.code === 'KeyR') {
+        setRefit((value) => !value);
+        setControls(false);
+        setChart(false);
+      }
+      if (e.code === 'KeyK') {
+        setControls((value) => !value);
+        setRefit(false);
+        setChart(false);
+      }
+      if (e.code === 'KeyM') {
+        setChart((value) => !value);
+        setRefit(false);
+        setControls(false);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [chart, controls, refit]);
 
   useEffect(() => {
     audio.flightHumStart();
@@ -533,8 +660,11 @@ function FlightHUDInner() {
           if (locked.unreachable) text = `${dist} · and it will stay that way`;
           // The key is whatever the pilot bound it to. Naming E at a helm
           // that has been rearranged is worse than naming nothing at all.
-          else if (f.prompt) text = `${dist} · hold ${engageKey()} to ${f.prompt.label}`;
-          else if (locked.boarded) text = `${dist} · already boarded`;
+          else if (f.prompt?.blocked) text = `${dist} · ${f.prompt.blocked}`;
+          else if (f.prompt) {
+            const control = coarse ? 'ENGAGE' : engageKey();
+            text = `${dist} · ${f.prompt.hold ? 'hold' : 'press'} ${control} to ${f.prompt.label}`;
+          } else if (locked.boarded) text = `${dist} · already boarded`;
           else text = dist;
         }
         if (targetSub.current.textContent !== text) targetSub.current.textContent = text;
@@ -545,19 +675,21 @@ function FlightHUDInner() {
         scanArc.current.style.strokeDashoffset = `${SCAN_C * (1 - p)}`;
       }
 
-      // Sensor list. The ROWS are rebuilt only when the set of contacts or
-      // their state changes; the distances update in place every frame. The
-      // previous version built a join()'d key string from every contact each
-      // frame, which was ~1000 string allocations a second on its own.
+      // Sensor rows expose direction and let a resolved contact become the pin.
       if (contacts.current) {
         const list = f.contacts;
         const n = Math.min(5, list.length);
         let structural = n !== rows.current.length;
         if (!structural) {
           for (let i = 0; i < n; i++) {
-            const c = list[i]!;
+            const contact = list[i]!;
             const row = rows.current[i]!;
-            if (row.id !== c.id || row.scanned !== c.scanned || row.boarded !== c.boarded) {
+            if (
+              row.id !== contact.id
+              || row.scanned !== contact.scanned
+              || row.boarded !== contact.boarded
+              || row.training !== contact.training
+            ) {
               structural = true;
               break;
             }
@@ -567,25 +699,55 @@ function FlightHUDInner() {
           contacts.current.replaceChildren();
           rows.current = [];
           for (let i = 0; i < n; i++) {
-            const c = list[i]!;
-            const row = document.createElement('div');
+            const contact = list[i]!;
+            const row = document.createElement('button');
+            row.type = 'button';
             row.className =
-              `fc-row${c.scanned ? ' known' : ''}${c.boarded ? ' done' : ''}` +
-              `${c.rumoured && !c.scanned ? ' rumoured' : ''}`;
+              `fc-row${contact.scanned ? ' known' : ''}${contact.boarded ? ' done' : ''}`
+              + `${contact.rumoured && !contact.scanned ? ' rumoured' : ''}`
+              + `${contact.training ? ' training' : ''}`;
             const name = document.createElement('span');
-            name.textContent = c.label;
+            name.textContent = `${contact.training ? 'TRAINING · ' : ''}${contact.label}`;
+            const direction = document.createElement('em');
             const dist = document.createElement('b');
-            row.append(name, dist);
+            row.append(name, direction, dist);
+            row.title = contact.scanned ? 'Pin this contact' : 'Centre this bearing to scan';
+            const contactId = contact.id;
+            row.addEventListener('click', () => {
+              const current = flightLive.contacts.find((candidate) => candidate.id === contactId);
+              if (!current?.scanned) return;
+              const waypoint = helmChart(500).find((entry) => entry.id.endsWith(`:${contactId}`));
+              if (waypoint) actions.setWaypoint(waypoint.pinned ? null : waypoint.id);
+            });
             contacts.current.appendChild(row);
-            rows.current.push({ id: c.id, scanned: c.scanned, boarded: c.boarded, dist });
+            rows.current.push({
+              id: contact.id,
+              scanned: contact.scanned,
+              boarded: contact.boarded,
+              training: contact.training,
+              row,
+              dist,
+              direction,
+            });
           }
         }
         for (let i = 0; i < n; i++) {
-          const text = rangeLabel(list[i]!.d);
+          const contact = list[i]!;
           const slot = rows.current[i]!;
-          if (slot.dist.textContent !== text) slot.dist.textContent = text;
+          const distance = rangeLabel(contact.d);
+          const direction = directionLabel(contact.bearing, contact.elevation);
+          if (slot.dist.textContent !== distance) slot.dist.textContent = distance;
+          if (slot.direction.textContent !== direction) slot.direction.textContent = direction;
+          slot.row.classList.toggle('locked', f.locked?.id === contact.id);
         }
         contacts.current.parentElement?.classList.toggle('empty', list.length === 0);
+      }
+
+      if (touchAction.current) {
+        const prompt = f.prompt;
+        touchAction.current.disabled = !prompt || Boolean(prompt.blocked);
+        const text = prompt?.blocked ? 'blocked' : prompt?.label ?? 'engage';
+        if (touchAction.current.textContent !== text) touchAction.current.textContent = text;
       }
 
       root.current?.classList.toggle('boosting', f.boostBlend > 0.25);
@@ -630,12 +792,14 @@ function FlightHUDInner() {
       </div>
 
       <NavRibbon />
-      <FirstSortie />
+      <FirstSortie onOpenRefit={() => { setRefit(true); setChart(false); setControls(false); }} />
+      <SubEthaTicker />
+      <FlightEventFeed />
 
       <div className="fh-top">
         <span className="fh-chip">manual flight · the company runabout</span>
         <button className="fh-exit" onClick={() => useUiBus.getState().setFlightMode(false)}>
-          disembark <kbd>esc</kbd>
+          disembark <kbd>{boundKey('exit')}</kbd>
         </button>
       </div>
 
@@ -647,15 +811,26 @@ function FlightHUDInner() {
         </div>
         <div ref={contacts} className="fs-list" />
         <div className="fs-none">no contacts</div>
-        <button className="fs-refit" onClick={() => setChart((v) => !v)}>
-          chart <kbd>m</kbd>
-        </button>
-        <button className="fs-refit" onClick={() => setRefit(true)}>
-          refit <kbd>r</kbd>
-        </button>
-        <button className="fs-refit" onClick={() => setControls(true)}>
-          controls <kbd>k</kbd>
-        </button>
+        <div className="fh-tool-actions">
+          <button
+            className="fs-refit"
+            onClick={() => { setChart((value) => !value); setRefit(false); setControls(false); }}
+          >
+            chart <kbd>m</kbd>
+          </button>
+          <button
+            className="fs-refit"
+            onClick={() => { setRefit(true); setChart(false); setControls(false); }}
+          >
+            refit <kbd>r</kbd>
+          </button>
+          <button
+            className="fs-refit"
+            onClick={() => { setControls(true); setChart(false); setRefit(false); }}
+          >
+            controls <kbd>k</kbd>
+          </button>
+        </div>
       </div>
       {chart && <HelmChart onClose={() => setChart(false)} />}
 
@@ -685,31 +860,43 @@ function FlightHUDInner() {
       </div>
 
       {coarse && (
-        <button
-          className="fh-engage"
-          onPointerDown={() => {
-            flightInput.engage = true;
-          }}
-          onPointerUp={() => {
-            flightInput.engage = false;
-          }}
-          onPointerCancel={() => {
-            flightInput.engage = false;
-          }}
-        >
-          engage
-        </button>
+        <div className="fh-touch">
+          <button
+            ref={touchAction}
+            className="fh-engage"
+            onPointerDown={() => {
+              if (flightLive.prompt?.verb === 'jump') flightInput.jump = true;
+              else flightInput.engage = true;
+            }}
+            onPointerUp={() => {
+              flightInput.engage = false;
+            }}
+            onPointerCancel={() => {
+              flightInput.engage = false;
+            }}
+          >
+            engage
+          </button>
+          <button
+            className="fh-brake"
+            onPointerDown={() => { flightInput.brake = 1; }}
+            onPointerUp={() => { flightInput.brake = 0; }}
+            onPointerCancel={() => { flightInput.brake = 0; }}
+          >
+            brake
+          </button>
+        </div>
       )}
 
       <div className="fh-legend">
         {coarse ? (
-          <>left thumb steers · right thumb thrusts · double-tap right to boost · hold engage to scan</>
+          <>left thumb steers · right thumb thrusts · double-tap right to boost · action and brake controls are contextual</>
         ) : (
           <>
-            <b>arrows</b> or <b>hold left mouse</b> to steer · <b>W</b> thrust · <b>S</b> brake ·{' '}
-            <b>A</b>/<b>D</b> slide ·{' '}
-            <b>space</b>/<b>C</b> rise/sink · <b>shift</b> boost · <b>E</b> scan/board ·{' '}
-            <b>J</b> jump · <b>R</b> refit · <b>esc</b> disembark
+            <b>{boundKey('yawLeft')}/{boundKey('yawRight')}</b> steer · <b>{boundKey('thrust')}</b> thrust ·{' '}
+            <b>{boundKey('brake')}</b> brake · <b>{boundKey('boost')}</b> boost ·{' '}
+            <b>{boundKey('engage')}</b> scan/board · <b>{boundKey('jump')}</b> jump ·{' '}
+            <b>M</b> chart · <b>K</b> controls · <b>{boundKey('exit')}</b> disembark
           </>
         )}
       </div>

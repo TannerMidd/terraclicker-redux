@@ -215,10 +215,26 @@
   border: 1px solid var(--line-3);
   color: var(--ink-label);
 }
-.mk2-autosave { display: flex; align-items: center; gap: 8px; flex: none; }
+.mk2-autosave { display: flex; align-items: center; gap: 7px; flex: none; }
+.mk2-autosave b {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 650;
+  letter-spacing: .12em;
+  color: var(--ink-dim);
+}
 .mk2-autosave i {
-  width: 5px; height: 5px; border-radius: 50%;
-  animation: mk2blink 3.4s infinite;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--bio);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--bio) 65%, transparent);
+}
+.mk2-autosave.pending i { background: var(--atmo); box-shadow: none; }
+.mk2-autosave.error b, .mk2-autosave.blocked b { color: var(--danger); }
+.mk2-autosave.error i, .mk2-autosave.blocked i {
+  background: var(--danger);
+  box-shadow: 0 0 7px color-mix(in srgb, var(--danger) 55%, transparent);
 }
 
 /* ══ LEFT SPINE ══ */
@@ -315,6 +331,16 @@
 }
 .mk2-next b { font-size: 12.5px; font-weight: 600; }
 .mk2-next .v { font-size: 11.5px; color: var(--improbable); }
+.mk2-next { max-width: min(720px, 58vw); color: var(--ink); text-align: left; border-left: 3px solid transparent; }
+button.mk2-next { border-top: none; border-bottom: none; background: none; cursor: pointer; }
+button.mk2-next:hover { background: rgba(174, 199, 255, .045); }
+.mk2-next b, .mk2-next .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk2-next .v { max-width: 280px; }
+.mk2-next-open { font-family: var(--mono); font-size: 8px; letter-spacing: .14em; color: var(--ink-label); white-space: nowrap; }
+.mk2-next.tone-urgent, .mk2-next.tone-deadline { border-left-color: var(--brass); }
+.mk2-next.tone-decision { border-left-color: var(--magrathea); }
+.mk2-next.tone-active { border-left-color: var(--atmo); }
+.mk2-next.tone-ready { border-left-color: var(--bio); }
 /* The copy scrolls BEHIND the label, so the masking is done by the track's
    own padding rather than by the run — a marquee that loops by translating
    -50% cannot carry a one-off offset without the seam showing it. */
@@ -467,6 +493,45 @@
 }
 
 /* ══ SOMETHING WANTS AN ANSWER ══ */
+.mk2-priorities {
+  flex: none;
+  pointer-events: auto;
+  overflow: hidden;
+  border: 1px solid var(--line-2);
+  background: rgba(10, 13, 20, .94);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .42);
+}
+.mk2-priorities-head {
+  display: flex; align-items: center; gap: 9px;
+  min-height: 29px; padding: 5px 10px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, rgba(174, 199, 255, .035), transparent);
+}
+.mk2-priorities-head .k { font-size: 9px; letter-spacing: .22em; }
+.mk2-priorities-count { font-family: var(--mono); font-size: 8.5px; color: var(--ink-faint); letter-spacing: .12em; }
+.mk2-priorities-head button {
+  margin-left: auto; padding: 2px 3px; border: none; background: none;
+  color: var(--ink-faint); font-family: var(--mono); font-size: 8px; letter-spacing: .08em;
+}
+.mk2-priorities-head button:hover { color: var(--ink); }
+.mk2-priorities-list { max-height: 126px; overflow-y: auto; }
+.mk2-priority {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center; gap: 8px; width: 100%; min-height: 42px;
+  padding: 5px 9px 5px 7px; border: none; border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent; background: transparent; color: var(--ink); text-align: left;
+}
+button.mk2-priority:hover { background: rgba(174, 199, 255, .045); }
+.mk2-priority.tone-urgent, .mk2-priority.tone-deadline { border-left-color: var(--brass); }
+.mk2-priority.tone-decision { border-left-color: var(--magrathea); }
+.mk2-priority.tone-active { border-left-color: var(--atmo); }
+.mk2-priority.tone-ready { border-left-color: var(--bio); }
+.mk2-priority-rank { font-family: var(--mono); font-size: 9px; color: var(--ink-ghost); }
+.mk2-priority-copy { min-width: 0; }
+.mk2-priority-copy b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; }
+.mk2-priority-copy > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; font-size: 9.5px; color: var(--ink-dim); }
+.mk2-priority-open { font-family: var(--mono); font-size: 7.5px; letter-spacing: .1em; color: var(--ink-label); white-space: nowrap; }
+.mk2-priorities-hidden { display: block; padding: 4px 10px; font-family: var(--mono); font-size: 7.5px; letter-spacing: .12em; color: var(--ink-ghost); text-align: right; }
 .mk2-answer-slot { flex: 0 0.4 auto; min-height: 274px; display: flex; pointer-events: auto; animation: mk2rise 300ms cubic-bezier(.2, .9, .3, 1); }
 .mk2-answer {
   display: flex; flex-direction: column; min-height: 0; width: 100%;

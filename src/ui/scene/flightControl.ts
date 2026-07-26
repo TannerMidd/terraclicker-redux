@@ -44,6 +44,7 @@ import {
 } from '../../engine/deepField';
 import {
   deterrentPower,
+  isCarrying,
   isProspected,
   isSeamId,
   massFactor,
@@ -54,12 +55,14 @@ import {
 } from '../../engine/freight';
 import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
-import { pinnedWaypoint, waypoints, type WaypointRef } from '../../engine/waypoints';
+import { pinnedWaypoint, waypointId, waypoints, type WaypointRef } from '../../engine/waypoints';
 import { handlingFor } from '../../engine/handling';
 import { loadoutEffects } from '../../engine/loadouts';
 import { solveNav, type NavSolution } from '../../engine/navigation';
 import { flightPrefs, readAxes, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
+import { SORTIE_FLAG } from '../../content/firstSortie';
+import { attendable } from '../../engine/bridge';
 
 // ————— Tuning —————
 
@@ -249,17 +252,32 @@ export interface FlightContact {
   id: string;
   /** The Sub-Etha pointed at this one — it reads at extended range. */
   rumoured: boolean;
+  /** The authored contact used by the induction. */
+  training: boolean;
   /** Resolved name, or the catalogue's pre-scan description. */
   label: string;
   kind: string;
   d: number;
-  /** Radians off boresight — the HUD sorts and arrows by this. */
+  /** Unsigned radians off boresight, used for lock scoring. */
   off: number;
+  /** Signed horizontal and vertical errors from the current heading. */
+  bearing: number;
+  elevation: number;
   scanned: boolean;
   boarded: boolean;
   /** Within the boarding envelope right now. */
   inRange: boolean;
   unreachable: boolean;
+}
+
+export interface FlightPrompt {
+  verb: 'scan' | 'board' | 'jump';
+  /** The verb shown after the real bound control. */
+  label: string;
+  /** Holding is meaningful for scans; boarding and jump are deliberate presses. */
+  hold: boolean;
+  /** Present when no input can currently complete the verb. */
+  blocked?: string;
 }
 
 export const flightLive = {
@@ -298,7 +316,7 @@ export const flightLive = {
   /** The id `scanProgress` belongs to — a new lock restarts the sweep. */
   scanId: null as string | null,
   /** What holding the engage key would do right now. */
-  prompt: null as { verb: 'scan' | 'board' | 'jump'; label: string } | null,
+  prompt: null as FlightPrompt | null,
   /** The console has the helm and is holding the ship still (drives the HUD). */
   station: false,
   /** Wall-clock of the last jump, for the FX flash. */
@@ -395,8 +413,44 @@ function steerCurve(v: number): number {
   return Math.sign(v) * k * k;
 }
 
-/** Begin flight from wherever the camera currently is, facing the same way. */
+const TUTORIAL_LAUNCH_RADIUS = 3.2;
+const TUTORIAL_DIR = new Vector3();
+
+/** One deterministic, reachable landmark used by every induction step. */
+export function firstSortieTargetId(): string | null {
+  const seed = useGame.getState().s.seed;
+  let nearest: DeepFieldSite | null = null;
+  let distance = Infinity;
+  for (const site of sitesForSeed(seed)) {
+    if (isSeamId(site.def.id) || site.def.unreachable) continue;
+    const d = Math.hypot(site.pos[0], site.pos[1], site.pos[2]);
+    if (d < distance) {
+      nearest = site;
+      distance = d;
+    }
+  }
+  return nearest?.def.id ?? null;
+}
+
+/** Put a new pilot outside the collision shell with home behind and the lesson ahead. */
+export function restartFirstSortieFlight(): boolean {
+  const id = firstSortieTargetId();
+  const site = id ? sitesForSeed(useGame.getState().s.seed).find((candidate) => candidate.def.id === id) : null;
+  if (!site) return false;
+  TUTORIAL_DIR.set(site.pos[0], site.pos[1], site.pos[2]).normalize();
+  const start = TUTORIAL_DIR.clone().multiplyScalar(TUTORIAL_LAUNCH_RADIUS);
+  const toward = new Vector3(site.pos[0], site.pos[1], site.pos[2]).sub(start).normalize();
+  beginFlightAt(
+    start,
+    Math.atan2(-toward.x, -toward.z),
+    Math.asin(Math.max(-1, Math.min(1, toward.y))),
+  );
+  return true;
+}
+
+/** Begin flight from the camera, except for the authored first launch. */
 export function beginFlightFromCamera(camera: Camera): void {
+  if (!useGame.getState().s.flags[SORTIE_FLAG] && restartFirstSortieFlight()) return;
   camera.getWorldDirection(FWD);
   beginFlightAt(camera.position, Math.atan2(-FWD.x, -FWD.z), Math.asin(Math.max(-1, Math.min(1, FWD.y))));
 }
@@ -432,6 +486,7 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   flightInput.cruise = 0;
   flightInput.engage = false;
   flightInput.jump = false;
+  engageWasDown = false;
 }
 
 export function endFlight(): void {
@@ -445,21 +500,34 @@ export function endFlight(): void {
  * onto the camera.
  */
 export function stepFlight(dt: number, t: number): void {
+  // Keyboard events update immediately; pads and HOTAS devices must be sampled
+  // every frame or every control stays frozen until an unrelated key is used.
+  pollGamepad();
   const f = flightLive;
   const input = flightInput;
   f.clock = t;
   f.ramp = Math.min(1, f.ramp + dt * 2);
+  // Equipment, chart, and modal overlays are real pauses. Derive this every
+  // frame so opening one cannot leave up to a sensor-sweep of silent drift.
+  f.paused = flightUiPaused();
 
-  // Housekeeping sweep: landmarks, near-system reveal, modal pause.
+  // Housekeeping sweep: landmarks and near-system reveal.
   if (f.scanAt < 0 || t - f.scanAt >= SCAN_EVERY) {
     f.scanAt = t;
     scanSurroundings();
   }
   solveNavThisFrame();
+  if (f.paused) {
+    f.station = false;
+    // Consume press-like actions while an overlay owns the controls.
+    engageWasDown = input.engage;
+    input.jump = false;
+    return;
+  }
   applyCourseHold(dt);
   applyKeySteering(dt);
 
-  const authority = f.ramp * (f.paused ? 0 : 1);
+  const authority = f.ramp;
 
   // Steering → turn rates → orientation. Roll is cosmetic bank.
   const expeditionNow = useGame.getState().s.expedition;
@@ -590,6 +658,7 @@ export function stepFlight(dt: number, t: number): void {
   f.speed = f.vel.length();
 
   stepDeepField(dt, FWD, authority > 0);
+  stepInterdiction(useGame.getState().s, dt);
 }
 
 // ————— The Deep Field: lock, scan, board, jump —————
@@ -616,6 +685,8 @@ const SITE_POS: [number, number, number] = [0, 0, 0];
 const TO_SITE = new Vector3();
 /** Seconds the current sweep has been without its lock (see SCAN_GRACE). */
 let scanLostFor = 0;
+/** Boarding, rigging, and contextual jumps require a fresh deliberate press. */
+let engageWasDown = false;
 /** Hull position at the start of this frame, for the swept collision test. */
 const PREV = new Vector3();
 
@@ -645,6 +716,9 @@ function writeContact(
   out.kind = site.def.kind;
   out.d = d;
   out.off = off;
+  out.bearing = 0;
+  out.elevation = 0;
+  out.training = false;
   out.scanned = scanned;
   // A seam is never 'boarded' — you can work it again every time you come back.
   out.boarded = seam ? false : isBoarded(expedition, site.def.id);
@@ -657,10 +731,13 @@ function blankContact(): FlightContact {
   return {
     id: '',
     rumoured: false,
+    training: false,
     label: '',
     kind: '',
     d: 0,
     off: 0,
+    bearing: 0,
+    elevation: 0,
     scanned: false,
     boarded: false,
     inRange: false,
@@ -685,7 +762,13 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
   const st = useGame.getState().s;
   const expedition = st.expedition;
   const sites = sitesForSeed(st.seed);
-  const range = sensorRange(expedition);
+  const handling = handlingFor(expedition);
+  const noise = handling.sensorNoise > 0
+    ? Math.sin(f.clock * 2.7 + st.seed * 0.001) * handling.sensorNoise
+    : 0;
+  const range = sensorRange(expedition) * (1 + noise);
+  const engagePressed = flightInput.engage && !engageWasDown;
+  engageWasDown = flightInput.engage;
   f.range = range;
   // Reading the channel is worth something: a landmark the Sub-Etha has
   // gossiped about is detectable from considerably further out, because you
@@ -725,6 +808,9 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
   f.locked = best
     ? writeContact(LOCKED, best, bestD, bestOff, expedition, rumoured.has(best.def.id))
     : null;
+  if (f.locked) {
+    f.locked.training = !st.flags[SORTIE_FLAG] && f.locked.id === firstSortieTargetId();
+  }
 
   // Scan progress belongs to one lock — but not to the frame. A contact
   // clipping the edge of the cone for an instant, which is precisely what a
@@ -770,7 +856,7 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     !locked.unreachable &&
     locked.inRange &&
     live &&
-    flightInput.engage &&
+    engagePressed &&
     !f.paused &&
     f.speed <= BOARD_SPEED
   ) {
@@ -783,47 +869,55 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     }
   }
 
-  // The prompt: exactly one verb, so the console never offers a menu.
+  // Action, status, and blocked reason are separate so the HUD never prints a
+  // key beside something the key cannot do.
   f.prompt = null;
   if (locked) {
     if (!locked.scanned) {
-      f.prompt = { verb: 'scan', label: 'scan' };
-    } else if (locked.unreachable) {
-      f.prompt = null;
-    } else if (isSeamId(locked.id)) {
+      f.prompt = { verb: 'scan', label: 'scan', hold: true };
+    } else if (!locked.unreachable && isSeamId(locked.id)) {
       const rig = expedition.rigs[locked.id];
       const seam = SEAM_BY_ID[locked.id];
       if (!locked.inRange) {
-        f.prompt = hasJumpDrive(expedition) ? { verb: 'jump', label: 'jump to it' } : null;
+        f.prompt = hasJumpDrive(expedition)
+          ? { verb: 'jump', label: 'jump to it', hold: false }
+          : null;
       } else if (f.speed > BOARD_SPEED) {
-        f.prompt = { verb: 'board', label: 'slow down to work it' };
+        f.prompt = { verb: 'board', label: 'work it', hold: false, blocked: 'slow down to work it' };
       } else if (rig) {
-        f.prompt =
-          rig.banked >= 1
-            ? { verb: 'board', label: `collect ${Math.floor(rig.banked)} salvage` }
-            : { verb: 'board', label: 'rig working — nothing banked yet' };
+        f.prompt = rig.banked >= 1
+          ? { verb: 'board', label: `collect ${Math.floor(rig.banked)} salvage`, hold: false }
+          : { verb: 'board', label: 'collect rig', hold: false, blocked: 'rig working — nothing banked yet' };
       } else if (rigsStanding(expedition) >= rigLimit(expedition)) {
-        f.prompt = { verb: 'board', label: 'no rig bay free' };
+        f.prompt = { verb: 'board', label: 'place a rig', hold: false, blocked: 'no rig bay free' };
       } else if (seam && expedition.salvage < seam.rigCost) {
-        f.prompt = { verb: 'board', label: `needs ${seam?.rigCost} salvage to rig` };
+        f.prompt = {
+          verb: 'board',
+          label: 'place a rig',
+          hold: false,
+          blocked: `needs ${seam.rigCost} salvage to rig`,
+        };
       } else {
-        f.prompt = { verb: 'board', label: `place a rig (${seam?.rigCost} salvage)` };
+        f.prompt = { verb: 'board', label: `place a rig (${seam?.rigCost} salvage)`, hold: false };
       }
-    } else if (!locked.boarded) {
+    } else if (!locked.unreachable && !locked.boarded) {
       f.prompt = locked.inRange
-        ? { verb: 'board', label: f.speed > BOARD_SPEED ? 'slow down to board' : 'board' }
+        ? f.speed > BOARD_SPEED
+          ? { verb: 'board', label: 'board', hold: false, blocked: 'slow down to board' }
+          : { verb: 'board', label: 'board', hold: false }
         : hasJumpDrive(expedition)
-          ? { verb: 'jump', label: 'jump to it' }
+          ? { verb: 'jump', label: 'jump to it', hold: false }
           : null;
     }
   }
 
-  // The Improbability Drive: aim at anything already scanned and engage.
-  if (flightInput.jump) {
-    flightInput.jump = false;
-    if (locked && locked.scanned && hasJumpDrive(expedition) && !f.paused) {
-      jumpTo(sites.find((s) => s.def.id === locked.id)!);
-    }
+  // Jump has a dedicated binding, and contextual Engage performs the verb the
+  // prompt advertises. Either path is edge-triggered.
+  const wantsJump = flightInput.jump || (engagePressed && f.prompt?.verb === 'jump' && !f.prompt.blocked);
+  flightInput.jump = false;
+  if (wantsJump && locked && locked.scanned && hasJumpDrive(expedition) && !f.paused) {
+    const target = sites.find((site) => site.def.id === locked.id);
+    if (target) jumpTo(target);
   }
 }
 
@@ -960,32 +1054,50 @@ function refreshContacts(): void {
   const f = flightLive;
   const st = useGame.getState().s;
   const sites = sitesForSeed(st.seed);
-  const range = sensorRange(st.expedition);
+  const range = Math.max(1, f.range || sensorRange(st.expedition));
   const rumoured = rumouredSites(st);
+  const trainingId = st.flags[SORTIE_FLAG] ? null : firstSortieTargetId();
+  EUL.set(f.pitch, f.yaw, 0);
+  Q.setFromEuler(EUL);
+  FWD.set(0, 0, -1).applyQuaternion(Q);
   CONTACT_LIST.length = 0;
   for (const site of sites) {
-    const d = siteVector(site, TO_SITE).sub(f.pos).length();
+    siteVector(site, TO_SITE).sub(f.pos);
+    const d = TO_SITE.length();
     const gossiped = rumoured.has(site.def.id);
     if (d > range * (gossiped ? C.SUBETHA_RUMOUR_RANGE_MULT : 1)) continue;
+    const targetYaw = Math.atan2(-TO_SITE.x, -TO_SITE.z);
+    const targetPitch = Math.atan2(TO_SITE.y, Math.hypot(TO_SITE.x, TO_SITE.z));
+    const bearing = Math.atan2(Math.sin(targetYaw - f.yaw), Math.cos(targetYaw - f.yaw));
+    const elevation = targetPitch - f.pitch;
+    TO_SITE.divideScalar(d || 1);
+    const off = Math.acos(Math.max(-1, Math.min(1, TO_SITE.dot(FWD))));
     const slot = CONTACT_POOL[CONTACT_LIST.length] ?? blankContact();
     CONTACT_POOL[CONTACT_LIST.length] = slot;
-    CONTACT_LIST.push(writeContact(slot, site, d, 0, st.expedition, gossiped));
+    const contact = writeContact(slot, site, d, off, st.expedition, gossiped);
+    contact.bearing = bearing;
+    contact.elevation = elevation;
+    contact.training = site.def.id === trainingId;
+    CONTACT_LIST.push(contact);
   }
-  CONTACT_LIST.sort((a, b) => a.d - b.d);
+  CONTACT_LIST.sort((a, b) => {
+    if (a.training !== b.training) return a.training ? -1 : 1;
+    if (a.rumoured !== b.rumoured) return a.rumoured ? -1 : 1;
+    return a.off * 8 + a.d / range - (b.off * 8 + b.d / range);
+  });
   f.contacts = CONTACT_LIST;
 }
 
 // ————— Surroundings (HUD copy + the near-system reveal) —————
 
 /** Weighted nearest landmark: bigger things announce themselves from farther. */
+function flightUiPaused(): boolean {
+  return typeof document !== 'undefined'
+    && document.querySelector('.modal-veil, .modal, .fh-refit, .fh-chart, .fh-controls') !== null;
+}
+
 function scanSurroundings(): void {
   const f = flightLive;
-  // A modal holds station; so does the refit bay — you are not flying and
-  // shopping at the same time.
-  f.paused =
-    typeof document !== 'undefined' &&
-    document.querySelector('.modal-veil, .modal, .fh-refit') !== null;
-
   const st = useGame.getState().s;
   let bestScore = Infinity;
   let best: FlightNearest | null = null;
@@ -1108,7 +1220,6 @@ function scanSurroundings(): void {
 
   refreshContacts();
   stepManifest(st);
-  stepInterdiction(st);
   resolveNavTarget(st);
 }
 
@@ -1119,6 +1230,8 @@ const NAV_SELF_POS: [number, number, number] = [0, 0, 0];
 const NAV_SELF_VEL: [number, number, number] = [0, 0, 0];
 let navTargetValid = false;
 let navBrakeRate = RESP_BRAKE;
+/** One visit record per physical approach, released after flying away. */
+let arrivalLatch: string | null = null;
 
 /**
  * Where the pinned waypoint currently is, refreshed on the housekeeping sweep.
@@ -1178,21 +1291,35 @@ function solveNavThisFrame(): void {
     NAV_POS_T,
   );
 
-  if (!f.nav) return;
+  if (!f.nav) {
+    arrivalLatch = null;
+    return;
+  }
 
-  // Arriving is what earns course hold for next time. Recorded once, on the
-  // frame the range first closes.
-  if (f.nav.distance <= ARRIVED_RANGE) {
-    const st = useGame.getState().s;
-    const pin = st.expedition.pinned;
-    if (pin && st.expedition.visited[pin] === undefined) actions.markVisited(pin);
+  // Arriving records the latest physical approach. The release radius prevents
+  // a parked ship from rewriting the timestamp every frame.
+  const pin = useGame.getState().s.expedition.pinned;
+  if (f.nav.distance <= ARRIVED_RANGE && pin) {
+    if (arrivalLatch !== pin) {
+      // A request names a real place. Reaching its pinned world is the answer:
+      // refresh the physical-visit timestamp, then file every open request from
+      // that world while this one arrival is latched.
+      const requests = attendable(useGame.getState().s)
+        .filter((request) => waypointId('world', request.world) === pin);
+      actions.markVisited(pin);
+      for (const request of requests) actions.attendInPerson(request.uid);
+      arrivalLatch = pin;
+    }
     // Nothing left to hold a course to.
     f.courseHold = false;
+  } else if (f.nav.distance >= ARRIVED_RELEASE_RANGE) {
+    arrivalLatch = null;
   }
 }
 
-/** Close enough to count as having been there. */
+/** Close enough to count as having been there, with hysteresis on departure. */
 const ARRIVED_RANGE = 8;
+const ARRIVED_RELEASE_RANGE = 12;
 
 /**
  * Course hold steers; it never throttles. The pilot still decides how fast to
@@ -1340,7 +1467,11 @@ export function helmChart(limit = 60): HelmChartEntry[] {
     });
   }
 
-  out.sort((a, b) => a.distance - b.distance);
+  const activeJobId = st.expedition.manifest ? `job:${st.expedition.manifest.uid}` : null;
+  out.sort((a, b) => {
+    const priority = (entry: HelmChartEntry) => entry.pinned ? 0 : entry.id === activeJobId ? 1 : 2;
+    return priority(a) - priority(b) || a.distance - b.distance;
+  });
   return out.slice(0, limit);
 }
 
@@ -1451,67 +1582,88 @@ export const interdiction = {
   pos: new Vector3(),
   /** 0–1 how thoroughly it has lost interest. */
   dispersal: 0,
+  /** Live separation and time remaining, for an honest pursuit display. */
+  gap: 0,
+  remainingMs: 0,
   sinceMs: 0,
   nextAtMs: 0,
 };
 
 const PATROL_SPEED = 7.5;
 const PATROL_GIVE_UP = 95;
+/** Active helm time; overlays and time away from the helm do not advance customs. */
+let interdictionClockMs = 0;
 
-function stepInterdiction(st: ReturnType<typeof useGame.getState>['s']): void {
+function stepInterdiction(st: ReturnType<typeof useGame.getState>['s'], dt: number): void {
   const f = flightLive;
-  const now = performance.now();
-  const carrying = Boolean(st.expedition.manifest);
+  interdictionClockMs += dt * 1000;
+  const now = interdictionClockMs;
+  const carrying = isCarrying(st.expedition);
 
   if (!interdiction.active) {
+    interdiction.gap = 0;
+    interdiction.remainingMs = 0;
     if (!carrying) {
-      // No cargo, no interest. The clock only runs while you have something.
-      interdiction.nextAtMs = Math.max(interdiction.nextAtMs, now + C.INTERDICTION_MIN_GAP_MS);
+      // Accepted work is not cargo. The clock starts only once the hold is loaded.
+      const profile = handlingFor(st.expedition);
+      const gapMs = C.INTERDICTION_MIN_GAP_MS / Math.max(1, profile.inspectionMult);
+      interdiction.nextAtMs = Math.max(interdiction.nextAtMs, now + gapMs);
       return;
     }
     if (now < interdiction.nextAtMs) return;
     interdiction.active = true;
     interdiction.dispersal = 0;
     interdiction.sinceMs = now;
+    interdiction.remainingMs = C.INTERDICTION_PURSUIT_MS;
     // It arrives behind and to one side, at the edge of comfortable.
     interdiction.pos.copy(f.pos).addScaledVector(FWD, -55);
     interdiction.pos.y += 12;
     return;
   }
 
-  // It follows. Slowly enough to be outrun, fast enough to matter.
+  if (!carrying) {
+    endInterdiction(now, st);
+    return;
+  }
+
+  // It follows on the actual frame clock, not the old five-Hz sensor sweep.
   TMP.copy(f.pos).sub(interdiction.pos);
   const gap = TMP.length();
-  if (gap > 1e-4) interdiction.pos.addScaledVector(TMP.divideScalar(gap), PATROL_SPEED * 0.016);
+  interdiction.gap = gap;
+  interdiction.remainingMs = Math.max(0, C.INTERDICTION_PURSUIT_MS - (now - interdiction.sinceMs));
+  if (gap > 1e-4) interdiction.pos.addScaledVector(TMP.divideScalar(gap), PATROL_SPEED * dt);
 
   if (flightInput.deter) {
     const power = deterrentPower(st.expedition);
     if (power > 0) {
-      interdiction.dispersal += 0.016 * power * 0.5;
+      interdiction.dispersal += dt * power * 0.5;
       if (interdiction.dispersal >= 1) {
-        endInterdiction(now);
+        endInterdiction(now, st);
         actions.resolveInterdiction('deterred');
         return;
       }
     }
   }
 
-  if (gap > PATROL_GIVE_UP) {
-    endInterdiction(now);
+  if (gap > PATROL_GIVE_UP || interdiction.remainingMs <= 0) {
+    endInterdiction(now, st);
     actions.resolveInterdiction('outrun');
     return;
   }
   // Complying is simply stopping and letting it catch up.
   if (gap < 14 && f.speed < 1.2) {
-    endInterdiction(now);
+    endInterdiction(now, st);
     actions.resolveInterdiction('complied');
   }
 }
 
-function endInterdiction(now: number): void {
+function endInterdiction(now: number, st: ReturnType<typeof useGame.getState>['s']): void {
   interdiction.active = false;
   interdiction.dispersal = 0;
-  interdiction.nextAtMs = now + C.INTERDICTION_MIN_GAP_MS;
+  interdiction.gap = 0;
+  interdiction.remainingMs = 0;
+  const profile = handlingFor(st.expedition);
+  interdiction.nextAtMs = now + C.INTERDICTION_MIN_GAP_MS / Math.max(1, profile.inspectionMult);
 }
 
 // ————— Camera application (called by CameraRig's flight branch) —————
@@ -1584,11 +1736,34 @@ function held(action: FlightAction): boolean {
 
 /** Latch so a held course-hold key toggles once rather than sixty times. */
 let courseHoldLatch = false;
+/** A bound jump key is a press, not a frame-by-frame hold. */
+let jumpLatch = false;
 /** Whether the steering axis currently belongs to the pad, so it can let go. */
 let padSteering = false;
+/** True while a standard pad owns at least one control. */
+let padInputActive = false;
 
-function inputFromKeys(): void {
+/**
+ * Pads do not emit DOM input events, so sample them on the frame clock. An idle
+ * or absent pad must not overwrite touch controls, test harness input, or other
+ * direct helm sources with zeroes.
+ */
+function pollGamepad(): void {
   const pad = flightPrefs().gamepad ? readPad() : null;
+  const active = Boolean(pad?.connected && (
+    pad.moveX !== 0 || pad.moveY !== 0 || pad.lookX !== 0 || pad.lookY !== 0
+    || pad.thrust > 0 || pad.brake > 0 || pad.boost || pad.engage || pad.jump
+    || pad.deter || pad.courseHold || pad.exit
+  ));
+  if (!active && !padInputActive) return;
+  padInputActive = active;
+  inputFromKeys(pad);
+}
+
+function inputFromKeys(padSample?: ReturnType<typeof readPad> | null): void {
+  const pad = padSample !== undefined
+    ? padSample
+    : (flightPrefs().gamepad ? readPad() : null);
 
   flightInput.thrust = Math.max(held('thrust') ? 1 : 0, pad?.thrust ?? 0);
   flightInput.brake = Math.max(held('brake') ? 1 : 0, pad?.brake ?? 0);
@@ -1598,8 +1773,12 @@ function inputFromKeys(): void {
     (held('up') ? 1 : 0) - (held('down') ? 1 : 0) - (pad?.moveY ?? 0)));
   flightInput.boost = held('boost') || Boolean(pad?.boost);
   flightInput.engage = held('engage') || Boolean(pad?.engage);
-  // F: the Dispersal Field. Held, like everything else that takes nerve.
+  // The Dispersal Field is held, like everything else that takes nerve.
   flightInput.deter = held('deter') || Boolean(pad?.deter);
+
+  const wantsJump = held('jump') || Boolean(pad?.jump);
+  if (wantsJump && !jumpLatch) flightInput.jump = true;
+  jumpLatch = wantsJump;
 
   // Course hold: a toggle, and only ever available for somewhere you have
   // actually been. The helm will fly a route it has flown; it will not fly
@@ -1673,7 +1852,7 @@ function overFlightUi(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     target.closest(
-      '.fh-exit, .fh-sensors, .fh-refit, .fh-engage, .toast-stack, .modal, .modal-veil, .dock',
+      '.fh-exit, .fh-sensors, .fh-refit, .fh-chart, .fh-controls, .fh-engage, .fh-touch, .fh-sortie, .toast-stack, .modal, .modal-veil, .dock',
     ) !== null
   );
 }
@@ -1696,7 +1875,6 @@ export function attachFlightInput(): () => void {
     ) {
       e.preventDefault(); // no page scroll from the helm
     }
-    if (e.code === 'KeyJ' && !e.repeat) flightInput.jump = true;
     keys.add(e.code);
     inputFromKeys();
   };
@@ -1706,6 +1884,7 @@ export function attachFlightInput(): () => void {
   };
   const onBlur = () => {
     keys.clear();
+    jumpLatch = false;
     inputFromKeys();
     mouseSteer.active = false;
     flightInput.steerX = 0;

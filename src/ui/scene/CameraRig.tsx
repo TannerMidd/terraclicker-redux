@@ -30,6 +30,7 @@ import {
   setFlightMode,
   stepFlight,
 } from './flightControl';
+import { flightModeKeyIntent, flightPrefs, readPad } from './flightBindings';
 import { MINI_SIZE } from './miniPlanet';
 import * as audio from '../audio/audio';
 
@@ -67,6 +68,10 @@ function easeInOutCubic(x: number): number {
 }
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function flightOverlayOpen(): boolean {
+  return document.querySelector('.fh-refit, .fh-chart, .modal, .modal-veil') !== null;
 }
 
 /**
@@ -145,6 +150,7 @@ export function CameraRig() {
     ctrl: new Vector3(),
   });
   const roll = useRef(0);
+  const padExitHeld = useRef(false);
 
   useEffect(() => {
     if (punchNonce !== lastNonce.current) {
@@ -328,14 +334,22 @@ export function CameraRig() {
       const el = e.target as HTMLElement | null;
       if (el && el.closest?.('input, textarea, select, [contenteditable]')) return;
       const bus = useUiBus.getState();
-      if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
-        setFlightMode(!bus.flightMode); // take the helm / hand it back
+      const overlayOpen = flightOverlayOpen();
+      const modeIntent = flightModeKeyIntent(
+        e,
+        bus.flightMode,
+        overlayOpen,
+        flightPrefs().bindings,
+      );
+      if (modeIntent) {
+        e.preventDefault();
+        setFlightMode(modeIntent === 'enter-flight');
         return;
       }
       const focus = bus.focus;
       if (e.key === 'Escape') {
-        if (bus.flightMode) setFlightMode(false);
-        else if (focus) stepFocusOut();
+        if (bus.flightMode) return; // a helm panel, or a remapped exit, owns it
+        if (focus) stepFocusOut();
         else if (orbitEngaged()) resetOrbit();
         return;
       }
@@ -515,6 +529,13 @@ export function CameraRig() {
 
     // ————— Manual flight: the player has the helm —————
     if (bus.flightMode) {
+      const padExitDown = flightPrefs().gamepad && readPad().exit;
+      const padExitPressed = padExitDown && !padExitHeld.current;
+      padExitHeld.current = padExitDown;
+      if (padExitPressed && !flightOverlayOpen()) {
+        setFlightMode(false);
+        return;
+      }
       if (!flightLive.active) {
         // Handoff: the runabout materializes exactly where the camera was.
         beginFlightFromCamera(camera);

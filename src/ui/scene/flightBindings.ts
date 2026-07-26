@@ -26,8 +26,10 @@ export type FlightAction =
   | 'down'
   | 'boost'
   | 'engage'
+  | 'jump'
   | 'deter'
-  | 'courseHold';
+  | 'courseHold'
+  | 'exit';
 
 export const ACTION_LABELS: Record<FlightAction, string> = {
   thrust: 'thrust',
@@ -41,9 +43,11 @@ export const ACTION_LABELS: Record<FlightAction, string> = {
   up: 'rise',
   down: 'descend',
   boost: 'boost',
-  engage: 'scan / board / jump',
+  engage: 'scan / board',
+  jump: 'jump',
   deter: 'dispersal field',
   courseHold: 'course hold',
+  exit: 'disembark',
 };
 
 /** `KeyboardEvent.code` values, so the layout follows the physical key. */
@@ -71,9 +75,14 @@ export const DEFAULT_BINDINGS: Record<FlightAction, Binding> = {
   down: ['KeyC'],
   boost: ['ShiftLeft', 'ShiftRight'],
   engage: ['KeyE'],
+  jump: ['KeyJ'],
   deter: ['KeyF'],
   courseHold: ['KeyH'],
+  exit: ['Escape'],
 };
+
+/** Stable display and validation order for every remappable helm action. */
+export const FLIGHT_ACTIONS = Object.freeze(Object.keys(DEFAULT_BINDINGS) as FlightAction[]);
 
 /**
  * One physical axis on one device, and what it is wired to.
@@ -171,7 +180,7 @@ function sanitize(raw: unknown): FlightPrefs {
 
   const bindings = obj['bindings'];
   if (typeof bindings === 'object' && bindings !== null) {
-    for (const action of Object.keys(DEFAULT_BINDINGS) as FlightAction[]) {
+    for (const action of FLIGHT_ACTIONS) {
       const value = (bindings as Record<string, unknown>)[action];
       // A binding that survived a bad edit must never leave an action
       // unreachable — an empty list falls back to the default rather than
@@ -181,6 +190,12 @@ function sanitize(raw: unknown): FlightPrefs {
       }
     }
   }
+  // Older builds allowed duplicate and cockpit-global keys. A malformed map
+  // must not revive those collisions before the controls dialog can repair it.
+  if (validateFlightBindings(prefs.bindings).length > 0) {
+    prefs.bindings = { ...DEFAULT_BINDINGS };
+  }
+
 
   const axes = obj['axes'];
   if (typeof axes === 'object' && axes !== null) {
@@ -238,6 +253,163 @@ export function keyLabel(code: string): string {
   return code.toLowerCase();
 }
 
+/** Human-readable copy for one action's currently assigned physical keys. */
+export function bindingLabel(binding: Binding): string {
+  return binding.map(keyLabel).join(' / ');
+}
+
+/**
+ * Fixed cockpit shortcuts owned by panels rather than the flight-input map.
+ *
+ * KeyF is intentionally absent. It is a global shortcut only while outside
+ * flight; once the helm is active it belongs to the remappable action map.
+ */
+export const GLOBAL_FLIGHT_SHORTCUTS: Readonly<Record<string, string>> = {
+  KeyR: 'the refit bay',
+  KeyK: 'helm controls',
+  KeyM: 'the helm chart',
+};
+
+const SYSTEM_RESERVED_CODES: Readonly<Record<string, string>> = {
+  Tab: 'keyboard focus navigation',
+  ControlLeft: 'operating-system shortcuts',
+  ControlRight: 'operating-system shortcuts',
+  AltLeft: 'operating-system shortcuts',
+  AltRight: 'operating-system shortcuts',
+  MetaLeft: 'operating-system shortcuts',
+  MetaRight: 'operating-system shortcuts',
+};
+
+export interface FlightBindingConflict {
+  action: FlightAction;
+  code: string;
+  kind: 'reserved' | 'duplicate';
+  message: string;
+  otherAction?: FlightAction;
+}
+
+function reservedBindingReason(action: FlightAction, code: string): string | null {
+  const globalOwner = GLOBAL_FLIGHT_SHORTCUTS[code];
+  if (globalOwner) return `${keyLabel(code)} opens ${globalOwner}`;
+  if (code === 'Escape' && action !== 'exit') {
+    return 'escape closes the current panel or disembarks';
+  }
+  const systemOwner = SYSTEM_RESERVED_CODES[code];
+  if (systemOwner) return `${keyLabel(code)} is reserved for ${systemOwner}`;
+  if (/^F(?:[1-9]|1[0-2])$/.test(code)) {
+    return `${keyLabel(code)} is reserved for browser or system commands`;
+  }
+  return null;
+}
+
+/** Find why assigning one physical key would be unsafe, if anything. */
+export function flightBindingConflict(
+  action: FlightAction,
+  code: string,
+  bindings: Readonly<Record<FlightAction, Binding>>,
+): FlightBindingConflict | null {
+  const reserved = reservedBindingReason(action, code);
+  if (reserved) {
+    return {
+      action,
+      code,
+      kind: 'reserved',
+      message: `${reserved}; choose another key for ${ACTION_LABELS[action]}.`,
+    };
+  }
+
+  for (const other of FLIGHT_ACTIONS) {
+    if (other === action || !bindings[other].includes(code)) continue;
+    return {
+      action,
+      code,
+      kind: 'duplicate',
+      otherAction: other,
+      message: `${keyLabel(code)} is already assigned to ${ACTION_LABELS[other]}.`,
+    };
+  }
+  return null;
+}
+
+/** Validate a complete map, including panel/system reservations and duplicates. */
+export function validateFlightBindings(
+  bindings: Readonly<Record<FlightAction, Binding>>,
+): FlightBindingConflict[] {
+  const issues: FlightBindingConflict[] = [];
+  const owners = new Map<string, FlightAction>();
+  for (const action of FLIGHT_ACTIONS) {
+    for (const code of new Set(bindings[action])) {
+      const reserved = reservedBindingReason(action, code);
+      if (reserved) {
+        issues.push({
+          action,
+          code,
+          kind: 'reserved',
+          message: `${reserved}; choose another key for ${ACTION_LABELS[action]}.`,
+        });
+      }
+      const owner = owners.get(code);
+      if (owner && owner !== action) {
+        issues.push({
+          action,
+          code,
+          kind: 'duplicate',
+          otherAction: owner,
+          message: `${keyLabel(code)} is already assigned to ${ACTION_LABELS[owner]}.`,
+        });
+      } else {
+        owners.set(code, action);
+      }
+    }
+  }
+  return issues;
+}
+
+export interface FlightModeKeyEvent {
+  code: string;
+  repeat?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+}
+
+export type FlightModeKeyIntent = 'enter-flight' | 'exit-flight' | null;
+
+/**
+ * Resolve only the global mode change; every other key remains available to
+ * the active helm. Open panels consume their own dismissal key first.
+ */
+export function flightModeKeyIntent(
+  event: FlightModeKeyEvent,
+  flightMode: boolean,
+  overlayOpen: boolean,
+  bindings: Readonly<Record<FlightAction, Binding>>,
+): FlightModeKeyIntent {
+  if (event.repeat || event.ctrlKey || event.metaKey || event.altKey || overlayOpen) return null;
+  if (!flightMode) return event.code === 'KeyF' ? 'enter-flight' : null;
+  return bindings.exit.includes(event.code) ? 'exit-flight' : null;
+}
+
+/** Fixed standard-pad wiring, shared with the controls copy. */
+export const STANDARD_PAD_BINDINGS: Partial<Record<FlightAction, string>> = {
+  thrust: 'right trigger / A',
+  brake: 'left trigger / B',
+  strafeLeft: 'left stick',
+  strafeRight: 'left stick',
+  yawLeft: 'right stick',
+  yawRight: 'right stick',
+  pitchUp: 'right stick',
+  pitchDown: 'right stick',
+  up: 'left stick',
+  down: 'left stick',
+  boost: 'right bumper / left stick button',
+  engage: 'X',
+  jump: 'left bumper',
+  deter: 'Y',
+  courseHold: 'menu / start',
+  exit: 'view / back',
+};
+
 // ————— Gamepad —————
 
 /**
@@ -257,8 +429,10 @@ export interface PadState {
   brake: number;
   boost: boolean;
   engage: boolean;
+  jump: boolean;
   deter: boolean;
   courseHold: boolean;
+  exit: boolean;
 }
 
 const DEADZONE = 0.16;
@@ -334,7 +508,7 @@ export function readPad(): PadState {
     connected: false,
     moveX: 0, moveY: 0, lookX: 0, lookY: 0,
     thrust: 0, brake: 0,
-    boost: false, engage: false, deter: false, courseHold: false,
+    boost: false, engage: false, jump: false, deter: false, courseHold: false, exit: false,
   };
   if (typeof navigator === 'undefined' || !navigator.getGamepads) return empty;
 
@@ -366,8 +540,10 @@ export function readPad(): PadState {
       brake: Math.max(v(6), b(1) ? 1 : 0), // left trigger or B
       boost: b(10) || b(5),
       engage: b(2), // X
+      jump: b(4), // left bumper
       deter: b(3), // Y
       courseHold: b(9), // start
+      exit: b(8), // back / view
     };
   }
   return empty;

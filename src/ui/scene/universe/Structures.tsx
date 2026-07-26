@@ -17,7 +17,7 @@ import { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, Group, MeshBasicMaterial, MeshStandardMaterial, Vector3 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
-import { seamSites } from '../../../engine/freight';
+import { rigCapacity, seamSites } from '../../../engine/freight';
 import { buildProgress, isBuilding, isBuilt } from '../../../engine/megaprojects';
 import { MEGAPROJECTS } from '../../../content/megaprojects';
 import { SEAM_BY_ID } from '../../../content/freight';
@@ -40,7 +40,8 @@ function Rig({ id, pos }: { id: string; pos: readonly [number, number, number] }
   const seam = SEAM_BY_ID[id];
   const glow = useMemo(() => sharedGlowSprite(0x58d68a, 0.5), []);
   const banked = useGame((g) => g.s.expedition.rigs[id]?.banked ?? 0);
-  const full = seam ? banked >= seam.cap : false;
+  const cap = useGame((g) => rigCapacity(g.s.expedition, id));
+  const full = seam ? banked >= cap : false;
 
   useFrame((state, dt) => {
     if (spin.current && !universeMotion.reduced) spin.current.rotation.y += dt * 0.25;

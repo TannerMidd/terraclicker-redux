@@ -50,6 +50,22 @@ describe('Commission Dossiers', () => {
     expect(s.run.dossier).toBe(chosen);
   });
 
+  it('can explicitly file the neutral standard commission', () => {
+    const s = sold();
+    expect(s.run.dossierOffers).toHaveLength(DOSSIER_OFFER_COUNT);
+
+    step(s, 0, [{ type: 'declineDossier' }], OPTS);
+
+    expect(s.run.dossier).toBeNull();
+    expect(s.run.dossierOffers).toEqual([]);
+    expect(dossierEffects(s)).toEqual({
+      prodMult: 1, scienceMult: 1, costMult: 1, headStart: 0, completionMult: 1,
+    });
+
+    step(s, 0, [{ type: 'declineDossier' }], OPTS);
+    expect(s.run.dossierOffers).toEqual([]);
+  });
+
   it('refuses a brief that was never on offer', () => {
     const s = sold();
     const notOffered = DOSSIERS.find((d) => !s.run.dossierOffers.includes(d.id))!.id;

@@ -68,7 +68,7 @@ import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
-import { acceptDossier, activeDossier, dossierEffects, offerDossiers } from './dossiers';
+import { acceptDossier, activeDossier, declineDossier, dossierEffects, offerDossiers } from './dossiers';
 import { charterOffersFor, signCharter } from './charters';
 import { answerPhase } from './programmes';
 import { attendInPerson } from './bridge';
@@ -82,7 +82,12 @@ import {
   standingOrderInputs,
   standingOrdersUnlocked,
 } from './standingOrders';
-import { SORTIE_FLAG } from '../content/firstSortie';
+import {
+  FIRST_SORTIE,
+  SORTIE_FLAG,
+  SORTIE_PROGRESS_FLAG,
+  SORTIE_STARTER_SALVAGE,
+} from '../content/firstSortie';
 import { REFIT_BY_ID } from '../content/refit';
 import {
   ASPECTS,
@@ -102,7 +107,7 @@ const STANDING_ORDER_EVERY_MS = 500;
 let standingOrderTickMs = 0;
 
 /** Flags the UI is allowed to set. See the `setFlag` input. */
-const SETTABLE_FLAGS = new Set([SORTIE_FLAG]);
+const SETTABLE_FLAGS = new Set([SORTIE_FLAG, SORTIE_PROGRESS_FLAG]);
 
 // ————————————————— New game —————————————————
 
@@ -280,6 +285,13 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       }
       break;
     }
+    case 'declineSurvey': {
+      const p = state.planet;
+      if (!p.surveyOptions) return;
+      p.survey = null;
+      p.surveyOptions = null;
+      break;
+    }
     case 'catchBubble':
       catchBubble(state, derived, input.id, effects);
       break;
@@ -405,15 +417,24 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       break;
     }
     case 'markVisited': {
-      if (state.expedition.visited[input.id] === undefined && findWaypoint(state, input.id)) {
-        state.expedition.visited[input.id] = state.gameTimeMs;
-      }
+      // Latest arrival, not first discovery: in-person requests must be able to
+      // distinguish a visit made after the request opened from ancient travel.
+      if (findWaypoint(state, input.id)) state.expedition.visited[input.id] = state.gameTimeMs;
       break;
     }
     case 'setFlag': {
       // An allowlist, so a flag is a thing the engine agreed to remember
       // rather than anything the UI felt like writing into the save.
       if (SETTABLE_FLAGS.has(input.id)) state.flags[input.id] = input.value;
+      break;
+    }
+    case 'completeFirstSortie': {
+      if (state.flags[SORTIE_FLAG]) break;
+      const salvage = Math.max(0, SORTIE_STARTER_SALVAGE - state.expedition.salvage);
+      state.expedition.salvage += salvage;
+      state.flags[SORTIE_FLAG] = 1;
+      state.flags[SORTIE_PROGRESS_FLAG] = FIRST_SORTIE.length;
+      effects.push({ t: 'sortieCompleted', salvage });
       break;
     }
     case 'setStandingOrders': {
@@ -457,6 +478,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     }
     case 'acceptDossier': {
       acceptDossier(state, input.id);
+      break;
+    }
+    case 'declineDossier': {
+      declineDossier(state);
       break;
     }
     case 'resolveInterdiction': {
@@ -534,6 +559,13 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     charterOffers: {},
   };
   state.expedition.unscheduled = {};
+  // Freight addresses belong to the portfolio that was just sold. Keeping
+  // either an accepted manifest or old offers here creates routes to worlds
+  // that no longer exist in the current commission.
+  state.expedition.manifest = null;
+  state.expedition.jobs = [];
+  state.expedition.nextJobMs = 0;
+  if (state.expedition.pinned?.startsWith('job:')) state.expedition.pinned = null;
   state.run.dossierOffers = offerDossiers(state);
 
   // Catalogue perks that shape the new run.

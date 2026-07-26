@@ -11,6 +11,7 @@
  * law is listed permanently — a law you cannot see is indistinguishable from
  * a bug.
  */
+import { useEffect, useRef, useState } from 'react';
 import { actions, useGame } from '../../../state/store';
 import { format, formatDuration } from '../../../engine/num';
 import { forecastSituation } from '../../../engine/situations';
@@ -19,46 +20,120 @@ import { hasBooked, reservationStatus } from '../../../engine/reservation';
 import { RESERVATION_TEXT } from '../../../content/reservation';
 import { PARA_BREAK } from '../../panels/reservationText';
 
-const STAGES = ['Local System', 'Early Galaxy Age', 'Cluster Age', 'Supercluster Age', 'Cosmic Web Age'];
+const STAGES = ['Local System', 'Early Galaxy Age', 'Cluster Age', 'Supercluster Age'];
 
 function Statutes() {
   const { s } = useGame.getState();
   const stage = universeStage(s);
   const enacted = enactedStatutes(s);
   const offers = statuteOffers(s);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const pending = pendingId ? offers.find((offer) => offer.id === pendingId) ?? null : null;
+  const offerStages = [...new Set(offers.map((offer) => offer.stage))].sort((a, b) => a - b);
+
+  useEffect(() => {
+    if (!pending) return;
+    cancelRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pending]);
+
   if (stage === 0 && enacted.length === 0) return null;
 
   return (
     <>
-      <div className="dr-sec">
-        <span className="dr-sec-k">Statutes of the universe</span>
-        <span className="dr-rule" />
-        <span className="dr-sec-note">{enacted.length} ENACTED</span>
-      </div>
-      {enacted.map((def) => (
-        <div key={def.id} className="dr-law">
-          <b>{def.name}</b>
-          <em>{def.terms}</em>
-        </div>
-      ))}
       {offers.length > 0 ? (
         <>
+          <div className="dr-sec">
+            <span className="dr-sec-k" style={{ color: 'var(--brass-lit)' }}>Acts before the house</span>
+            <span className="dr-rule" />
+            <span className="dr-sec-note">{offerStages.length} STAGE{offerStages.length === 1 ? '' : 'S'}</span>
+          </div>
           <p className="dr-note">
-            The house will hear one act per stage. It cannot be repealed afterwards, on the
-            grounds that you will be living in it.
+            Choose one act for each open stage. Enactment costs no currency, survives every
+            commission sale, and cannot be repealed.
           </p>
-          {offers.map((def) => (
-            <button key={def.id} className="dr-card offer" onClick={() => actions.enactStatute(def.id)}>
-              <div className="dr-card-name">{def.name}</div>
-              <div className="dr-card-body">{def.text}</div>
-              <div className="dr-card-note" style={{ color: 'var(--magrathea)' }}>{def.terms}</div>
-            </button>
+          {offerStages.map((offerStage) => (
+            <section className="dr-statute-stage" key={offerStage}>
+              <div className="dr-subhead">
+                {STAGES[offerStage] ?? `Stage ${offerStage}`} / choose one
+              </div>
+              {offers.filter((offer) => offer.stage === offerStage).map((def) => (
+                <button
+                  key={def.id}
+                  className="dr-card offer"
+                  onClick={() => setPendingId(def.id)}
+                >
+                  <div className="dr-card-name">{def.name}</div>
+                  <div className="dr-card-body">{def.text}</div>
+                  <div className="dr-card-note" style={{ color: 'var(--magrathea)' }}>{def.terms}</div>
+                  <span className="dr-card-cta">REVIEW PERMANENT ACT</span>
+                </button>
+              ))}
+            </section>
           ))}
         </>
       ) : (
         enacted.length > 0 && (
           <p className="dr-note">Nothing further is before the house until the universe is larger.</p>
         )
+      )}
+
+      {enacted.length > 0 && (
+        <details className="dr-disclosure">
+          <summary>
+            <span>Enacted statutes</span>
+            <b>{enacted.length}</b>
+          </summary>
+          <div className="dr-disclosure-body">
+            {enacted.map((def) => (
+              <div key={def.id} className="dr-law">
+                <b>{def.name}</b>
+                <em>{def.terms}</em>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {pending && (
+        <div className="modal-veil" onClick={() => setPendingId(null)}>
+          <div
+            className="modal dr-statute-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="statute-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="dr-sec-k">Permanent statute / {STAGES[pending.stage] ?? `Stage ${pending.stage}`}</span>
+            <h2 id="statute-confirm-title">Enact {pending.name}?</h2>
+            <p className="m-body">{pending.text}</p>
+            <p className="dr-statute-terms">{pending.terms}</p>
+            <ul className="dr-statute-warning">
+              <li>No currency is spent.</li>
+              <li>This chooses the law for its stage.</li>
+              <li>It survives every commission sale.</li>
+              <li>It cannot be repealed.</li>
+            </ul>
+            <div className="m-actions">
+              <button ref={cancelRef} className="btn" onClick={() => setPendingId(null)}>Not yet</button>
+              <button
+                className="btn dr-enact"
+                onClick={() => {
+                  const id = pending.id;
+                  setPendingId(null);
+                  actions.enactStatute(id);
+                }}
+              >
+                Enact permanently
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

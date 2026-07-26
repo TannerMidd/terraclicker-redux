@@ -48,6 +48,13 @@ export function acceptDossier(state: GameState, id: string): boolean {
   return true;
 }
 
+/** Explicitly file the neutral, standard commission and close the brief tray. */
+export function declineDossier(state: GameState): boolean {
+  if (state.run.dossier !== null || state.run.dossierOffers.length === 0) return false;
+  state.run.dossierOffers = [];
+  return true;
+}
+
 /**
  * Planet type weighting for this commission.
  *

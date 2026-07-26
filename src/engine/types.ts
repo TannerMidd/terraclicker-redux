@@ -453,6 +453,7 @@ export type Input =
   | { type: 'buyUpgrade'; id: string }
   | { type: 'startResearch'; id: string }
   | { type: 'chooseSurvey'; id: string }
+  | { type: 'declineSurvey' }
   | { type: 'catchBubble'; id: number }
   | { type: 'hitVogonShip'; id: number }
   | { type: 'prestige' }
@@ -499,8 +500,12 @@ export type Input =
    * knows about are accepted, so the UI cannot invent save state.
    */
   | { type: 'setFlag'; id: string; value: number }
+  /** File the induction and guarantee the first useful refit decision. */
+  | { type: 'completeFirstSortie' }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
+  /** Close the brief tray and run the neutral standard commission. */
+  | { type: 'declineDossier' }
   | { type: 'signCharter'; systemIndex: number; id: string }
   | { type: 'answerPhase'; id: string; optionId: string }
   | { type: 'pickUpManifest' }
@@ -544,7 +549,7 @@ export type SimEffect =
   | { t: 'siteBoarded'; id: string; salvage: number }
   | { t: 'refitInstalled'; id: string; rank: number }
   | { t: 'situationOpened'; uid: number; id: string; world: string; petition?: boolean }
-  | { t: 'jobAccepted'; uid: number; id: string; to: string }
+  | { t: 'jobAccepted'; uid: number; id: string; from: string }
   | { t: 'manifestDelivered'; id: string; salvage: number; to: string; passenger: boolean }
   | { t: 'manifestLost'; id: string; reason: 'complied' | 'abandoned' }
   | { t: 'seamProspected'; id: string }
@@ -560,6 +565,7 @@ export type SimEffect =
   | { t: 'infrastructureBuilt'; id: string }
   | { t: 'statuteEnacted'; id: string }
   | { t: 'reservationBooked' }
+  | { t: 'sortieCompleted'; salvage: number }
   | {
       t: 'situationResolved';
       uid: number;
