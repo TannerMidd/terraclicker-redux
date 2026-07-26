@@ -1835,9 +1835,11 @@ button {
 }
 .fh-mid { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
 .fh-loc {
-  font-size: 12px;
+  min-height: 12px;
   color: var(--ink-dim);
-  letter-spacing: 0.03em;
+  font: 600 10px/1.2 var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -20,34 +20,52 @@
  * Nothing here is a magic number any more; retune a level by editing its
  * radius and everything nested inside and around it follows.
  *
- * The hero planet stays at radius 1. It is the ruler everything else uses.
+ * A medium hero planet stays at radius 1. It is the ruler everything else uses.
  */
 import { Color, Euler, Vector3 } from 'three/webgpu';
 import { mulberry } from '../../engine/rng';
 import { C } from '../../content/constants';
 
-/** Outermost orbit of a system's five worlds. A system is this across. */
+/** Compact outer orbit used only by whole-galaxy/map LODs. */
 export const SYSTEM_R = 8;
-/** Outermost member seat inside a galaxy. Must comfortably clear SYSTEM_R. */
+/** Canonical outer orbit of a system the player can enter. */
+export const SYSTEM_DETAIL_R = 22;
+/** Outermost member seat inside a galaxy. Must clear detailed systems. */
 export const GALAXY_R = 78;
 /** Radius of the shell galaxies are placed on. Must clear 2 × GALAXY_R. */
 export const UNIVERSE_R = 260;
 /** Reach of the cosmic web — the backdrop everything else sits inside. */
 export const WEB_R = 1150;
 
+/** Start resolving a system while there is still dark space around the ship. */
+export const SYSTEM_REVEAL_NEAR = SYSTEM_DETAIL_R * 2.5;
+/** Hysteresis keeps the local disc mounted while the pilot circles its edge. */
+export const SYSTEM_REVEAL_FAR = SYSTEM_DETAIL_R * 3;
+/** Resolve member systems before the runabout crosses a galaxy's visible rim. */
+export const GALAXY_REVEAL_NEAR = GALAXY_R * 2;
+/** Galaxy-detail hysteresis, for a stable empty-space → galactic-disc handoff. */
+export const GALAXY_REVEAL_FAR = GALAXY_R * 2.35;
+
+/** A tilted circle, not a flattened ellipse: distance to the star stays true. */
+export const SYSTEM_ORBIT_Y = 0.28;
+export const SYSTEM_ORBIT_Z = Math.sqrt(1 - SYSTEM_ORBIT_Y * SYSTEM_ORBIT_Y);
+/** Visible stellar surface and its modest terrain/corona clearance. */
+export const SYSTEM_STAR_RADIUS = 1.65;
+export const SYSTEM_STAR_SHELL = 1.86;
+
+
 /**
  * The system currently under construction. Far enough out that its worlds,
- * which now orbit to SYSTEM_R, never crowd the hero planet at the origin.
+ * which now orbit to SYSTEM_DETAIL_R, never crowd the hero planet at the origin.
  */
 export const CURRENT_SYSTEM_ANCHOR = new Vector3(-17, 6.5, -26);
 
 const GOLDEN = 2.39996; // golden angle, for tasteful orbit spacing
 
 /**
- * On-screen radius of a settled world, by size. Lives here rather than in
- * miniPlanet.ts because the helm needs it to build collision shells, and
- * miniPlanet builds a node material at import time — which the flight tests
- * have no renderer for.
+ * On-screen radius of a compact map-LOD world, by size. It lives beside the
+ * physical size table so hierarchy renderers share one source without importing
+ * miniPlanet's renderer-only node materials.
  */
 export const MINI_SIZE: Record<'small' | 'medium' | 'large' | 'huge', number> = {
   small: 0.5,
@@ -55,6 +73,41 @@ export const MINI_SIZE: Record<'small' | 'medium' | 'large' | 'huge', number> = 
   large: 0.78,
   huge: 0.95,
 };
+
+export type WorldSize = keyof typeof MINI_SIZE;
+
+/** Hero radii are shared by its renderer, camera, moons, and collision model. */
+export const HERO_SIZE: Record<WorldSize, number> = {
+  small: 0.86,
+  medium: 1,
+  large: 1.1,
+  huge: 1.2,
+};
+
+/** Finished worlds are physical destinations, never miniatures at the helm. */
+export const DETAIL_WORLD_SIZE: Record<WorldSize, number> = {
+  small: 1,
+  medium: 1.2,
+  large: 1.45,
+  huge: 1.75,
+};
+
+export function heroWorldRadius(size: WorldSize): number {
+  return HERO_SIZE[size];
+}
+
+export function heroWorldShell(size: WorldSize): number {
+  return heroWorldRadius(size) * 1.06 + 0.08;
+}
+
+export function detailWorldRadius(size: WorldSize): number {
+  return DETAIL_WORLD_SIZE[size];
+}
+
+/** Tallest procedural terrain (1.06×) plus a small runabout clearance. */
+export function detailWorldShell(size: WorldSize): number {
+  return detailWorldRadius(size) * 1.06 + 0.08;
+}
 
 export interface HeroMoon {
   size: number;
@@ -91,12 +144,14 @@ export function heroMoonPosition(m: HeroMoon, t: number, out: Vector3): Vector3 
   return out.set(Math.cos(a) * m.orbit, Math.sin(a * 0.7) * m.tilt, Math.sin(a) * m.orbit);
 }
 
-/** Orbit slot for the i-th finished planet of the assembling system (0–4). */
+/** Canonical orbit for a physical/detailed system (formation, visit, and helm). */
 export function orbitSlot(i: number): { radius: number; phase: number; speed: number } {
+  const radii = [5.2, 9.4, 13.6, 17.8, SYSTEM_DETAIL_R] as const;
   return {
-    radius: SYSTEM_R * (0.28 + i * 0.18),
+    radius: radii[Math.max(0, Math.min(radii.length - 1, i))]!,
     phase: i * GOLDEN,
-    speed: 0.16 / (1 + i * 0.45),
+    // Majestic celestial motion, and slow enough for a runabout to hold berth.
+    speed: 0.014 / (1 + i * 0.28),
   };
 }
 
@@ -246,9 +301,29 @@ export function focusSeat(target: FocusRef, masterSeed: number, galaxies: number
   return systemGlyphPosition(systemIndex, masterSeed);
 }
 
-/** Orbit slot for a visited system's k-th world (FocusedSystem + CameraRig). */
+/** Compact orbit used by the whole-galaxy presentation only. */
 export function visitOrbit(i: number): { radius: number; phase: number; speed: number } {
-  return { radius: SYSTEM_R * (0.28 + i * 0.18), phase: i * 2.39996, speed: 0.14 / (1 + i * 0.4) };
+  return {
+    radius: SYSTEM_R * (0.28 + i * 0.18),
+    phase: i * GOLDEN,
+    speed: orbitSlot(i).speed,
+  };
+}
+
+/** Local offset on either the compact LOD or canonical physical orbit. */
+export function systemOrbitOffset(
+  slot: number,
+  t: number,
+  detailed: boolean,
+  out: Vector3,
+): Vector3 {
+  const o = detailed ? orbitSlot(slot) : visitOrbit(slot);
+  const a = o.phase + t * o.speed;
+  return out.set(
+    Math.cos(a) * o.radius,
+    Math.sin(a) * o.radius * SYSTEM_ORBIT_Y,
+    Math.sin(a) * o.radius * SYSTEM_ORBIT_Z,
+  );
 }
 
 /**
@@ -263,13 +338,8 @@ export function visitWorldAnchor(
   out: Vector3,
 ): Vector3 {
   const seat = focusSeat({ kind: 'world', index: worldIndex }, masterSeed, galaxies);
-  const o = visitOrbit(worldIndex % C.PLANETS_PER_SYSTEM);
-  const a = o.phase + t * o.speed;
-  return out.set(
-    seat.x + Math.cos(a) * o.radius,
-    seat.y + Math.sin(a) * o.radius * 0.22,
-    seat.z + Math.sin(a) * o.radius * 0.6,
-  );
+  systemOrbitOffset(worldIndex % C.PLANETS_PER_SYSTEM, t, true, out);
+  return out.add(seat);
 }
 
 /**
@@ -287,7 +357,9 @@ export function focusFraming(
 ): void {
   const seat = focusSeat(target, masterSeed, galaxies);
   const galaxy = target.kind === 'galaxy';
-  const dist = galaxy ? GALAXY_R * (wide ? 2.0 : 2.4) : SYSTEM_R * (wide ? 2.1 : 2.5);
+  const dist = galaxy
+    ? GALAXY_R * (wide ? 2.0 : 2.4)
+    : SYSTEM_DETAIL_R * (wide ? 2.1 : 2.5);
   // Lateral offset, so the subject is not viewed straight down -Z. It has to
   // be a FRACTION of the way out, never a multiple of the seat's absolute
   // position: this was `-seat.x * 0.05`, written when the whole universe was

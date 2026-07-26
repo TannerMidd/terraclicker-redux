@@ -5,9 +5,13 @@ import { useGame } from '../../../state/store';
 import { useUiBus, type CinematicJob } from '../../fx/uiBus';
 import { SCENE_SPRITES } from '../../assets';
 import { settledGeometry, settledMaterial } from '../settledPlanet';
-import { MINI_SIZE } from '../miniPlanet';
 import {
   CURRENT_SYSTEM_ANCHOR,
+  SYSTEM_DETAIL_R,
+  SYSTEM_ORBIT_Y,
+  SYSTEM_ORBIT_Z,
+  SYSTEM_STAR_RADIUS,
+  detailWorldRadius,
   galaxyPosition,
   orbitSlot,
   starColor,
@@ -47,7 +51,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
     [job.index],
   );
   // Cached in settledPlanet.ts — do NOT dispose; other views share them.
-  const geoms = useMemo(() => records.map((r) => settledGeometry(r, 'mini')), [records]);
+  const geoms = useMemo(() => records.map((r) => settledGeometry(r, 'visit')), [records]);
   const mats = useMemo(() => records.map((r) => settledMaterial(r)), [records]);
 
   const star = useMemo(() => starColor(records[0]?.seed ?? s.seed), [records, s.seed]);
@@ -103,11 +107,11 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       const radius = o.radius * (1 - pull) + 0.14 * pull;
       mesh.position.set(
         CURRENT_SYSTEM_ANCHOR.x + Math.cos(a) * radius,
-        CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * radius * 0.22,
-        CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * radius * 0.6,
+        CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * radius * SYSTEM_ORBIT_Y,
+        CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * radius * SYSTEM_ORBIT_Z,
       );
       mesh.rotation.y = t * 0.6;
-      const size = MINI_SIZE[records[i]!.size];
+      const size = detailWorldRadius(records[i]!.size);
       const fade = e > FLARE_T ? Math.max(0, 1 - (e - FLARE_T) / 0.3) : 1;
       mesh.scale.setScalar(size * (1 - 0.35 * pull) * fade);
     }
@@ -126,9 +130,9 @@ function SystemFormation({ job }: { job: CinematicJob }) {
     // The star departs WITH the comet — nothing stays behind but the address.
     const departure = Math.max(0, Math.min(1, (e - STREAK_A) / 0.45));
     if (starRef.current)
-      starRef.current.scale.setScalar((0.34 + flare * 0.5) * (1 - departure));
+      starRef.current.scale.setScalar((SYSTEM_STAR_RADIUS + flare * 0.65) * (1 - departure));
     if (shockRef.current) {
-      shockRef.current.scale.setScalar(0.5 + f * 12);
+      shockRef.current.scale.setScalar(0.5 + f * SYSTEM_DETAIL_R * 1.25);
       shockMat.opacity = f > 0 ? (1 - f) * 0.7 : 0;
     }
 
@@ -161,7 +165,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
       sk > 0 ? P : CURRENT_SYSTEM_ANCHOR,
       star,
       sk > 0 ? 8 * (1 - sk * 0.6) : 5 + flare * 70,
-      12,
+      SYSTEM_DETAIL_R * 1.8,
     );
 
     // Phase 4 — arrival ring at the constellation seat.
@@ -188,7 +192,7 @@ function SystemFormation({ job }: { job: CinematicJob }) {
         />
       ))}
       <mesh ref={starRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>
-        <icosahedronGeometry args={[1, 2]} />
+        <icosahedronGeometry args={[1, 4]} />
         <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
       <sprite ref={flareRef} position={CURRENT_SYSTEM_ANCHOR} raycast={() => null}>

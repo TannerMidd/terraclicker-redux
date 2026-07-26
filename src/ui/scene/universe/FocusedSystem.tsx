@@ -15,9 +15,16 @@ import { useGame } from '../../../state/store';
 import { useUiBus } from '../../fx/uiBus';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { settledGeometry, settledMaterial } from '../settledPlanet';
-import { MINI_SIZE } from '../miniPlanet';
 import { SettledAtmosphere } from './SettledAtmosphere';
-import { focusSeat, starClass, starColor, visitOrbit } from '../universeLayout';
+import {
+  SYSTEM_DETAIL_R,
+  SYSTEM_STAR_RADIUS,
+  detailWorldRadius,
+  focusSeat,
+  starClass,
+  starColor,
+  systemOrbitOffset,
+} from '../universeLayout';
 import { C } from '../../../content/constants';
 import { worldAnchors } from '../navControl';
 import { useLamp } from '../SceneLamps';
@@ -28,7 +35,7 @@ import {
   makeGlowSprite,
   TYPE_LABEL,
   visitHandlers,
-  visitOrbitGeometry,
+  detailOrbitGeometry,
 } from './shared';
 import { CloseupLife, OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 import { FreightLane } from './LivingLanes';
@@ -53,7 +60,7 @@ const HERITAGE_RING_MAT = new MeshBasicMaterial({
   side: DoubleSide,
   depthWrite: false,
 });
-const DISPATCH_RING_GEO = new RingGeometry(0.255, 0.285, 56);
+const DISPATCH_RING_GEO = new RingGeometry(2.34, 2.46, 72);
 const DISPATCH_MATS: Record<SystemSpecialty, MeshBasicMaterial> = {
   thermal: dispatchMaterial('thermal'),
   atmo: dispatchMaterial('atmo'),
@@ -73,8 +80,6 @@ function dispatchMaterial(specialty: SystemSpecialty): MeshBasicMaterial {
     side: DoubleSide,
   });
 }
-
-const orbit = visitOrbit;
 
 const BOTTLENECK_LABEL: Record<CompletedPlanetRecord['bottleneck'], string> = {
   thermal: 'thermal',
@@ -109,21 +114,21 @@ function VisitWorld({
   slot,
   globalIndex,
   heritage,
-  delay,
 }: {
   record: CompletedPlanetRecord;
   slot: number;
   /** Index into run.completedPlanets — the world-focus target. */
   globalIndex: number;
   heritage: boolean;
-  delay: number;
 }) {
   const root = useRef<Group>(null);
   const planet = useRef<Mesh>(null);
   const heritageRing = useRef<Mesh>(null);
   // The camera parked at this exact world earns the full civic treatment.
   const isCloseup = useUiBus(
-    (b) => b.focus?.kind === 'world' && b.focus.index === globalIndex,
+    (b) =>
+      (b.focus?.kind === 'world' && b.focus.index === globalIndex)
+      || (b.flightMode && b.flightNearWorld === globalIndex),
   );
   // Detail 3: these are the worlds you came to look at — give them curvature.
   // Hero-grade now, and cached — do NOT dispose; other views share it.
@@ -137,27 +142,18 @@ function VisitWorld({
     worldAnchors.set(globalIndex, new Vector3());
     return () => void worldAnchors.delete(globalIndex);
   }, [globalIndex]);
-  const born = useRef<number | null>(null);
-  const o = orbit(slot);
-  const size = MINI_SIZE[record.size] * 0.85;
+  const size = detailWorldRadius(record.size);
 
   useFrame((state) => {
     const group = root.current;
     if (!group) return;
     const clock = state.clock.elapsedTime;
-    if (born.current === null) born.current = clock;
-    const t = universeMotion.reduced ? 0 : clock;
-    const k = universeMotion.reduced
-      ? 1
-      : Math.min(1, Math.max(0, (clock - born.current - delay) / 0.5));
-    const ease = 1 - Math.pow(1 - k, 3);
-    const a = o.phase + t * o.speed;
-    group.position.set(
-      Math.cos(a) * o.radius,
-      Math.sin(a) * o.radius * 0.22,
-      Math.sin(a) * o.radius * 0.6,
-    );
-    group.scale.setScalar(0.001 + ease * size);
+    const t = clock;
+    systemOrbitOffset(slot, t, true, group.position);
+    // Physical destinations render at their canonical radius immediately.
+    // Orbit-line opacity carries the reveal without desynchronising the
+    // visible surface from navigation and collision.
+    group.scale.setScalar(size);
     const anchor = worldAnchors.get(globalIndex);
     if (anchor) group.getWorldPosition(anchor);
     if (planet.current) planet.current.rotation.y = universeMotion.reduced ? 0 : t * 0.35;
@@ -167,7 +163,7 @@ function VisitWorld({
   });
 
   return (
-    <group ref={root}>
+    <group ref={root} name={`settled-world-${globalIndex}`}>
       <mesh
         ref={planet}
         geometry={geometry}
@@ -225,7 +221,10 @@ export function FocusedSystem() {
 function FocusedSystemInner({ index }: { index: number }) {
   // The dispatch halo circles the star at system scale; from a world
   // close-up you are standing inside it, so it bows out.
-  const worldFocused = useUiBus((b) => b.focus?.kind === 'world');
+  const worldFocused = useUiBus(
+    (b) => b.focus?.kind === 'world' || (b.flightMode && b.flightNearWorld !== null),
+  );
+  const flightMode = useUiBus((b) => b.flightMode);
   const { s } = useGame.getState();
   const records = useMemo(
     () =>
@@ -241,7 +240,7 @@ function FocusedSystemInner({ index }: { index: number }) {
     () => focusSeat({ kind: 'system', index }, s.seed, s.run.galaxies),
     // seat only moves if the galaxy count changes, which clears focus anyway
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [index],
+    [index, s.seed, s.run.galaxies],
   );
   const star = useMemo(() => starColor(records[0]?.seed ?? s.seed), [records, s.seed]);
   const glowMat = useMemo(() => makeGlowSprite(star.getHex(), 0.9), [star]);
@@ -255,7 +254,7 @@ function FocusedSystemInner({ index }: { index: number }) {
     () =>
       records.map((_, i) => {
         // Geometry is shared with every other system — do NOT dispose it.
-        const l = new Line(visitOrbitGeometry(i), lineMat);
+        const l = new Line(detailOrbitGeometry(i), lineMat);
         l.raycast = () => null;
         return l;
       }),
@@ -272,38 +271,39 @@ function FocusedSystemInner({ index }: { index: number }) {
   // the lamp needs no parent transform.
   const lamp = useLamp();
   useEffect(() => {
-    lamp.set(seat, star, 3.6, 5.5);
+    lamp.set(seat, star, 9, SYSTEM_DETAIL_R * 1.8);
   }, [lamp, seat, star]);
 
-  const spin = useRef<Group>(null);
   const dispatch = useRef<Group>(null);
   const born = useRef<number | null>(null);
   useFrame((state, dt) => {
     const t = state.clock.elapsedTime;
     if (born.current === null) born.current = t;
-    // Orbit lines fade in as the camera arrives.
+    // Orbit lines fade in as the camera arrives. At the helm they are the
+    // pilot's first honest read of the system's newly enormous footprint.
+    const orbitOpacity = flightMode ? 0.28 : 0.2;
     lineMat.opacity = universeMotion.reduced
-      ? 0.2
-      : Math.min(1, (t - born.current) / 0.9) * 0.2;
+      ? orbitOpacity
+      : Math.min(1, (t - born.current) / 0.9) * orbitOpacity;
     if (!universeMotion.reduced) {
-      if (spin.current) spin.current.rotation.y += dt * 0.01;
       if (dispatch.current) dispatch.current.rotation.z -= dt * 0.12;
     }
   });
 
   if (records.length === 0) return null;
   return (
-    <group position={seat}>
+    <group position={seat} name={`focused-system-${index}`}>
       <mesh
+        name={`system-star-${index}`}
         {...inspectHandlers(
           `System ${index + 1}`,
           `${starClass(records[0]!.seed)}${dispatchSummary ? ` · ${dispatchSummary}` : ''}`,
         )}
       >
-        <icosahedronGeometry args={[0.17, 2]} />
+        <icosahedronGeometry args={[SYSTEM_STAR_RADIUS, 4]} />
         <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
-      <sprite scale={[1.2, 1.2, 1]} raycast={() => null}>
+      <sprite scale={[7.6, 7.6, 1]} raycast={() => null}>
         <primitive object={glowMat} attach="material" />
       </sprite>
       {specialty && !worldFocused && (
@@ -313,7 +313,7 @@ function FocusedSystemInner({ index }: { index: number }) {
             material={DISPATCH_MATS[specialty]}
             raycast={() => null}
           />
-          <mesh position={[0.27, 0, 0]} scale={0.025} raycast={() => null}>
+          <mesh position={[2.4, 0, 0]} scale={0.12} raycast={() => null}>
             <tetrahedronGeometry args={[1, 0]} />
             <primitive object={DISPATCH_MATS[specialty]} attach="material" />
           </mesh>
@@ -325,7 +325,7 @@ function FocusedSystemInner({ index }: { index: number }) {
       {specialty && !worldFocused && (
         <FreightLane specialty={specialty} seed={records[0]!.seed} />
       )}
-      <group ref={spin}>
+      <group>
         {orbits.map((l, i) => (
           <primitive key={i} object={l} />
         ))}
@@ -336,28 +336,21 @@ function FocusedSystemInner({ index }: { index: number }) {
             slot={i}
             globalIndex={index * C.PLANETS_PER_SYSTEM + i}
             heritage={isHeritageWorld(s, rec)}
-            delay={0.12 + i * 0.07}
           />
         ))}
-        {/* Commuters thread between the worlds, endpoints exact in spin space. */}
+        {/* Commuters thread between worlds on the same canonical orbit model. */}
         {!worldFocused && (
-        <SystemShuttles
-          spec={{
-            worldPos: (slot, t, out) => {
-              const o = orbit(slot);
-              const a = o.phase + t * o.speed;
-              out.set(
-                Math.cos(a) * o.radius,
-                Math.sin(a) * o.radius * 0.22,
-                Math.sin(a) * o.radius * 0.6,
-              );
-            },
-            worldCount: records.length,
-            ships: 1 + Math.min(3, Math.floor(s.lifetime.planetsCompleted / 10)),
-            seed: records[0]!.seed,
-            scale: 0.07,
-          }}
-        />
+          <SystemShuttles
+            spec={{
+              worldPos: (slot, t, out) => {
+                systemOrbitOffset(slot, t, true, out);
+              },
+              worldCount: records.length,
+              ships: 1 + Math.min(3, Math.floor(s.lifetime.planetsCompleted / 10)),
+              seed: records[0]!.seed,
+              scale: 0.12,
+            }}
+          />
         )}
       </group>
     </group>

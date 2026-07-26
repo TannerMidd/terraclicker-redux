@@ -12,8 +12,18 @@ import {
 import { useGame } from '../../../state/store';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { settledGeometry, settledMaterial } from '../settledPlanet';
-import { MINI_SIZE } from '../miniPlanet';
-import { CURRENT_SYSTEM_ANCHOR, orbitSlot, starClass, starColor } from '../universeLayout';
+import {
+  CURRENT_SYSTEM_ANCHOR,
+  SYSTEM_DETAIL_R,
+  SYSTEM_ORBIT_Y,
+  SYSTEM_ORBIT_Z,
+  SYSTEM_STAR_RADIUS,
+  detailWorldRadius,
+  orbitSlot,
+  starClass,
+  starColor,
+  systemOrbitOffset,
+} from '../universeLayout';
 import { C } from '../../../content/constants';
 import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
 import { useLamp } from '../SceneLamps';
@@ -21,9 +31,7 @@ import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
 import { sharedBasicMaterial } from './pool';
 
-const TRANSIT_MS = 1900;
-
-/** The tilted, squashed orbit path a slot's world actually follows.
+/** The tilted circular orbit path a slot's world actually follows.
  * Closed by repeating the first point — the renderer supports Line, not LineLoop. */
 function orbitPathGeometry(slot: number): BufferGeometry {
   const o = orbitSlot(slot);
@@ -32,61 +40,46 @@ function orbitPathGeometry(slot: number): BufferGeometry {
   for (let i = 0; i <= n; i++) {
     const a = ((i % n) / n) * Math.PI * 2;
     pts[i * 3] = CURRENT_SYSTEM_ANCHOR.x + Math.cos(a) * o.radius;
-    pts[i * 3 + 1] = CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * o.radius * 0.22;
-    pts[i * 3 + 2] = CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * o.radius * 0.6;
+    pts[i * 3 + 1] = CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * o.radius * SYSTEM_ORBIT_Y;
+    pts[i * 3 + 2] = CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * o.radius * SYSTEM_ORBIT_Z;
   }
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(pts, 3));
   return geo;
 }
 
-const ORBIT_MAT = new LineBasicMaterial({ color: 0x8ca0c8, transparent: true, opacity: 0.13 });
+const ORBIT_MAT = new LineBasicMaterial({ color: 0x8ca0c8, transparent: true, opacity: 0.2 });
 
-/** One finished world, orbiting its slot. The newest flies in from the hero position. */
+/** One finished world at the same canonical pose used by navigation and collision. */
 function MiniWorld({
   record,
   slot,
-  isNewest,
 }: {
   record: CompletedPlanetRecord;
   slot: number;
-  isNewest: boolean;
 }) {
   const root = useRef<Group>(null);
   const mesh = useRef<Mesh>(null);
   // Cached in settledPlanet.ts — do NOT dispose; other views share it.
-  const geometry = useMemo(() => settledGeometry(record, 'mini'), [record]);
+  const geometry = useMemo(() => settledGeometry(record, 'visit'), [record]);
   const material = useMemo(() => settledMaterial(record), [record]);
-  const born = useRef<number | null>(null);
-  const o = orbitSlot(slot);
-  const size = MINI_SIZE[record.size];
+  const target = useMemo(() => new Vector3(), []);
+  const size = detailWorldRadius(record.size);
 
   useFrame((state) => {
     const group = root.current;
     if (!group) return;
     const t = state.clock.elapsedTime;
-    const a = o.phase + t * o.speed;
-    const target = new Vector3(
-      CURRENT_SYSTEM_ANCHOR.x + Math.cos(a) * o.radius,
-      CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * o.radius * 0.22,
-      CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * o.radius * 0.6,
-    );
-    if (isNewest) {
-      if (born.current === null) born.current = t;
-      const k = Math.min(1, ((t - born.current) * 1000) / TRANSIT_MS);
-      const ease = 1 - Math.pow(1 - k, 3);
-      // Fly from the hero planet's position out to the system slot, shrinking.
-      group.position.set(0, 0, 0).lerp(target, ease);
-      group.scale.setScalar(1.0 + (size - 1.0) * ease);
-    } else {
-      group.position.copy(target);
-      group.scale.setScalar(size);
-    }
+    systemOrbitOffset(slot, t, true, target).add(CURRENT_SYSTEM_ANCHOR);
+    // The ceremony supplies the motion; the physical world itself never
+    // departs from the pose the helm targets and collides with.
+    group.position.copy(target);
+    group.scale.setScalar(size);
     if (mesh.current) mesh.current.rotation.y = t * 0.3;
   });
 
   return (
-    <group ref={root}>
+    <group ref={root} name={`assembling-world-${slot}`}>
       <mesh
         ref={mesh}
         geometry={geometry}
@@ -97,10 +90,10 @@ function MiniWorld({
         )}
       >
         {/* Delivered means inhabited: the lights stay on out here too. */}
-        <SettlementLights record={record} variant="mini" />
+        <SettlementLights record={record} variant="visit" />
       </mesh>
       <SettledAtmosphere record={record} />
-      <OrbitalHardware record={record} variant="mini" />
+      <OrbitalHardware record={record} variant="visit" />
     </group>
   );
 }
@@ -112,8 +105,6 @@ export function AssemblingSystem() {
   const { s } = useGame.getState();
   const all = s.run.completedPlanets;
   const inSystem = all.slice(s.run.systems * C.PLANETS_PER_SYSTEM);
-  const newestIndex = inSystem.length - 1;
-
   const starSeed = inSystem[0]?.seed ?? s.seed;
   const star = useMemo(() => starColor(starSeed), [starSeed]);
   const starGlow = useMemo(() => makeGlowSprite(star.getHex(), 0.8), [star]);
@@ -134,11 +125,11 @@ export function AssemblingSystem() {
   const lamp = useLamp();
   const lit = inSystem.length > 0;
   useEffect(() => {
-    lamp.set(CURRENT_SYSTEM_ANCHOR, star, lit ? 5 : 0, 7);
+    lamp.set(CURRENT_SYSTEM_ANCHOR, star, lit ? 9 : 0, SYSTEM_DETAIL_R * 1.8);
   }, [lamp, star, lit]);
   useFrame((state) => {
     const m = flicker.current;
-    if (m) m.scale.setScalar(0.34 + Math.sin(state.clock.elapsedTime * 2.3) * 0.015);
+    if (m) m.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 2.3) * 0.015);
   });
 
   if (inSystem.length === 0) return null;
@@ -149,10 +140,10 @@ export function AssemblingSystem() {
         position={CURRENT_SYSTEM_ANCHOR}
         {...inspectHandlers(`System ${s.run.systems + 1}, assembling`, starClass(starSeed))}
       >
-        <icosahedronGeometry args={[1, 2]} />
+        <icosahedronGeometry args={[SYSTEM_STAR_RADIUS, 4]} />
         <primitive object={sharedBasicMaterial({ color: star })} attach="material" />
       </mesh>
-      <sprite position={CURRENT_SYSTEM_ANCHOR} scale={[1.6, 1.6, 1]} raycast={() => null}>
+      <sprite position={CURRENT_SYSTEM_ANCHOR} scale={[7.6, 7.6, 1]} raycast={() => null}>
         <primitive object={starGlow} attach="material" />
       </sprite>
       {/* Its light comes from the permanent pool — see SceneLamps. */}
@@ -164,25 +155,18 @@ export function AssemblingSystem() {
           key={`${rec.seed}-${i}`}
           record={rec}
           slot={i}
-          isNewest={i === newestIndex && i === inSystem.length - 1}
         />
       ))}
       {/* Even a half-built system runs a commuter service. */}
       <SystemShuttles
         spec={{
           worldPos: (slot, t, out) => {
-            const o = orbitSlot(slot);
-            const a = o.phase + t * o.speed;
-            out.set(
-              CURRENT_SYSTEM_ANCHOR.x + Math.cos(a) * o.radius,
-              CURRENT_SYSTEM_ANCHOR.y + Math.sin(a) * o.radius * 0.22,
-              CURRENT_SYSTEM_ANCHOR.z + Math.sin(a) * o.radius * 0.6,
-            );
+            systemOrbitOffset(slot, t, true, out).add(CURRENT_SYSTEM_ANCHOR);
           },
           worldCount: inSystem.length,
           ships: 1 + Math.min(2, Math.floor(s.lifetime.planetsCompleted / 10)),
           seed: starSeed,
-          scale: 0.07,
+          scale: 0.12,
         }}
       />
     </group>

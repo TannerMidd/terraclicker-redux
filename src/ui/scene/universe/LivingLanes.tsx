@@ -19,6 +19,7 @@ import { mulberry } from '../../../engine/rng';
 import { SCENE_SPRITES } from '../../assets';
 import {
   GALAXY_TILT,
+  SYSTEM_DETAIL_R,
   galaxyPosition,
   galaxySeed,
   memberSeatLocal,
@@ -58,8 +59,8 @@ export function FreightLane({
     const dir = new Vector3(Math.cos(phi), (r() - 0.5) * 0.3, Math.sin(phi)).normalize();
     return {
       dir,
-      near: 0.55,
-      far: 4.6 + r() * 1.2,
+      near: 2.1,
+      far: SYSTEM_DETAIL_R * (0.42 + r() * 0.08),
       ships: Array.from({ length: 3 }, (_, i) => ({
         period: 9 + r() * 6,
         phase: r() * 30,
@@ -107,7 +108,7 @@ export function FreightLane({
     });
     if (gate.current) {
       const pulse = universeMotion.reduced ? 1 : 0.85 + Math.sin(t * 1.7) * 0.15;
-      gate.current.scale.setScalar(0.34 * pulse);
+      gate.current.scale.setScalar(0.6 * pulse);
     }
   });
 
@@ -127,7 +128,7 @@ export function FreightLane({
           ref={(el) => {
             ships.current[i] = el;
           }}
-          scale={[0.12, 0.12, 1]}
+          scale={[0.18, 0.18, 1]}
           raycast={() => null}
         >
           <primitive object={shipMats[i]!} attach="material" />
@@ -144,13 +145,17 @@ export function FreightLane({
  */
 export function GalaxyTradeLanes() {
   const focus = useUiBus((b) => b.focus);
+  const flightGalaxy = useUiBus((b) => b.flightMode ? b.flightNearGalaxy : null);
   const flightSystem = useUiBus((b) => b.flightMode ? b.flightNearSystem : null);
   const rev = useGame((g) => g.rev);
   void rev;
   const { s } = useGame.getState();
   let galaxyIndex: number | null = null;
-  if (flightSystem !== null && flightSystem < s.run.galaxies * C.SYSTEMS_PER_GALAXY) {
+  if (flightSystem !== null
+    && flightSystem < s.run.galaxies * C.SYSTEMS_PER_GALAXY) {
     galaxyIndex = Math.floor(flightSystem / C.SYSTEMS_PER_GALAXY);
+  } else if (flightGalaxy !== null) {
+    galaxyIndex = flightGalaxy;
   } else if (focus) {
     if (focus.kind === 'galaxy') galaxyIndex = focus.index;
     else {

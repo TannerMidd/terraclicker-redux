@@ -16,7 +16,7 @@ import { ASPECTS, type AspectId } from '../../engine/types';
 import { format } from '../../engine/num';
 import { mulberry } from '../../engine/rng';
 import { createPlanetGeometry } from './planetGeometry';
-import { heroMoonPosition, heroMoons } from './universeLayout';
+import { heroMoonPosition, heroMoons, heroWorldRadius } from './universeLayout';
 import {
   createAtmosphereMaterial,
   createCloudMaterial,
@@ -49,9 +49,8 @@ export function Planet({ detail }: { detail: number }) {
   const seed = Number(seedStr);
   const isEarth = useGame.getState().s.planet.lifetimeIndex === 42;
   const quirks = useGame.getState().s.planet.quirks;
-  const sizeScale = { small: 0.86, medium: 1, large: 1.1, huge: 1.2 }[
-    useGame.getState().s.planet.size
-  ];
+  const sizeScale = heroWorldRadius(useGame.getState().s.planet.size);
+  const flightMode = useUiBus((b) => b.flightMode);
 
   const fjords = quirks.includes('award-winning-fjords') ? 1 : 0;
   const reverse = quirks.includes('reverse-spin');
@@ -142,7 +141,7 @@ export function Planet({ detail }: { detail: number }) {
     // On the perspective journey the current world recedes toward a dot —
     // the Total Perspective Vortex, performed rather than described.
     const zz = Math.max(0, Math.min(1, (zoomLive.v - 0.5) / 0.5));
-    const vortex = 1 - (zz * zz * (3 - 2 * zz)) * 0.7;
+    const vortex = flightMode ? 1 : 1 - (zz * zz * (3 - 2 * zz)) * 0.7;
     if (group.current) {
       const base = Math.max(0.01, s.v) * sizeScale * vortex;
       const q = Math.max(-0.18, Math.min(0.42, squash.v));

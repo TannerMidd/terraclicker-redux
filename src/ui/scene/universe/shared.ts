@@ -10,7 +10,13 @@ import type { ThreeEvent } from '@react-three/fiber';
 import { useUiBus, type FocusTarget } from '../../fx/uiBus';
 import { useGame } from '../../../state/store';
 import { C } from '../../../content/constants';
-import { BAND_STOPS, visitOrbit } from '../universeLayout';
+import {
+  BAND_STOPS,
+  SYSTEM_ORBIT_Y,
+  SYSTEM_ORBIT_Z,
+  orbitSlot,
+  visitOrbit,
+} from '../universeLayout';
 import { clickSuppressed, navLive } from '../navControl';
 import * as audio from '../../audio/audio';
 import { sceneTex } from '../spriteTextures';
@@ -108,24 +114,34 @@ export function makeTexSprite(
  *
  * Closed by repeating the first point: the WebGPU renderer rejects LineLoop.
  */
-const orbitGeos: (BufferGeometry | null)[] = [null, null, null, null, null];
+const compactOrbitGeos: (BufferGeometry | null)[] = [null, null, null, null, null];
+const detailOrbitGeos: (BufferGeometry | null)[] = [null, null, null, null, null];
 
-export function visitOrbitGeometry(slot: number): BufferGeometry {
-  const hit = orbitGeos[slot];
+function orbitGeometry(slot: number, detailed: boolean): BufferGeometry {
+  const cache = detailed ? detailOrbitGeos : compactOrbitGeos;
+  const hit = cache[slot];
   if (hit) return hit;
-  const radius = visitOrbit(slot).radius;
-  const n = 80;
+  const radius = (detailed ? orbitSlot(slot) : visitOrbit(slot)).radius;
+  const n = 96;
   const pts = new Float32Array((n + 1) * 3);
   for (let i = 0; i <= n; i++) {
     const a = ((i % n) / n) * Math.PI * 2;
     pts[i * 3] = Math.cos(a) * radius;
-    pts[i * 3 + 1] = Math.sin(a) * radius * 0.22;
-    pts[i * 3 + 2] = Math.sin(a) * radius * 0.6;
+    pts[i * 3 + 1] = Math.sin(a) * radius * SYSTEM_ORBIT_Y;
+    pts[i * 3 + 2] = Math.sin(a) * radius * SYSTEM_ORBIT_Z;
   }
   const geo = new BufferGeometry();
   geo.setAttribute('position', new BufferAttribute(pts, 3));
-  orbitGeos[slot] = geo;
+  cache[slot] = geo;
   return geo;
+}
+
+export function visitOrbitGeometry(slot: number): BufferGeometry {
+  return orbitGeometry(slot, false);
+}
+
+export function detailOrbitGeometry(slot: number): BufferGeometry {
+  return orbitGeometry(slot, true);
 }
 
 /** Pointer handlers that surface a nameplate tooltip in the DOM HUD. */

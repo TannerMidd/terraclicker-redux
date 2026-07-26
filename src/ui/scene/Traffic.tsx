@@ -3,11 +3,20 @@ import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Sprite, SpriteMaterial, Vector3 } from 'three/webgpu';
 import { useGame } from '../../state/store';
 import { mulberry } from '../../engine/rng';
-import { CURRENT_SYSTEM_ANCHOR, galaxyPosition, systemGlyphPosition } from './universeLayout';
+import {
+  CURRENT_SYSTEM_ANCHOR,
+  GALAXY_TILT,
+  SYSTEM_R,
+  galaxyPosition,
+  galaxySeed,
+  focusSeat,
+  memberSeatLocal,
+} from './universeLayout';
 import { SCENE_SPRITES } from '../assets';
 import { sceneTex } from './spriteTextures';
 import { useUiBus } from '../fx/uiBus';
 import { flightTrafficCount, screenAwareSpriteScale } from './trafficMath';
+import { C } from '../../content/constants';
 
 const FLIGHT_DRAW_RANGE = 320;
 const P = new Vector3();
@@ -62,6 +71,7 @@ export function Traffic() {
     (game) => `${game.s.run.completedPlanets.length}:${game.s.run.systems}:${game.s.run.galaxies}`,
   );
   const flight = useUiBus((bus) => bus.flightMode);
+  const nearGalaxy = useUiBus((bus) => bus.flightMode ? bus.flightNearGalaxy : null);
   const [planetsStr, systemsStr, galaxiesStr] = counts.split(':') as [string, string, string];
   const planets = Number(planetsStr);
   const systems = Number(systemsStr);
@@ -77,10 +87,31 @@ export function Traffic() {
       { at: CURRENT_SYSTEM_ANCHOR.clone(), radius: 7.5 },
     ];
     for (let i = Math.max(0, systems - 24); i < systems; i++) {
-      hubs.push({ at: systemGlyphPosition(i, masterSeed), radius: 7 });
+      const isNearGalaxyMember = nearGalaxy !== null
+        && i >= nearGalaxy * C.SYSTEMS_PER_GALAXY
+        && i < (nearGalaxy + 1) * C.SYSTEMS_PER_GALAXY;
+      if (isNearGalaxyMember) continue;
+      hubs.push({
+        at: focusSeat({ kind: 'system', index: i }, masterSeed, galaxies),
+        radius: 7,
+      });
     }
-    for (let i = Math.max(0, galaxies - 6); i < galaxies; i++) {
-      hubs.push({ at: galaxyPosition(i, masterSeed), radius: 24 });
+    const galaxyIndices = new Set<number>();
+    for (let i = Math.max(0, galaxies - 6); i < galaxies; i++) galaxyIndices.add(i);
+    if (nearGalaxy !== null && nearGalaxy < galaxies) galaxyIndices.add(nearGalaxy);
+    for (const i of galaxyIndices) {
+      const origin = galaxyPosition(i, masterSeed);
+      if (i === nearGalaxy) {
+        const seed = galaxySeed(i, masterSeed);
+        for (let slot = 0; slot < C.SYSTEMS_PER_GALAXY; slot++) {
+          hubs.push({
+            at: memberSeatLocal(slot, seed).applyEuler(GALAXY_TILT).add(origin),
+            radius: SYSTEM_R * 0.9,
+          });
+        }
+      } else {
+        hubs.push({ at: origin, radius: 24 });
+      }
     }
 
     const r = mulberry((masterSeed ^ 0x7fa11c) >>> 0);
@@ -143,7 +174,7 @@ export function Traffic() {
           : null,
       };
     });
-  }, [planets, systems, galaxies, masterSeed]);
+  }, [planets, systems, galaxies, masterSeed, nearGalaxy]);
 
   useEffect(() => () => {
     routes.forEach((route) => {

@@ -26,12 +26,11 @@ import {
   MINI_SIZE,
   starClass,
   starColor,
-  visitOrbit,
+  systemOrbitOffset,
 } from '../universeLayout';
 import { C } from '../../../content/constants';
 import { distantGeometry, distantMaterial } from '../settledPlanet';
-import { focusOn, makeGlowSprite, visitHandlers, visitOrbitGeometry } from './shared';
-import { universeMotion } from './operationsVisual';
+import { focusOn, focusSystemIndex, makeGlowSprite, visitHandlers, visitOrbitGeometry } from './shared';
 import { sharedBasicMaterial } from './pool';
 
 const APP_T0 = performance.now();
@@ -81,7 +80,7 @@ function armGeometry(seed: number): BufferGeometry {
  * about four pixels across, so that detail would cost real work to render
  * something nobody can see. Approaching hands the seat to FocusedSystem,
  * which brings all of it. Detail by distance; the geometry underneath is
- * identical either way, so the handover doesn't move anything.
+ * deliberately lightweight; the detailed renderer takes over well before arrival.
  */
 function MemberSystem({
   globalIndex,
@@ -104,9 +103,8 @@ function MemberSystem({
   const seed = records[0]?.seed ?? globalIndex + 1;
   const color = useMemo(() => starColor(seed), [seed]);
   const glow = useMemo(() => makeGlowSprite(color.getHex(), 0.6), [color]);
-  const pos = useMemo(() => memberSeatLocal(slot, gSeed), [slot, gSeed]);
+  const pos = useMemo(() => memberSeatLocal(slot, gSeed).applyEuler(GALAXY_TILT), [slot, gSeed]);
   const root = useRef<Group>(null);
-  const spin = useRef<Group>(null);
   const worlds = useRef<(Mesh | null)[]>([]);
   const born = useRef<number | null>(null);
 
@@ -142,20 +140,13 @@ function MemberSystem({
     glow.opacity = 0.6 * dimK.current;
     lineMat.opacity = Math.min(1, (t - born.current) / 0.9) * 0.16 * dimK.current;
 
-    const drift = universeMotion.reduced ? 0 : t;
-    if (spin.current) spin.current.rotation.y = drift * 0.01;
+    const drift = t;
     for (let i = 0; i < worlds.current.length; i++) {
       const w = worlds.current[i];
       if (!w) continue;
-      // Same orbit math as FocusedSystem, so a world does not jump when the
-      // seat is handed over.
-      const o = visitOrbit(i);
-      const a = o.phase + drift * o.speed;
-      w.position.set(
-        Math.cos(a) * o.radius,
-        Math.sin(a) * o.radius * 0.22,
-        Math.sin(a) * o.radius * 0.6,
-      );
+      // Compact LOD, but with the same phase, clock, and world-axis orbit as
+      // the canonical system that takes over on approach.
+      systemOrbitOffset(i, drift, false, w.position);
       w.scale.setScalar(MINI_SIZE[records[i]!.size] * 0.85);
       w.rotation.y = drift * 0.35;
       // A world appears once its material has been built — a few per frame
@@ -171,7 +162,7 @@ function MemberSystem({
 
   const names = records.map((r) => r.name).slice(0, 2).join(', ');
   return (
-    <group ref={root} position={pos}>
+    <group ref={root} position={pos} name={`member-system-${globalIndex}`}>
       <mesh raycast={() => null}>
         <icosahedronGeometry args={[0.11, 1]} />
         <primitive object={sharedBasicMaterial({ color })} attach="material" />
@@ -191,7 +182,7 @@ function MemberSystem({
             swallow one meant for the neighbouring seat. */}
         <sphereGeometry args={[2.4, 10, 10]} />
       </mesh>
-      <group ref={spin}>
+      <group>
         {orbits.map((l, i) => (
           <primitive key={i} object={l} />
         ))}
@@ -245,6 +236,19 @@ function Galaxy({
       }),
     [],
   );
+  const nearArmMat = useMemo(
+    () =>
+      new PointsMaterial({
+        size: 0.12,
+        sizeAttenuation: true,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
   const coreMat = useMemo(
     () =>
       new PointsMaterial({
@@ -291,8 +295,10 @@ function Galaxy({
     }
     // While a member system is being inspected, the rest of the galaxy
     // lowers its lights so the visited worlds carry the frame.
-    dim.current += ((drilled ? 0.4 : 1) - dim.current) * (1 - Math.exp(-dt * 5));
+    const targetDim = drilled ? 0.18 : visited ? 0.48 : 1;
+    dim.current += (targetDim - dim.current) * (1 - Math.exp(-dt * 5));
     armMat.opacity = baseArm * dim.current;
+    nearArmMat.opacity = visited ? (drilled ? 0.18 : 0.42) : 0;
     coreMat.opacity = 0.85 * dim.current;
     glow.opacity = 0.62 * dim.current;
     // The nucleus can end up right over the visiting camera's shoulder —
@@ -301,20 +307,22 @@ function Galaxy({
   });
 
   return (
-    <group ref={root} position={pos} rotation={GALAXY_TILT}>
-      <group ref={spinner}>
-        <points geometry={arms} material={armMat} raycast={() => null} />
-        <points geometry={core} material={coreMat} raycast={() => null} />
-      </group>
-      <sprite scale={[2.6, 2.6, 1]} raycast={() => null}>
-        <primitive object={glow} attach="material" />
-      </sprite>
-      <mesh raycast={() => null}>
-        <icosahedronGeometry args={[0.22, 1]} />
-        <primitive object={nucMat} attach="material" />
-      </mesh>
-      {/* Whole-disc hit volume; retired while visiting so member stars get the pointer. */}
-      {!visited && (
+    <group ref={root} position={pos} name={`galaxy-${index}`}>
+      <group rotation={GALAXY_TILT}>
+        <group ref={spinner}>
+          <points geometry={arms} material={armMat} raycast={() => null} />
+          <points geometry={arms} material={nearArmMat} raycast={() => null} />
+          <points geometry={core} material={coreMat} raycast={() => null} />
+        </group>
+        <sprite scale={[2.6, 2.6, 1]} raycast={() => null}>
+          <primitive object={glow} attach="material" />
+        </sprite>
+        <mesh raycast={() => null}>
+          <icosahedronGeometry args={[0.22, 1]} />
+          <primitive object={nucMat} attach="material" />
+        </mesh>
+        {/* Whole-disc hit volume; retired while visiting so member stars get the pointer. */}
+        {!visited && (
         <mesh
           visible={false}
           {...visitHandlers(
@@ -325,7 +333,8 @@ function Galaxy({
         >
           <sphereGeometry args={[2.6, 10, 10]} />
         </mesh>
-      )}
+        )}
+      </group>
       {visited &&
         Array.from({ length: C.SYSTEMS_PER_GALAXY }, (_, k) => {
           const gi = index * C.SYSTEMS_PER_GALAXY + k;
@@ -367,15 +376,23 @@ export function Galaxies() {
   const cine = useUiBus((b) => b.activeCinematic);
   const queue = useUiBus((b) => b.cinematicQueue);
   const focus = useUiBus((b) => b.focus);
-  // The galaxy being visited — directly, or via one of its member systems.
-  const visitedGalaxy = !focus
-    ? null
-    : focus.kind === 'galaxy'
+  const flightGalaxy = useUiBus((b) => (b.flightMode ? b.flightNearGalaxy : null));
+  const flightSystem = useUiBus((b) => (b.flightMode ? b.flightNearSystem : null));
+  const focusedSystem = focus && focus.kind !== 'galaxy' ? focusSystemIndex(focus) : null;
+  const flightSystemGalaxy =
+    flightSystem !== null && flightSystem < galaxies * C.SYSTEMS_PER_GALAXY
+      ? Math.floor(flightSystem / C.SYSTEMS_PER_GALAXY)
+      : null;
+  // Map focus and physical flight use the same hierarchy: galaxy interior
+  // first, then one canonical detailed system replacing its compact member.
+  const visitedGalaxy = focus
+    ? focus.kind === 'galaxy'
       ? focus.index
-      : focus.index < galaxies * C.SYSTEMS_PER_GALAXY
-        ? Math.floor(focus.index / C.SYSTEMS_PER_GALAXY)
-        : null;
-  const drilledIndex = focus?.kind === 'system' ? focus.index : null;
+      : focusedSystem !== null && focusedSystem < galaxies * C.SYSTEMS_PER_GALAXY
+        ? Math.floor(focusedSystem / C.SYSTEMS_PER_GALAXY)
+        : null
+    : (flightSystemGalaxy ?? flightGalaxy);
+  const drilledIndex = focusedSystem ?? flightSystem;
   // A galaxy whose formation ceremony is still playing OR still queued
   // hasn't happened on screen yet — it appears when the bloom does.
   const unborn = new Set(

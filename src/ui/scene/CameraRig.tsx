@@ -7,17 +7,18 @@ import { C } from '../../content/constants';
 import {
   BAND_STOPS,
   bandAt,
+  detailWorldRadius,
   focusFraming,
   focusSeat,
   GALAXY_TILT,
   galaxyPosition,
   galaxySeed,
+  heroWorldRadius,
   memberSeatLocal,
   sampleJourney,
   visitWorldAnchor,
 } from './universeLayout';
 import { focusOn, hopSibling, stepFocusOut } from './universe/shared';
-import { universeMotion } from './universe/operationsVisual';
 import { navLive, nudgeOrbit, orbitEngaged, resetOrbit, worldAnchors } from './navControl';
 import {
   applyFlightCamera,
@@ -31,7 +32,6 @@ import {
   stepFlight,
 } from './flightControl';
 import { flightModeKeyIntent, flightPrefs, readPad } from './flightBindings';
-import { MINI_SIZE } from './miniPlanet';
 import * as audio from '../audio/audio';
 
 const CAM = new Vector3();
@@ -57,7 +57,6 @@ const NDC = new Vector2();
 const RAY = new Raycaster();
 const PLANE = new Plane();
 
-const SIZE_SCALE: Record<string, number> = { small: 0.86, medium: 1, large: 1.1, huge: 1.2 };
 
 function smoothstep(x: number): number {
   const k = Math.max(0, Math.min(1, x));
@@ -203,7 +202,7 @@ export function CameraRig() {
     const reg = worldAnchors.get(idx);
     if (reg && reg.lengthSq() > 0) return reg; // written by FocusedSystem
     const st = useGame.getState().s;
-    const t = universeMotion.reduced ? 0 : clockT;
+    const t = clockT;
     return visitWorldAnchor(idx, st.seed, st.run.galaxies, t, V1);
   };
 
@@ -487,7 +486,10 @@ export function CameraRig() {
     (window as unknown as Record<string, unknown>)['__tcCam'] = {
       screenPos: (kind: 'galaxy' | 'system' | 'world', index: number) => {
         const st = useGame.getState().s;
-        const v = focusSeat({ kind, index }, st.seed, st.run.galaxies).project(camera);
+        const point = kind === 'world'
+          ? worldAnchor(index, clockNow.current)
+          : focusSeat({ kind, index }, st.seed, st.run.galaxies);
+        const v = V3.copy(point).project(camera);
         return { x: ((v.x + 1) / 2) * size.width, y: ((1 - v.y) / 2) * size.height, z: v.z };
       },
       orbit: (yaw: number, pitch: number) => {
@@ -506,8 +508,8 @@ export function CameraRig() {
     if (focus.kind === 'world') {
       const rec = st.run.completedPlanets[focus.index];
       const anchor = worldAnchor(focus.index, clockT);
-      const sizeK = rec ? MINI_SIZE[rec.size] * 0.85 : 0.14;
-      const dist = Math.max(0.42, sizeK * 7.2) * dolly.current.v;
+      const sizeK = rec ? detailWorldRadius(rec.size) : 1;
+      const dist = Math.max(4.8, sizeK * 5.4) * dolly.current.v;
       FCAM.copy(anchor).addScaledVector(WORLD_DIR, dist);
       FLOOK.copy(anchor);
       if (!wide) FLOOK.y -= dist * 0.1;
@@ -773,7 +775,7 @@ export function CameraRig() {
     const hy = ((1 - V1.y) / 2) * size.height;
     const zz = clamp((z - 0.5) / 0.5, 0, 1);
     const vortex = 1 - zz * zz * (3 - 2 * zz) * 0.7;
-    const rWorld = 1.34 * (SIZE_SCALE[st.planet.size] ?? 1) * vortex;
+    const rWorld = 1.34 * heroWorldRadius(st.planet.size) * vortex;
     V2.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(rWorld).project(camera);
     const ex = ((V2.x + 1) / 2) * size.width;
     const ey = ((1 - V2.y) / 2) * size.height;

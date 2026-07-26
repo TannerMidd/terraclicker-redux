@@ -1,43 +1,57 @@
 /**
- * Publish the current dist/ to the public playable-build repo (GitHub Pages).
- * Usage: npm run deploy  (builds first, then syncs, commits, pushes)
- *
- * Keeps a shallow working clone in .deploy-pages/ (gitignored). Only build
- * output ships — the source tree never leaves this machine.
+ * Request a GitHub Pages deployment for source that is already committed
+ * and pushed. package.json builds dist/ before this script runs, providing
+ * a local release check without ever replacing the repository with artifacts.
  */
-import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
-const REPO = 'https://github.com/TannerMidd/terraclicker-redux.git';
+const REPO = 'TannerMidd/terraclicker-redux';
 const LIVE = 'https://tannermidd.github.io/terraclicker-redux/';
 const root = process.cwd();
 const dist = path.join(root, 'dist');
-const work = path.join(root, '.deploy-pages');
-const run = (cmd, cwd = work) => execSync(cmd, { cwd, stdio: 'inherit' });
+
+const git = (...args) =>
+  execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+
+const fail = (message) => {
+  console.error(message);
+  process.exit(1);
+};
 
 if (!fs.existsSync(path.join(dist, 'index.html'))) {
-  console.error('dist/index.html missing — run `npm run build` first (or use `npm run deploy`).');
-  process.exit(1);
+  fail('dist/index.html missing — run npm run build first (or use npm run deploy).');
 }
 
-if (!fs.existsSync(work)) run(`git clone --depth 1 "${REPO}" "${work}"`, root);
-else run('git pull --ff-only');
-
-// Wipe everything except the repo plumbing and the README, then lay in dist.
-for (const entry of fs.readdirSync(work)) {
-  if (entry === '.git' || entry === 'README.md') continue;
-  fs.rmSync(path.join(work, entry), { recursive: true, force: true });
+if (git('status', '--porcelain')) {
+  fail('Refusing to deploy a dirty source tree. Commit and push the source first.');
 }
-fs.cpSync(dist, work, { recursive: true });
-fs.writeFileSync(path.join(work, '.nojekyll'), '');
 
-run('git add -A');
-const staged = execSync('git diff --cached --quiet || echo dirty', { cwd: work }).toString();
-if (!staged.includes('dirty')) {
-  console.log('Nothing changed — the universe is already up to date.');
-} else {
-  run(`git commit -m "Deploy build ${new Date().toISOString().slice(0, 16)}Z"`);
-  run('git push');
+let upstream;
+try {
+  upstream = git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}');
+} catch {
+  fail('No upstream branch. Push the source with tracking before deploying.');
 }
-console.log(`\nLive at: ${LIVE} (Pages usually refreshes within a minute)`);
+
+const slash = upstream.indexOf('/');
+if (slash < 1) fail('Could not resolve the upstream branch.');
+const remote = upstream.slice(0, slash);
+const branch = upstream.slice(slash + 1);
+
+execFileSync('git', ['fetch', '--quiet', remote, branch], { cwd: root, stdio: 'inherit' });
+const localHead = git('rev-parse', 'HEAD');
+const remoteHead = git('rev-parse', upstream);
+if (localHead !== remoteHead) {
+  fail('Local HEAD is not the pushed upstream revision. Push the source first.');
+}
+
+execFileSync(
+  'gh',
+  ['workflow', 'run', 'deploy.yml', '--repo', REPO, '--ref', branch],
+  { cwd: root, stdio: 'inherit' },
+);
+
+console.log('Deployment requested for ' + localHead.slice(0, 12) + '.');
+console.log('Live at: ' + LIVE);

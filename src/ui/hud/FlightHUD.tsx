@@ -27,6 +27,7 @@ import * as audio from '../audio/audio';
 import { waypointId } from '../../engine/waypoints';
 import { INFRASTRUCTURE, SHIP_ROLES, type InfrastructureDef } from '../../content/loadouts';
 import { ATTENDANCE_SALVAGE, attendable } from '../../engine/bridge';
+import { C } from '../../content/constants';
 
 /** How the console describes your velocity, in ascending order of pride. */
 function speedLabel(frac: number, boosting: boolean, station: boolean): string {
@@ -635,19 +636,44 @@ function FlightHUDInner() {
       if (pct.current) pct.current.textContent = `${Math.round(Math.min(1.6, frac) * 100)}%`;
       if (loc.current) {
         let line: string;
-        if (f.beyond) {
+        const bus = useUiBus.getState();
+        const game = useGame.getState().s;
+        const system = bus.flightNearSystem;
+        const world = bus.flightNearWorld;
+        const systemGalaxy =
+          system !== null && system < game.run.galaxies * C.SYSTEMS_PER_GALAXY
+            ? Math.floor(system / C.SYSTEMS_PER_GALAXY)
+            : null;
+        const inferredGalaxy = systemGalaxy ?? bus.flightNearGalaxy;
+        if (inferredGalaxy !== null || system !== null || world !== null) {
+          const hierarchy = ['DEEP SPACE'];
+          if (inferredGalaxy !== null) hierarchy.push('GALAXY ' + (inferredGalaxy + 1));
+          if (system !== null) {
+            const localSystem = inferredGalaxy !== null
+              ? system % C.SYSTEMS_PER_GALAXY
+              : system;
+            hierarchy.push('SYSTEM ' + (localSystem + 1));
+          }
+          if (world !== null) {
+            hierarchy.push(game.run.completedPlanets[world]?.name ?? ('WORLD ' + (world + 1)));
+          }
+          line = hierarchy.join(' › ');
+          if (world !== null && f.altitude < ALTITUDE_RANGE) {
+            line += ' · ALT ' + f.altitude.toFixed(2);
+          }
+        } else if (f.beyond) {
           line = 'beyond the shipping lanes — there is nothing further out except more nothing';
         } else if (f.altitude < ALTITUDE_RANGE) {
           // Close to something solid: height above ITS surface says far more
           // about scale than a distance from the middle of the universe does.
-          line = `${f.altitudeOf} · altitude ${f.altitude.toFixed(2)}`;
+          line = f.altitudeOf + ' · altitude ' + f.altitude.toFixed(2);
         } else {
           const region = BAND_LABELS[zoomLive.band] ?? 'space';
           const near = f.nearest;
           line = near
             ? near.d <= OFF_RANGE[near.kind]
-              ? `${region} · holding off ${near.label}`
-              : `${region} · nearest: ${near.label}`
+              ? region + ' · holding off ' + near.label
+              : region + ' · nearest: ' + near.label
             : region;
         }
         if (loc.current.textContent !== line) loc.current.textContent = line;

@@ -13,7 +13,7 @@ import {
   Vector3,
 } from 'three/webgpu';
 import { useGame } from '../../../state/store';
-import { zoomLive } from '../../fx/uiBus';
+import { useUiBus, zoomLive } from '../../fx/uiBus';
 import { cosmicWeb } from '../universeLayout';
 import { makeGlowSprite } from './shared';
 
@@ -27,6 +27,9 @@ import { makeGlowSprite } from './shared';
 export function CosmicWeb() {
   const masterSeed = useGame((g) => g.s.seed);
   const litCount = useGame((g) => Math.max(g.s.lifetime.galaxies, g.s.run.galaxies));
+  const localFlight = useUiBus(
+    (b) => b.flightMode && (b.flightNearGalaxy !== null || b.flightNearSystem !== null),
+  );
 
   const web = useMemo(() => cosmicWeb(masterSeed), [masterSeed]);
 
@@ -126,16 +129,18 @@ export function CosmicWeb() {
     const z = zoomLive.v;
     const reveal = Math.max(0, Math.min(1, (z - 0.55) / 0.3));
     const r = reveal * reveal;
-    filamentMat.opacity = r * 0.42;
-    unlitMat.opacity = r * 0.5;
-    litMat.opacity = Math.min(1, r * 1.4);
-    litGlowMat.opacity = r * 0.5;
+    const localFade = localFlight ? 0.12 : 1;
+    filamentMat.opacity = r * 0.42 * localFade;
+    unlitMat.opacity = r * 0.5 * localFade;
+    litMat.opacity = Math.min(1, r * 1.4) * localFade;
+    litGlowMat.opacity = r * 0.5 * localFade;
     const m = marker.current;
     if (m) {
       m.quaternion.copy(state.camera.quaternion);
       const pulse = 1 + Math.sin(state.clock.elapsedTime * 1.7) * 0.18;
       m.scale.setScalar(pulse);
-      markerMat.opacity = Math.max(0, (z - 0.8) / 0.2) * (0.5 + Math.sin(state.clock.elapsedTime * 1.7) * 0.2);
+      markerMat.opacity = Math.max(0, (z - 0.8) / 0.2)
+        * (0.5 + Math.sin(state.clock.elapsedTime * 1.7) * 0.2) * localFade;
     }
     if (root.current) root.current.visible = z > 0.35;
   });

@@ -18,15 +18,26 @@ import {
   BAND_DISTANCES,
   BAND_STOPS,
   CURRENT_SYSTEM_ANCHOR,
-  MINI_SIZE,
-  SYSTEM_R,
+  GALAXY_REVEAL_FAR,
+  GALAXY_REVEAL_NEAR,
+  GALAXY_R,
+  SYSTEM_ORBIT_Y,
+  SYSTEM_ORBIT_Z,
+  SYSTEM_REVEAL_FAR,
+  SYSTEM_REVEAL_NEAR,
+  SYSTEM_DETAIL_R,
+  SYSTEM_STAR_SHELL,
   WEB_R,
   bandAt,
+  detailWorldRadius,
+  detailWorldShell,
   focusSeat,
   galaxyPosition,
   heroMoons,
+  heroWorldRadius,
+  heroWorldShell,
   orbitSlot,
-  visitOrbit,
+  systemOrbitOffset,
 } from './universeLayout';
 import {
   boardRange,
@@ -117,11 +128,9 @@ const STEER_DEADZONE = 0.1;
 const SOFT_WALL = WEB_R * 1.35; // beyond this, space politely pushes back
 const HARD_WALL = WEB_R * 1.7;
 const SCAN_EVERY = 0.2; // landmark + modal sweep cadence (s)
+const REVEAL_HANDOFF_MARGIN = 0.08;
 /** How long a lock may flicker out before the sweep it held is written off. */
 const SCAN_GRACE = 0.7;
-/** Fly this close to a formed system and its worlds materialize. */
-const SYSTEM_NEAR = SYSTEM_R * 3.2;
-const SYSTEM_FAR = SYSTEM_R * 4; // hysteresis so discs don't flicker at the border
 
 export const FLIGHT_FOV_BASE = 42;
 
@@ -138,13 +147,8 @@ export const FLIGHT_FOV_BASE = 42;
  * Galaxies are deliberately absent: they are mostly empty space and flying
  * through one is correct.
  */
-const HERO_SHELL = 1.14; // clear of the tallest terrain, close enough to skim it
-const ASSEMBLING_STAR_SHELL = 1.6;
-const SYSTEM_STAR_SHELL = 2.2;
-/** Collision shell of a settled world, as a multiple of its drawn radius. */
-const WORLD_SHELL = 1.35;
-/** Collision shell of a moon, as a multiple of its drawn radius. */
-const MOON_SHELL = 1.6;
+/** Collision shell of a moon, as a multiple of its actual rendered radius. */
+const MOON_SHELL = 1.12;
 
 /**
  * The approach governor, and the single biggest lever on how big a planet
@@ -175,7 +179,7 @@ export interface FlightBody {
   radius: number;
   /**
    * Present for anything that orbits. General enough for both shapes in the
-   * scene: settled worlds (a flattened ellipse) and the hero planet's moons
+   * scene: settled worlds (a tilted circle) and the hero planet's moons
    * (a circle with a slow vertical wobble).
    */
   orbit: {
@@ -189,9 +193,9 @@ export interface FlightBody {
   } | null;
 }
 
-/** The flattened ellipse every settled world rides. */
+/** The tilted circle every settled world rides. */
 function worldOrbit(r: number, phase: number, speed: number): FlightBody['orbit'] {
-  return { xAmp: r, yAmp: r * 0.22, zAmp: r * 0.6, yFreq: 1, phase, speed };
+  return { xAmp: r, yAmp: r * SYSTEM_ORBIT_Y, zAmp: r * SYSTEM_ORBIT_Z, yFreq: 1, phase, speed };
 }
 
 const bodies: FlightBody[] = [];
@@ -400,6 +404,10 @@ const FWD = new Vector3();
 const RIGHT = new Vector3();
 const DESIRED = new Vector3();
 const TMP = new Vector3();
+const HIERARCHY_GALAXY_SEAT = new Vector3();
+const HIERARCHY_SYSTEM_SEAT = new Vector3();
+let hierarchyGalaxySeatValid = false;
+let hierarchySystemSeatValid = false;
 const CAMERA_DESIRED = new Vector3();
 const CAMERA_BODY = new Vector3();
 const CAMERA_NORMAL = new Vector3();
@@ -423,6 +431,68 @@ export function zoomForDistance(dist: number): number {
 /** Speed cap at a given distance from home (before boost). */
 export function speedCapAt(dist: number): number {
   return Math.min(CAP_MAX, BASE_CAP + dist * DIST_K);
+}
+
+/**
+ * Select the nearest reveal while retaining enter/exit hysteresis.
+ *
+ * The current target remains mounted inside its wider exit volume, but an
+ * overlapping target may take over once it is nearer by a small margin. That
+ * margin prevents boundary noise without making the first target sticky.
+ */
+export function selectRevealCandidate(
+  current: number | null,
+  currentDistance: number,
+  currentFar: number,
+  nearest: number | null,
+  nearestDistance: number,
+  nearestNear: number,
+  marginRatio = REVEAL_HANDOFF_MARGIN,
+): number | null {
+  const currentValid = current !== null && currentDistance <= currentFar;
+  const nearestValid = nearest !== null && nearestDistance <= nearestNear;
+  if (!currentValid) return nearestValid ? nearest : null;
+  if (!nearestValid || nearest === current) return current;
+  const margin = Math.max(0, Math.min(currentFar, nearestNear) * marginRatio);
+  return nearestDistance + margin < currentDistance ? nearest : current;
+}
+
+/**
+ * A revealed member system owns the galaxy context. Sensor volumes overlap,
+ * so an independently nearer galaxy must not mount around the wrong system.
+ */
+export function parentGalaxyReveal(
+  systemIndex: number | null,
+  galaxyCount: number,
+  fallback: number | null,
+): number | null {
+  if (systemIndex === null || systemIndex < 0) return fallback;
+  if (systemIndex >= galaxyCount * C.SYSTEMS_PER_GALAXY) return fallback;
+  return Math.floor(systemIndex / C.SYSTEMS_PER_GALAXY);
+}
+
+/**
+ * Smoothly lowers the cruise ceiling while large hierarchy layers resolve.
+ * Candidate seats are refreshed by the 5 Hz surroundings scan; the 60 Hz
+ * physics path only measures two preallocated vectors.
+ */
+function hierarchyApproachCap(): number {
+  let cap = Infinity;
+  const easedCap = (distance: number, inner: number, outer: number, innerCap: number, outerCap: number) => {
+    if (distance >= outer) return Infinity;
+    const u = Math.max(0, Math.min(1, (distance - inner) / Math.max(1e-3, outer - inner)));
+    const smooth = u * u * (3 - 2 * u);
+    return innerCap + (outerCap - innerCap) * smooth;
+  };
+  if (hierarchyGalaxySeatValid) {
+    const distance = flightLive.pos.distanceTo(HIERARCHY_GALAXY_SEAT);
+    cap = Math.min(cap, easedCap(distance, GALAXY_R * 1.4, GALAXY_R * 3.2, 32, 80));
+  }
+  if (hierarchySystemSeatValid) {
+    const distance = flightLive.pos.distanceTo(HIERARCHY_SYSTEM_SEAT);
+    cap = Math.min(cap, easedCap(distance, SYSTEM_DETAIL_R * 1.1, SYSTEM_REVEAL_FAR, 6, 18));
+  }
+  return cap;
 }
 
 /** Steering curve: dead zone, then quadratic response for fine aim. */
@@ -527,6 +597,8 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.autopilotPhase = 'off';
   autopilotTargetKey = '';
   scanLostFor = 0;
+  hierarchyGalaxySeatValid = false;
+  hierarchySystemSeatValid = false;
   f.altitude = Infinity;
   f.altitudeOf = '';
   f.nearRadius = 0;
@@ -612,8 +684,10 @@ export function stepFlight(dt: number, t: number): void {
   FWD.set(0, 0, -1).applyQuaternion(Q);
   RIGHT.set(1, 0, 0).applyQuaternion(Q);
   const dist = f.pos.length();
-  const expedition = useGame.getState().s.expedition;
+  const gameState = useGame.getState().s;
+  const expedition = gameState.expedition;
   const rangeCap = speedCapAt(dist) * thrustMult(expedition);
+  const hierarchyCap = hierarchyApproachCap();
   /**
    * The approach governor. Range alone set the ceiling before, so a star
    * fifteen units from home was approached at the same speed as open space
@@ -636,7 +710,7 @@ export function stepFlight(dt: number, t: number): void {
   const near01 = Math.min(1, bodyDist / vicinity);
   const relax = 1 + near01 * near01 * near01 * near01 * 40;
   const approachCap = Math.max(SURFACE_CAP, OMEGA_MAX * bodyDist * relax);
-  f.cap = Math.min(rangeCap, approachCap);
+  f.cap = Math.min(rangeCap, approachCap, hierarchyCap);
   const boosting = (autopilot?.boost ?? input.boost) && authority > 0;
   f.boostBlend += ((boosting ? 1 : 0) - f.boostBlend) * (1 - Math.exp(-dt * 4));
   const cap = Math.min(
@@ -646,6 +720,7 @@ export function stepFlight(dt: number, t: number): void {
       // to fly into.
       * loadoutEffects(useGame.getState().s.expedition).speed,
     approachCap,
+    hierarchyCap,
   );
 
   /**
@@ -1175,57 +1250,133 @@ function scanSurroundings(): void {
   consider(TMP.set(0, 0, 0), st.planet.name, 'planet', 1.6);
   consider(CURRENT_SYSTEM_ANCHOR, `system ${st.run.systems + 1}, assembling`, 'assembling', 1.4);
 
+  const bus = useUiBus.getState();
+  const currentSystem = bus.flightNearSystem;
+  const currentGalaxy = bus.flightNearGalaxy;
   let nearSystem = -1;
   let nearSystemD = Infinity;
+  let currentSystemD = Infinity;
+  hierarchySystemSeatValid = false;
   for (let i = 0; i < st.run.systems; i++) {
     const seat = focusSeat({ kind: 'system', index: i }, st.seed, st.run.galaxies);
     consider(seat, `system ${i + 1}`, 'system', 1.4);
     const d = f.pos.distanceTo(seat);
+    if (i === currentSystem) currentSystemD = d;
     if (d < nearSystemD) {
       nearSystemD = d;
       nearSystem = i;
+      HIERARCHY_SYSTEM_SEAT.copy(seat);
+      hierarchySystemSeatValid = true;
     }
   }
+  let nearGalaxy = -1;
+  let nearGalaxyD = Infinity;
+  let currentGalaxyD = Infinity;
+  hierarchyGalaxySeatValid = false;
   for (let i = 0; i < st.run.galaxies; i++) {
-    consider(galaxyPosition(i, st.seed), `galaxy ${i + 1}`, 'galaxy', 4.5);
+    const seat = galaxyPosition(i, st.seed);
+    consider(seat, `galaxy ${i + 1}`, 'galaxy', 4.5);
+    const d = f.pos.distanceTo(seat);
+    if (i === currentGalaxy) currentGalaxyD = d;
+    if (d < nearGalaxyD) {
+      nearGalaxyD = d;
+      nearGalaxy = i;
+      HIERARCHY_GALAXY_SEAT.copy(seat);
+      hierarchyGalaxySeatValid = true;
+    }
   }
   f.nearest = bestScore < 4 ? best : null;
 
-  // Near-system reveal, with hysteresis: approach and the worlds come back.
-  const bus = useUiBus.getState();
-  const current = bus.flightNearSystem;
-  let next = current;
-  if (current !== null) {
-    const seat = focusSeat({ kind: 'system', index: current }, st.seed, st.run.galaxies);
-    if (f.pos.distanceTo(seat) > SYSTEM_FAR || current >= st.run.systems) next = null;
+  // Hysteretic LOD handoffs with an overlap margin. The current hierarchy
+  // remains stable at a boundary, but cannot hold a clearly nearer sibling.
+  const nextSystem = selectRevealCandidate(
+    currentSystem,
+    currentSystemD,
+    SYSTEM_REVEAL_FAR,
+    nearSystem >= 0 ? nearSystem : null,
+    nearSystemD,
+    SYSTEM_REVEAL_NEAR,
+  );
+  if (nextSystem !== currentSystem) bus.setFlightNearSystem(nextSystem);
+
+  const independentGalaxy = selectRevealCandidate(
+    currentGalaxy,
+    currentGalaxyD,
+    GALAXY_REVEAL_FAR,
+    nearGalaxy >= 0 ? nearGalaxy : null,
+    nearGalaxyD,
+    GALAXY_REVEAL_NEAR,
+  );
+  const nextGalaxy = parentGalaxyReveal(nextSystem, st.run.galaxies, independentGalaxy);
+  if (nextGalaxy !== currentGalaxy) bus.setFlightNearGalaxy(nextGalaxy);
+
+  // Planet detail has its own radius-relative hysteresis. It is deliberately
+  // keyed to the canonical orbit, so surface life appears where navigation
+  // and collision already say the world is.
+  const currentWorld = bus.flightNearWorld;
+  let nextWorld: number | null = null;
+  if (nextSystem !== null) {
+    const first = nextSystem * C.PLANETS_PER_SYSTEM;
+    const seat = focusSeat({ kind: 'system', index: nextSystem }, st.seed, st.run.galaxies);
+    let currentWorldD = Infinity;
+    let currentWorldFar = 0;
+    let nearestWorld: number | null = null;
+    let nearestWorldD = Infinity;
+    let nearestWorldNear = 0;
+    for (let slot = 0; slot < C.PLANETS_PER_SYSTEM; slot++) {
+      const worldIndex = first + slot;
+      const record = st.run.completedPlanets[worldIndex];
+      if (!record) continue;
+      systemOrbitOffset(slot, f.clock, true, TMP);
+      const distance = f.pos.distanceTo(TMP.add(seat));
+      const shell = detailWorldShell(record.size);
+      if (worldIndex === currentWorld) {
+        currentWorldD = distance;
+        currentWorldFar = shell * 8;
+      }
+      const enter = shell * 6;
+      if (distance <= enter && distance < nearestWorldD) {
+        nearestWorld = worldIndex;
+        nearestWorldD = distance;
+        nearestWorldNear = enter;
+      }
+    }
+    nextWorld = selectRevealCandidate(
+      currentWorld,
+      currentWorldD,
+      currentWorldFar,
+      nearestWorld,
+      nearestWorldD,
+      nearestWorldNear,
+    );
   }
-  if (next === null && nearSystem >= 0 && nearSystemD <= SYSTEM_NEAR) next = nearSystem;
-  if (next !== current) bus.setFlightNearSystem(next);
+  if (nextWorld !== currentWorld) bus.setFlightNearWorld(nextWorld);
 
   // The solid bodies. Seats are rebuilt on the housekeeping cadence; anything
-  // that orbits carries its ellipse and is evaluated per frame.
+  // that orbits carries its orbit definition and is evaluated per frame.
   //
   // EVERY WORLD BELONGS HERE, not just the stars. Covering the hero planet
   // and the system stars alone left the actual planets — the ones orbiting
   // your assembling system, the ones in a system you have flown up to —
   // as ghosts you sailed straight through.
   let n = 0;
-  pushBody(n++, st.planet.name, TMP.set(0, 0, 0), HERO_SHELL);
+  const heroScale = heroWorldRadius(st.planet.size);
+  pushBody(n++, st.planet.name, TMP.set(0, 0, 0), heroWorldShell(st.planet.size));
 
-  // The hero planet's moons. Small, but visibly small PLANETS — sailing
-  // through one is the same offence as sailing through the world itself.
+  // The moon meshes inherit the hero world's scale; their physical orbits and
+  // shells must inherit it too.
   for (const m of heroMoons(st.planet.seed, st.planet.lifetimeIndex === 42)) {
-    pushBody(n++, 'the moon', TMP.set(0, 0, 0), m.size * MOON_SHELL, {
-      xAmp: m.orbit,
-      yAmp: m.tilt,
-      zAmp: m.orbit,
+    pushBody(n++, 'the moon', TMP.set(0, 0, 0), m.size * heroScale * MOON_SHELL, {
+      xAmp: m.orbit * heroScale,
+      yAmp: m.tilt * heroScale,
+      zAmp: m.orbit * heroScale,
       yFreq: 0.7,
       phase: m.phase,
       speed: m.speed,
     });
   }
 
-  pushBody(n++, `system ${st.run.systems + 1}`, CURRENT_SYSTEM_ANCHOR, ASSEMBLING_STAR_SHELL);
+  pushBody(n++, `system ${st.run.systems + 1}`, CURRENT_SYSTEM_ANCHOR, SYSTEM_STAR_SHELL);
 
   const inSystem = st.run.completedPlanets.slice(st.run.systems * C.PLANETS_PER_SYSTEM);
   for (let i = 0; i < inSystem.length; i++) {
@@ -1235,7 +1386,7 @@ function scanSurroundings(): void {
       n++,
       record.name,
       CURRENT_SYSTEM_ANCHOR,
-      MINI_SIZE[record.size] * WORLD_SHELL,
+      detailWorldShell(record.size),
       worldOrbit(o.radius, o.phase, o.speed),
     );
   }
@@ -1249,10 +1400,6 @@ function scanSurroundings(): void {
     );
   }
 
-  // Whichever system has its worlds on screen is solid too. This mirrors
-  // FocusedSystem's own rule exactly — proximity in flight, OR a system you
-  // visited from the map and then took the helm inside. Matching only the
-  // first left the second case as ghosts.
   const uiBus = useUiBus.getState();
   const focused = uiBus.focus;
   const revealed =
@@ -1268,12 +1415,12 @@ function scanSurroundings(): void {
     const worlds = st.run.completedPlanets.slice(first, first + C.PLANETS_PER_SYSTEM);
     for (let i = 0; i < worlds.length; i++) {
       const record = worlds[i]!;
-      const o = visitOrbit(i);
+      const o = orbitSlot(i);
       pushBody(
         n++,
         record.name,
         seat,
-        MINI_SIZE[record.size] * WORLD_SHELL,
+        detailWorldShell(record.size),
         worldOrbit(o.radius, o.phase, o.speed),
       );
     }
@@ -1307,9 +1454,8 @@ let arrivalLatch: string | null = null;
  * does not draw, which is the correct behaviour for a chart that is honest
  * about being provisional.
  *
- * Resolution runs at the 5Hz sweep because orbits crawl; the *bearing* is
- * solved every frame in stepFlight, because it has to track the ship's own
- * rotation and a compass that updates five times a second is worse than none.
+ * Route identity refreshes on the 5Hz sweep. Moving positions and bearing are
+ * resolved every frame, so the ribbon and autopilot share the world on screen.
  */
 function resolveNavTarget(st: ReturnType<typeof useGame.getState>['s']): void {
   const f = flightLive;
@@ -1329,7 +1475,7 @@ function resolveNavTarget(st: ReturnType<typeof useGame.getState>['s']): void {
   }
   navTargetValid = true;
   f.navLabel = pin.label;
-  f.navArrivalRadius = arrivalRadiusFor(pin.ref);
+  f.navArrivalRadius = arrivalRadiusFor(st, pin.ref);
   navBrakeRate = RESP_BRAKE / massFactor(st.expedition);
 }
 
@@ -1338,6 +1484,16 @@ function solveNavThisFrame(): void {
   const f = flightLive;
   if (!navTargetValid) {
     f.nav = null;
+    return;
+  }
+  // Worlds orbit continuously. Resolve the pinned address every frame so the
+  // ribbon and course hold pursue the world that is actually on screen.
+  const st = useGame.getState().s;
+  const livePin = pinnedWaypoint(st);
+  if (!livePin || !resolveWaypoint(st, livePin.ref, NAV_POS)) {
+    navTargetValid = false;
+    f.nav = null;
+    if (f.courseHold) disengageAutopilot('missing');
     return;
   }
   NAV_POS_T[0] = NAV_POS.x;
@@ -1371,7 +1527,7 @@ function solveNavThisFrame(): void {
   // Arriving records the latest physical approach. The release radius prevents
   // a parked ship from rewriting the timestamp every frame.
   const pin = useGame.getState().s.expedition.pinned;
-  if (f.nav.distance <= ARRIVED_RANGE && pin) {
+  if (f.nav.distance <= f.navArrivalRadius && pin) {
     if (arrivalLatch !== pin) {
       // A request names a real place. Reaching its pinned world is the answer:
       // refresh the physical-visit timestamp, then file every open request from
@@ -1382,14 +1538,10 @@ function solveNavThisFrame(): void {
       for (const request of requests) actions.attendInPerson(request.uid);
       arrivalLatch = pin;
     }
-  } else if (f.nav.distance >= ARRIVED_RELEASE_RANGE) {
+  } else if (f.nav.distance >= f.navArrivalRadius + 4) {
     arrivalLatch = null;
   }
 }
-
-/** Close enough to count as having been there, with hysteresis on departure. */
-const ARRIVED_RANGE = 8;
-const ARRIVED_RELEASE_RANGE = 12;
 
 function manualOverrideRequested(): boolean {
   const input = flightInput;
@@ -1453,16 +1605,20 @@ function disengageAutopilot(reason: AutopilotStop): void {
   }
 }
 
-function arrivalRadiusFor(ref: WaypointRef): number {
-  if (ref.at === 'home') return 4.5;
+function arrivalRadiusFor(
+  st: ReturnType<typeof useGame.getState>['s'],
+  ref: WaypointRef,
+): number {
+  if (ref.at === 'home') return Math.max(3.5, heroWorldRadius(st.planet.size) * 2.2);
   if (ref.at === 'point') return 4;
   if (ref.at === 'site') {
-    const site = sitesForSeed(useGame.getState().s.seed).find((candidate) => candidate.def.id === ref.id);
+    const site = sitesForSeed(st.seed).find((candidate) => candidate.def.id === ref.id);
     return site ? Math.max(3, boardRange(site.def.radius) - 0.2) : 4;
   }
   if (ref.kind === 'galaxy') return 24;
-  if (ref.kind === 'system') return 7;
-  return 5;
+  if (ref.kind === 'system') return SYSTEM_STAR_SHELL + 1.5;
+  const record = st.run.completedPlanets[ref.index];
+  return record ? Math.max(2.4, detailWorldRadius(record.size) * 2.2) : 2.5;
 }
 
 /** Position of the currently resolved objective, for the in-scene beacon. */
@@ -1609,7 +1765,7 @@ export function helmChart(limit = 60): HelmChartEntry[] {
 }
 
 /** Turn a structural `WaypointRef` into a position in flight space. */
-function resolveWaypoint(
+export function resolveWaypoint(
   st: ReturnType<typeof useGame.getState>['s'],
   ref: WaypointRef,
   out: Vector3,
@@ -1649,7 +1805,7 @@ function resolveWaypoint(
     return true;
   }
   out.copy(focusSeat({ kind: 'system', index: systemIndex }, st.seed, st.run.galaxies));
-  const o = visitOrbit(slot);
+  const o = orbitSlot(slot);
   applyOrbit(out, worldOrbit(o.radius, o.phase, o.speed), flightLive.clock);
   return true;
 }
@@ -1662,9 +1818,6 @@ function applyOrbit(out: Vector3, orbit: FlightBody['orbit'], t: number): void {
   out.y += Math.sin(a * orbit.yFreq) * orbit.yAmp;
   out.z += Math.sin(a) * orbit.zAmp;
 }
-
-/** How close counts as arrived at a destination world. */
-const DELIVER_RANGE = 6;
 
 /**
  * Delivery. Fly the manifest to the world it is addressed to and it is
@@ -1686,7 +1839,7 @@ function stepManifest(st: ReturnType<typeof useGame.getState>['s']): void {
   for (const body of bodies) {
     if (body.label !== target) continue;
     bodyPosition(body, f.clock, TMP);
-    if (TMP.distanceTo(f.pos) <= DELIVER_RANGE + body.radius) {
+    if (TMP.distanceTo(f.pos) <= Math.max(2.4, body.radius * 2)) {
       if (waiting) actions.pickUpManifest();
       else actions.deliverManifest();
       return;
@@ -2238,7 +2391,10 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       pitch: flightLive.pitch,
       speed: flightLive.speed,
       nearest: flightLive.nearest,
+      nearGalaxy: useUiBus.getState().flightNearGalaxy,
       nearSystem: useUiBus.getState().flightNearSystem,
+      nearWorld: useUiBus.getState().flightNearWorld,
+      clock: flightLive.clock,
       contacts: flightLive.contacts,
       locked: flightLive.locked,
       scanProgress: flightLive.scanProgress,
@@ -2246,6 +2402,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       prompt: flightLive.prompt,
       station: flightLive.station,
       nav: flightLive.nav,
+      navTarget: navTargetValid ? NAV_POS.toArray() : null,
       navLabel: flightLive.navLabel,
       autopilot: flightLive.courseHold,
       autopilotPhase: flightLive.autopilotPhase,

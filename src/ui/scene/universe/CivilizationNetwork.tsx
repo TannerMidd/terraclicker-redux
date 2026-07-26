@@ -217,6 +217,10 @@ function NetworkPulses({
  */
 export function CivilizationNetwork() {
   const flight = useUiBus((bus) => bus.flightMode);
+  const localFlight = useUiBus(
+    (bus) => bus.flightMode
+      && (bus.flightNearGalaxy !== null || bus.flightNearSystem !== null),
+  );
   const rev = useGame((game) => game.rev);
   void rev;
   const { s } = useGame.getState();
@@ -292,7 +296,9 @@ export function CivilizationNetwork() {
     // Flight clears map focus and may begin from a low zoom band. Keep the
     // civilization the player built legible at the helm instead of allowing
     // that mode change to turn every lane and trade pulse off.
-    const reveal = flight ? Math.max(0.62, mapReveal) : mapReveal;
+    const reveal = flight
+      ? localFlight ? Math.max(0.14, mapReveal * 0.28) : Math.max(0.62, mapReveal)
+      : mapReveal;
     lineMaterial.opacity = reveal * (flight ? 0.36 : 0.28);
     haloMaterial.opacity = reveal * (flight ? 0.28 : 0.22);
     pulseMaterial.opacity = reveal * 0.92;

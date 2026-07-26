@@ -86,6 +86,13 @@ interface UiBus {
    * landmark sweep with hysteresis; only meaningful while flightMode is on.
    */
   flightNearSystem: number | null;
+  /**
+   * The formed galaxy whose internal member systems are resolved for flight.
+   * Written by the same hysteretic sweep as flightNearSystem.
+   */
+  flightNearGalaxy: number | null;
+  /** The formed world close enough to receive hero-grade surface detail. */
+  flightNearWorld: number | null;
   addToast: (t: Omit<Toast, 'id'>) => void;
   addFloat: (x: number, y: number, text: string) => void;
   punch: () => void;
@@ -118,6 +125,8 @@ interface UiBus {
   coldOpenDismissed: boolean;
   dismissColdOpen: () => void;
   setFlightNearSystem: (index: number | null) => void;
+  setFlightNearGalaxy: (index: number | null) => void;
+  setFlightNearWorld: (index: number | null) => void;
 }
 
 let nextId = 1;
@@ -172,6 +181,8 @@ export const useUiBus = create<UiBus>((set) => ({
   },
   flightMode: false,
   flightNearSystem: null,
+  flightNearGalaxy: null,
+  flightNearWorld: null,
   dockRequest: null,
   setDockTab: (tab) => set({ dockRequest: tab }),
   clearDockRequest: () => set({ dockRequest: null }),
@@ -180,9 +191,26 @@ export const useUiBus = create<UiBus>((set) => ({
   setFlightMode: (on) => {
     if (typeof document !== 'undefined') document.body.style.cursor = '';
     // Taking the helm releases any visit; handing it back clears the reveal.
-    set(on ? { flightMode: true, focus: null, inspect: null } : { flightMode: false, flightNearSystem: null, inspect: null });
+    set(on
+      ? {
+          flightMode: true,
+          focus: null,
+          flightNearSystem: null,
+          flightNearGalaxy: null,
+          flightNearWorld: null,
+          inspect: null,
+        }
+      : {
+          flightMode: false,
+          flightNearSystem: null,
+          flightNearGalaxy: null,
+          flightNearWorld: null,
+          inspect: null,
+        });
   },
   setFlightNearSystem: (index) => set({ flightNearSystem: index }),
+  setFlightNearGalaxy: (index) => set({ flightNearGalaxy: index }),
+  setFlightNearWorld: (index) => set({ flightNearWorld: index }),
 }));
 
 // Dev hook for headless verification of camera/cinematic plumbing.

@@ -194,6 +194,7 @@ export function SystemGlyphs() {
   const cine = useUiBus((b) => b.activeCinematic);
   const queue = useUiBus((b) => b.cinematicQueue);
   const focus = useUiBus((b) => b.focus);
+  const flightSystem = useUiBus((b) => (b.flightMode ? b.flightNearSystem : null));
   const { s } = useGame.getState();
   const systems = s.run.systems;
   // Systems consumed by a galaxy whose ceremony is still QUEUED remain in
@@ -217,6 +218,7 @@ export function SystemGlyphs() {
     // full FocusedSystem view — otherwise the close-up camera stands inside
     // the marker ring.
     if (focus && focus.kind !== 'galaxy' && focusSystemIndex(focus) === i) continue;
+    if (flightSystem === i) continue;
     glyphs.push({
       index: i,
       records: s.run.completedPlanets.slice(
