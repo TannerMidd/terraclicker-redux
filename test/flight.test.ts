@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Vector3 } from 'three/webgpu';
+import { PerspectiveCamera, Vector3 } from 'three/webgpu';
 import {
+  applyFlightCamera,
   beginFlightAt,
   bodyPosition,
   endFlight,
   flightBodies,
   flightInput,
   flightLive,
+  setFlightCameraMode,
   speedCapAt,
   stepFlight,
   zoomForDistance,
@@ -95,6 +97,70 @@ describe('flight mode (the company runabout)', () => {
       expect(z).toBeGreaterThanOrEqual(prev - 1e-9);
       prev = z;
     }
+  });
+
+  it('switches to a stable chase lens without moving the ship or navigator', () => {
+    const start = new Vector3(150, 40, 80);
+    beginFlightAt(start, 0, 0);
+    setFlightCameraMode('cockpit');
+    const camera = new PerspectiveCamera(42, 1, 0.02, 3200);
+    applyFlightCamera(camera, 1 / 60);
+    expect(camera.position.toArray()).toEqual(start.toArray());
+
+    flightLive.vel.set(0.25, 0, -0.5);
+    flightLive.courseHold = true;
+    const positionBefore = flightLive.pos.clone();
+    const velocityBefore = flightLive.vel.clone();
+
+    setFlightCameraMode('chase');
+    applyFlightCamera(camera, 1 / 60);
+    expect(camera.position.y).toBeGreaterThan(flightLive.pos.y);
+    expect(camera.position.z).toBeGreaterThan(flightLive.pos.z);
+    expect(camera.fov).toBeGreaterThan(42);
+    expect(flightLive.pos.toArray()).toEqual(positionBefore.toArray());
+    expect(flightLive.vel.toArray()).toEqual(velocityBefore.toArray());
+    expect(flightLive.courseHold).toBe(true);
+
+    const direction = new Vector3();
+    camera.getWorldDirection(direction);
+    expect(direction.z).toBeLessThan(-0.99);
+
+    setFlightCameraMode('cockpit');
+    applyFlightCamera(camera, 1 / 60);
+    expect(camera.position.toArray()).toEqual(positionBefore.toArray());
+  });
+
+  it('keeps the chase lens outside both a surface and the runabout hull', () => {
+    beginFlightAt(new Vector3(0, 0, 1.2), Math.PI, 0);
+    stepFlight(0, 0);
+
+    const hero = flightBodies()[0]!;
+    expect(hero).toBeDefined();
+
+    flightLive.pos.set(0, 0, hero.radius + 0.02);
+    flightLive.yaw = Math.PI;
+    flightLive.pitch = 0;
+    setFlightCameraMode('chase');
+    const camera = new PerspectiveCamera(42, 16 / 9, 0.02, 3200);
+    applyFlightCamera(camera, 1 / 60);
+
+    const center = bodyPosition(hero, flightLive.clock, new Vector3());
+    const boom = camera.position.clone().sub(flightLive.pos);
+    const outward = new Vector3(0, 0, 1);
+    expect(camera.position.distanceTo(center)).toBeGreaterThan(hero.radius + 0.049);
+    expect(boom.dot(outward)).toBeLessThanOrEqual(1e-6);
+    expect(boom.length()).toBeGreaterThan(0.3);
+
+    const gaze = new Vector3();
+    camera.getWorldDirection(gaze);
+    const toShip = flightLive.pos.clone().sub(camera.position);
+    expect(gaze.dot(toShip)).toBeGreaterThan(0);
+    camera.updateMatrixWorld(true);
+    const projectedShip = flightLive.pos.clone().project(camera);
+    expect(Math.abs(projectedShip.x)).toBeLessThan(0.9);
+    expect(Math.abs(projectedShip.y)).toBeLessThan(0.9);
+    expect(projectedShip.z).toBeGreaterThan(-1);
+    expect(projectedShip.z).toBeLessThan(1);
   });
 
   it('speed cap grows with range and stays finite', () => {

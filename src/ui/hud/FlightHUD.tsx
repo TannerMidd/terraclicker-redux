@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
-import { flightInput, flightLive, helmChart, interdiction, mouseSteer, toggleAutopilot } from '../scene/flightControl';
+import {
+  flightInput,
+  flightLive,
+  helmChart,
+  interdiction,
+  mouseSteer,
+  toggleAutopilot,
+  toggleFlightCamera,
+} from '../scene/flightControl';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
@@ -8,7 +16,7 @@ import { flightPrefs, keyLabel, type FlightAction } from '../scene/flightBinding
 import { FirstSortie } from './FirstSortie';
 import { SubEthaTicker } from './SubEthaTicker';
 import { BAND_LABELS } from '../scene/universeLayout';
-import { BRAND_ASSETS } from '../assets';
+import { BRAND_ASSETS, COCKPIT_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
 import { DEEP_FIELD } from '../../content/deepField';
 import { refitCost } from '../../engine/deepField';
@@ -280,7 +288,6 @@ function NavRibbon() {
   const marker = useRef<HTMLDivElement>(null);
   const name = useRef<HTMLElement>(null);
   const readout = useRef<HTMLElement>(null);
-  const autopilot = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let raf = 0;
@@ -312,25 +319,14 @@ function NavRibbon() {
         const vertical = Math.abs(elevation) < 4
           ? 'level'
           : `${Math.abs(elevation)}° ${elevation < 0 ? 'down' : 'up'}`;
-        const pilot = flightLive.courseHold
-          ? ` · AUTOPILOT ${flightLive.autopilotPhase.toUpperCase()}`
-          : ' · MANUAL';
-        const text = nav.overshooting
-          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${vertical} · too fast to stop${pilot}`
-          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${vertical} · ${etaLabel(nav.etaSeconds)}${pilot}`;
-        if (readout.current.textContent !== text) readout.current.textContent = text;
-      }
-      if (autopilot.current) {
-        const engaged = flightLive.courseHold;
-        const text = engaged
-          ? `DISENGAGE · ${flightLive.autopilotPhase.toUpperCase()}`
-          : `ENGAGE AUTOPILOT · ${boundKey('courseHold')}`;
-        if (autopilot.current.textContent !== text) autopilot.current.textContent = text;
-        autopilot.current.classList.toggle('on', engaged);
-        autopilot.current.setAttribute('aria-pressed', String(engaged));
-        autopilot.current.setAttribute('aria-label', engaged
-          ? `Disengage destination autopilot; current phase ${flightLive.autopilotPhase}`
-          : `Engage autopilot to ${flightLive.navLabel}`);
+        const compact = nav.overshooting
+          ? `${rangeLabel(nav.distance)} · ${directionLabel(nav.bearing, nav.elevation)} · BRAKE`
+          : `${rangeLabel(nav.distance)} · ${directionLabel(nav.bearing, nav.elevation)} · ${etaLabel(nav.etaSeconds)}`;
+        const verbose = nav.overshooting
+          ? `${rangeLabel(nav.distance)}, ${bearingLabel(nav.bearing)}, ${vertical}, too fast to stop`
+          : `${rangeLabel(nav.distance)}, ${bearingLabel(nav.bearing)}, ${vertical}, ${etaLabel(nav.etaSeconds)}`;
+        if (readout.current.textContent !== compact) readout.current.textContent = compact;
+        if (readout.current.getAttribute('aria-label') !== verbose) readout.current.setAttribute('aria-label', verbose);
       }
       el.classList.toggle('hot', nav.overshooting);
     };
@@ -339,23 +335,13 @@ function NavRibbon() {
   }, []);
 
   return (
-    <div ref={wrap} className="fh-nav" aria-live="polite">
+    <div ref={wrap} className="fh-nav">
       <div className="fn-strip" aria-hidden>
         <i className="fn-centre" />
         <div ref={marker} className="fn-marker" />
       </div>
       <b ref={name} />
       <span ref={readout} />
-      <button
-        ref={autopilot}
-        className="fn-autopilot"
-        aria-label="Engage autopilot to the active route"
-        aria-pressed="false"
-        onClick={() => toggleAutopilot()}
-      >
-        ENGAGE AUTOPILOT · {boundKey('courseHold')}
-      </button>
-      <small className="fn-autopilot-help">any helm input returns to manual</small>
     </div>
   );
 }
@@ -567,6 +553,12 @@ function FlightHUDInner() {
     }[]
   >([]);
   const touchAction = useRef<HTMLButtonElement>(null);
+  const autopilotSwitch = useRef<HTMLButtonElement>(null);
+  const autopilotStatus = useRef<HTMLElement>(null);
+  const autopilotKey = useRef<HTMLElement>(null);
+  const viewSwitch = useRef<HTMLButtonElement>(null);
+  const viewLabel = useRef<HTMLElement>(null);
+  const viewKey = useRef<HTMLElement>(null);
   const [refit, setRefit] = useState(false);
   const [controls, setControls] = useState(false);
   const [chart, setChart] = useState(false);
@@ -659,6 +651,40 @@ function FlightHUDInner() {
             : region;
         }
         if (loc.current.textContent !== line) loc.current.textContent = line;
+      }
+      if (autopilotSwitch.current) {
+        const engaged = f.courseHold;
+        const hasCourse = Boolean(f.nav);
+        const phase = engaged ? f.autopilotPhase.toUpperCase() : hasCourse ? 'READY' : 'NO COURSE';
+        const shortcut = boundKey('courseHold');
+        const button = autopilotSwitch.current;
+        button.classList.toggle('on', engaged);
+        button.classList.toggle('ready', hasCourse && !engaged);
+        button.dataset.phase = phase.toLowerCase().replace(' ', '-');
+        button.setAttribute('aria-pressed', String(engaged));
+        const destination = f.navLabel || 'the pinned destination';
+        const aria = engaged
+          ? `Autopilot engaged to ${destination}; ${phase.toLowerCase()}. Flip the switch or press ${shortcut} to disengage.`
+          : hasCourse
+            ? `Autopilot ready for ${destination}. Flip the switch or press ${shortcut} to engage.`
+            : `Autopilot needs a destination. Pin one in the chart or sensors, then flip the switch or press ${shortcut}.`;
+        if (button.getAttribute('aria-label') !== aria) button.setAttribute('aria-label', aria);
+        if (autopilotStatus.current?.textContent !== phase) autopilotStatus.current!.textContent = phase;
+        if (autopilotKey.current?.textContent !== shortcut) autopilotKey.current!.textContent = shortcut;
+      }
+
+      if (viewSwitch.current) {
+        const chase = f.cameraMode === 'chase';
+        const shortcut = boundKey('cameraView');
+        const next = chase ? 'cockpit' : 'chase';
+        viewSwitch.current.classList.toggle('on', chase);
+        viewSwitch.current.setAttribute('aria-pressed', String(chase));
+        viewSwitch.current.setAttribute('aria-label', `Chase camera; shortcut ${shortcut}`);
+        viewSwitch.current.title = `Switch to ${next} view (${shortcut})`;
+        if (viewLabel.current?.textContent !== (chase ? 'CHASE' : 'COCKPIT')) {
+          viewLabel.current!.textContent = chase ? 'CHASE' : 'COCKPIT';
+        }
+        if (viewKey.current?.textContent !== shortcut) viewKey.current!.textContent = shortcut;
       }
 
       // Glass parallax: the canopy is bolted to your head, so what shifts is
@@ -792,6 +818,7 @@ function FlightHUDInner() {
       }
 
       root.current?.classList.toggle('boosting', f.boostBlend > 0.25);
+      root.current?.classList.toggle('chase-view', f.cameraMode === 'chase');
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -839,6 +866,21 @@ function FlightHUDInner() {
 
       <div className="fh-top">
         <span className="fh-chip">the company runabout · helm online</span>
+        <button
+          ref={viewSwitch}
+          type="button"
+          className="fh-view-switch"
+          aria-label={`Chase camera; shortcut ${boundKey('cameraView')}`}
+          aria-pressed="false"
+          onClick={() => toggleFlightCamera()}
+          title="Switch between cockpit and chase cameras"
+        >
+          <i aria-hidden />
+          <span>
+            <b ref={viewLabel}>COCKPIT</b>
+            <kbd ref={viewKey}>{boundKey('cameraView')}</kbd>
+          </span>
+        </button>
         <button className="fh-exit" onClick={() => useUiBus.getState().setFlightMode(false)}>
           disembark <kbd>{boundKey('exit')}</kbd>
         </button>
@@ -876,7 +918,10 @@ function FlightHUDInner() {
       {chart && <HelmChart onClose={() => setChart(false)} />}
 
       <InterdictionBanner />
-      <div className="fh-console">
+      <div
+        className="fh-console"
+        style={{ '--fh-fascia': `url("${COCKPIT_ASSETS.fascia}")` } as CSSProperties}
+      >
         <img className="fh-panic" src={BRAND_ASSETS.dontPanic} alt="DON'T PANIC" draggable={false} />
         <div className="fh-mid">
           <div ref={loc} className="fh-loc">
@@ -893,11 +938,23 @@ function FlightHUDInner() {
             </span>
           </div>
         </div>
-        <div className="fh-leds" aria-hidden>
-          <i />
-          <i />
-          <i />
-        </div>
+        <button
+          ref={autopilotSwitch}
+          type="button"
+          className="fh-autopilot-switch"
+          aria-label="Autopilot needs a pinned destination; shortcut H"
+          aria-pressed="false"
+          onClick={() => toggleAutopilot()}
+          title="Destination autopilot; any helm input returns to manual"
+        >
+          <span className="fas-copy">
+            <b>AUTO <kbd ref={autopilotKey}>{boundKey('courseHold')}</kbd></b>
+            <em ref={autopilotStatus} role="status" aria-live="polite" aria-atomic="true">NO COURSE</em>
+          </span>
+          <span className="fas-rocker" aria-hidden>
+            <i />
+          </span>
+        </button>
       </div>
 
       {coarse && (

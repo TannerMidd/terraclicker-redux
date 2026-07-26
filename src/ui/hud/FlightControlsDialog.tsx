@@ -310,7 +310,8 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
             <b>Accept a gamepad</b>
             <em>
               Left stick slides, right stick steers; {STANDARD_PAD_BINDINGS.thrust} thrusts,{' '}
-              {STANDARD_PAD_BINDINGS.engage} engages, {STANDARD_PAD_BINDINGS.jump} jumps, and{' '}
+              {STANDARD_PAD_BINDINGS.engage} engages, {STANDARD_PAD_BINDINGS.jump} jumps,{' '}
+              {STANDARD_PAD_BINDINGS.courseHold} toggles autopilot, and {STANDARD_PAD_BINDINGS.cameraView} changes camera;{' '}
               {STANDARD_PAD_BINDINGS.exit} closes a panel or disembarks.{' '}
               {padSeen ? 'One is connected.' : 'None detected.'}
             </em>

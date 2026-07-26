@@ -23,8 +23,12 @@ describe('flight bindings', () => {
     expect(DEFAULT_BINDINGS.jump).toEqual(['KeyJ']);
     expect(DEFAULT_BINDINGS.exit).toEqual(['Escape']);
     expect(DEFAULT_BINDINGS.deter).toEqual(['KeyF']);
+    expect(DEFAULT_BINDINGS.courseHold).toEqual(['KeyH']);
+    expect(DEFAULT_BINDINGS.cameraView).toEqual(['KeyV']);
     expect(ACTION_LABELS.jump).toBe('jump');
     expect(ACTION_LABELS.engage).toBe('scan / board');
+    expect(ACTION_LABELS.courseHold).toBe('destination autopilot');
+    expect(ACTION_LABELS.cameraView).toBe('cockpit / chase view');
     expect(validateFlightBindings(DEFAULT_BINDINGS)).toEqual([]);
 
     for (const action of FLIGHT_ACTIONS) {
@@ -123,6 +127,8 @@ describe.sequential('saved flight binding migration', () => {
     expect(prefs.bindings.thrust).toEqual(['Digit7']);
     expect(prefs.bindings.jump).toEqual(['KeyJ']);
     expect(prefs.bindings.exit).toEqual(['Escape']);
+    expect(prefs.bindings.cameraView).toEqual(['KeyV']);
+    expect(prefs.cameraMode).toBe('cockpit');
     expect(prefs.horizonLock).toBe(true);
   });
 });
@@ -140,6 +146,7 @@ describe('standard gamepad bindings', () => {
     const buttons = Array.from({ length: 16 }, () => ({ pressed: false, value: 0 }));
     buttons[4] = { pressed: true, value: 1 };
     buttons[8] = { pressed: true, value: 1 };
+    buttons[11] = { pressed: true, value: 1 };
     const pad = {
       id: 'Standard Pad',
       connected: true,
@@ -153,6 +160,6 @@ describe('standard gamepad bindings', () => {
       writable: true,
     });
 
-    expect(readPad()).toMatchObject({ connected: true, jump: true, exit: true });
+    expect(readPad()).toMatchObject({ connected: true, jump: true, cameraView: true, exit: true });
   });
 });

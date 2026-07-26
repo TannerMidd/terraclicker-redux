@@ -26,6 +26,11 @@ function check(value, message) {
   if (!value) failures.push(message);
 }
 
+function overlaps(a, b) {
+  return Boolean(a && b
+    && a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y);
+}
+
 function watch(page, label) {
   page.on('pageerror', (error) => browserErrors.push(`${label} pageerror: ${error.message}`));
   page.on('console', (message) => {
@@ -66,9 +71,14 @@ async function cockpitLayout(page) {
       sensors: rect('.fh-sensors'),
       sortie: rect('.fh-sortie'),
       console: rect('.fh-console'),
+      nav: rect('.fh-nav'),
+      reticle: rect('.fh-reticle'),
+      autopilot: rect('.fh-autopilot-switch'),
+      view: rect('.fh-view-switch'),
       touch: rect('.fh-touch'),
       action: rect('.fh-engage'),
       brake: rect('.fh-brake'),
+      legacyAutopilot: document.querySelectorAll('.fn-autopilot').length,
     };
   });
 }
@@ -91,6 +101,28 @@ async function runFirstSortie(page) {
   const initialLayout = await cockpitLayout(page);
   check(initialLayout.scrollWidth <= initialLayout.width, 'desktop cockpit overflows horizontally');
 
+  check(Boolean(initialLayout.autopilot), 'desktop autopilot switch is missing');
+  if (initialLayout.autopilot) {
+    check(initialLayout.autopilot.width <= 124, 'desktop autopilot switch is wider than a compact cockpit control');
+    check(initialLayout.autopilot.height >= 44 && initialLayout.autopilot.height <= 54, 'desktop autopilot switch is not a compact touch-safe control');
+  }
+  check(Boolean(initialLayout.view), 'desktop camera-view switch is missing');
+  check(initialLayout.legacyAutopilot === 0, 'legacy center-screen autopilot button is still mounted');
+  check(!overlaps(initialLayout.nav, initialLayout.reticle), 'route ribbon overlaps the central reticle');
+
+  await page.locator('.fh-view-switch').click();
+  await page.waitForFunction(() => window.__tcFlight.state().cameraMode === 'chase'
+    && document.querySelector('.flight-layer')?.classList.contains('chase-view'));
+  const exteriorVisible = await page.evaluate(
+    () => window.__tcScene?.scene?.getObjectByName('runabout-exterior')?.visible === true,
+  );
+  check(exteriorVisible, 'external runabout is not visible in chase view');
+  check(await page.locator('.fh-view-switch').getAttribute('aria-pressed') === 'true', 'camera switch does not expose chase state');
+  await page.screenshot({ path: path.join(outputDir, 'flight-desktop-chase.png') });
+
+  await page.keyboard.press('KeyV');
+  await page.waitForFunction(() => window.__tcFlight.state().cameraMode === 'cockpit'
+    && !document.querySelector('.flight-layer')?.classList.contains('chase-view'));
   // Clear the berth and face the exact authored target. The tutorial observes
   // the same physical state a player produces; only the long travel is skipped.
   await page.evaluate((id) => {
@@ -117,6 +149,36 @@ async function runFirstSortie(page) {
   );
   await page.evaluate(() => { window.__tcFlight.input.engage = false; });
 
+
+  const trainingRow = page.locator('.fh-sensors .fc-row.known.training').first();
+  await page.waitForTimeout(600);
+  if (!await page.evaluate(() => Boolean(window.__tc.useGame.getState().s.expedition.pinned))) {
+    await trainingRow.click();
+  }
+  await page.waitForFunction(() => Boolean(window.__tcFlight.state().nav)
+    && document.querySelector('.fh-autopilot-switch')?.classList.contains('ready'),
+  null,
+  { timeout: 5_000 });
+  // The tutorial buoy may already be inside its arrival envelope. Step back
+  // before testing the switch so engagement has time to become observable.
+  await page.evaluate((id) => {
+    const site = window.__tcFlight.sites().find((candidate) => candidate.id === id);
+    if (!site) return;
+    const length = Math.hypot(...site.pos);
+    const unit = site.pos.map((value) => value / length);
+    const pos = site.pos.map((value, index) => value + unit[index] * 18);
+    const toward = unit.map((value) => -value);
+    window.__tcFlight.pose(pos[0], pos[1], pos[2], Math.atan2(-toward[0], -toward[2]), Math.asin(toward[1]));
+  }, targetId);
+  await page.waitForFunction(() => (window.__tcFlight.state().nav?.distance ?? 0) > 12);
+  await page.locator('.fh-autopilot-switch').click();
+  await page.waitForFunction(() => window.__tcFlight.state().autopilot === true
+    && document.querySelector('.fh-autopilot-switch')?.classList.contains('on'));
+  check(await page.locator('.fh-autopilot-switch').getAttribute('aria-pressed') === 'true', 'flipping the autopilot switch does not expose engaged state');
+  await page.keyboard.press('KeyH');
+  await page.waitForFunction(() => window.__tcFlight.state().autopilot === false
+    && document.querySelector('.fh-autopilot-switch')?.getAttribute('aria-pressed') === 'false');
+  check(await page.locator('.fh-autopilot-switch').getAttribute('aria-pressed') === 'false', 'H did not return the autopilot switch to manual');
   await page.evaluate((id) => window.__tcFlight.goto(id), targetId);
   await page.waitForFunction(
     (id) => window.__tcFlight.state().locked?.id === id,
@@ -253,14 +315,14 @@ await mobile.waitForTimeout(1_000);
 await mobile.screenshot({ path: path.join(outputDir, 'flight-mobile.png') });
 const mobileLayout = await cockpitLayout(mobile);
 check(mobileLayout.scrollWidth <= mobileLayout.width, 'mobile cockpit overflows horizontally');
-const overlaps = (a, b) => Boolean(a && b
-  && a.x < b.right && a.right > b.x && a.y < b.bottom && a.bottom > b.y);
 check(!overlaps(mobileLayout.sensors, mobileLayout.sortie), 'mobile sensors overlap the induction');
 check(!overlaps(mobileLayout.sortie, mobileLayout.touch), 'mobile touch controls overlap the induction');
 check(!overlaps(mobileLayout.sortie, mobileLayout.console), 'mobile console overlaps the induction');
 for (const [name, box] of Object.entries({
   sensors: mobileLayout.sensors,
   sortie: mobileLayout.sortie,
+  autopilot: mobileLayout.autopilot,
+  view: mobileLayout.view,
   touch: mobileLayout.touch,
   action: mobileLayout.action,
   brake: mobileLayout.brake,
@@ -271,6 +333,23 @@ for (const [name, box] of Object.entries({
     check(box.y >= -1 && box.bottom <= mobileLayout.height + 1, `mobile ${name} leaves the viewport vertically`);
   }
 }
+check((mobileLayout.autopilot?.height ?? 0) >= 44, 'mobile autopilot switch is smaller than 44px');
+check((mobileLayout.view?.height ?? 0) >= 44, 'mobile camera switch is smaller than 44px');
+check(mobileLayout.legacyAutopilot === 0, 'mobile still mounts the legacy center autopilot button');
+check(!overlaps(mobileLayout.nav, mobileLayout.reticle), 'mobile route ribbon overlaps the reticle');
+await mobile.locator('.fh-view-switch').click();
+await mobile.waitForFunction(() => window.__tcFlight.state().cameraMode === 'chase'
+  && document.querySelector('.flight-layer')?.classList.contains('chase-view'));
+await mobile.waitForTimeout(700);
+const mobileChaseLayout = await cockpitLayout(mobile);
+const mobileExteriorVisible = await mobile.evaluate(
+  () => window.__tcScene?.scene?.getObjectByName('runabout-exterior')?.visible === true,
+);
+check(mobileExteriorVisible, 'external runabout is not visible in mobile chase view');
+check(mobileChaseLayout.scrollWidth <= mobileChaseLayout.width, 'mobile chase view overflows horizontally');
+check(Boolean(mobileChaseLayout.autopilot), 'mobile chase view lost its autopilot switch');
+await mobile.screenshot({ path: path.join(outputDir, 'flight-mobile-chase.png') });
+
 
 await mobile.evaluate(() => {
   window.__tcFlight.exit();
@@ -294,6 +373,7 @@ const summary = {
   sortie,
   desktopPriority: priorityText.replace(/\s+/g, ' ').trim(),
   mobile: mobileLayout,
+  mobileChase: mobileChaseLayout,
   browserErrors,
   failures,
 };

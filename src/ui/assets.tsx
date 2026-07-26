@@ -8,6 +8,10 @@ export const BRAND_ASSETS = {
   dontPanic: asset('brand/dont-panic.svg'),
 } as const;
 
+export const COCKPIT_ASSETS = {
+  fascia: asset('cockpit/console-fascia.webp'),
+} as const;
+
 export const TEXTURE_ASSETS = {
   lensDirt: asset('textures/lens-dirt.webp'),
 } as const;

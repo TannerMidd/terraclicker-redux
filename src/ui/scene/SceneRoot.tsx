@@ -12,6 +12,7 @@ import { Traffic } from './Traffic';
 import { RunaboutLamp } from './RunaboutLamp';
 import { SceneLamps } from './SceneLamps';
 import { RunaboutHull } from './RunaboutHull';
+import { RunaboutExterior } from './RunaboutExterior';
 import { ShaderWarmup } from './ShaderWarmup';
 import { EventFX } from './EventFX';
 import { stepFocusOut } from './universe/shared';
@@ -111,6 +112,7 @@ export default function SceneRoot() {
           order, so the hull has to be subscribed later than the rig or it
           poses itself against last frame's camera and visibly swims. */}
       <RunaboutHull />
+      <RunaboutExterior />
       <ShaderWarmup />
     </Canvas>
   );

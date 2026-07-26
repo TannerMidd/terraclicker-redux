@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Vector3 } from 'three/webgpu';
 import { flightPrefs, resetFlightPrefs, saveFlightPrefs } from '../src/ui/scene/flightBindings';
-import { attachFlightInput, flightInput } from '../src/ui/scene/flightControl';
+import { attachFlightInput, beginFlightAt, endFlight, flightInput, flightLive, setFlightCameraMode, stepFlight } from '../src/ui/scene/flightControl';
 
 type Listener = (event: Record<string, unknown>) => void;
 
@@ -21,11 +22,11 @@ function fakeWindow() {
   };
 }
 
-function keyEvent(code: string, repeat = false): Record<string, unknown> {
+function keyEvent(code: string, repeat = false, target: unknown = null): Record<string, unknown> {
   return {
     code,
     repeat,
-    target: null,
+    target,
     preventDefault: () => undefined,
   };
 }
@@ -43,6 +44,7 @@ describe('remapped flight input', () => {
       bindings: { ...prefs.bindings, jump: ['Digit7'] },
     });
     flightInput.jump = false;
+    flightInput.vert = 0;
     detach = attachFlightInput();
   });
 
@@ -71,5 +73,51 @@ describe('remapped flight input', () => {
     detach();
     detach = () => undefined;
     expect(flightInput.jump).toBe(false);
+  });
+
+  it('leaves Space activation on a focused cockpit button', () => {
+    const button = {
+      closest: (selector: string) => selector.includes('button') ? {} : null,
+    };
+    let prevented = false;
+    const event = keyEvent('Space', false, button);
+    event.preventDefault = () => { prevented = true; };
+    windowStub.emit('keydown', event);
+    expect(flightInput.vert).toBe(0);
+    expect(prevented).toBe(false);
+    windowStub.emit('keyup', event);
+  });
+
+  it('does not retoggle chase view when focus blurs under a held R3', () => {
+    const buttons = Array.from({ length: 16 }, () => ({ pressed: false, value: 0 }));
+    buttons[11] = { pressed: true, value: 1 };
+    const pad = {
+      id: 'Standard Pad',
+      connected: true,
+      mapping: 'standard',
+      axes: [0, 0, 0, 0],
+      buttons,
+    };
+    vi.stubGlobal('navigator', { getGamepads: () => [pad] });
+
+    saveFlightPrefs({ ...flightPrefs(), gamepad: true });
+    beginFlightAt(new Vector3(150, 0, 80), 0, 0);
+    setFlightCameraMode('cockpit');
+
+    stepFlight(1 / 60, 0);
+    expect(flightLive.cameraMode).toBe('chase');
+    windowStub.emit('blur', {});
+    stepFlight(1 / 60, 1 / 60);
+    expect(flightLive.cameraMode).toBe('chase');
+
+    buttons[11] = { pressed: false, value: 0 };
+    stepFlight(1 / 60, 2 / 60);
+    buttons[11] = { pressed: true, value: 1 };
+    stepFlight(1 / 60, 3 / 60);
+    expect(flightLive.cameraMode).toBe('cockpit');
+
+    buttons[11] = { pressed: false, value: 0 };
+    stepFlight(1 / 60, 4 / 60);
+    endFlight();
   });
 });

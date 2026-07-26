@@ -567,7 +567,7 @@ export function CameraRig() {
 
       // Keep the release pose warm: disembarking eases from here to the rail.
       const fp = focusPose.current;
-      fp.cam.copy(flightLive.pos);
+      fp.cam.copy(camera.position);
       V1.set(0, 0, -1).applyQuaternion(camera.quaternion);
       fp.look.copy(flightLive.pos).addScaledVector(V1, 8);
       fp.b = 1;

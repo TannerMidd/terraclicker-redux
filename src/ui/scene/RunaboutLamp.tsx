@@ -5,7 +5,7 @@
  * thing you are terraforming. Fly forty units out to a derelict and there is
  * nothing to light it by, which is correct for space and useless for looking
  * at things. So the ship carries its own lamp: a short-range point light that
- * rides the camera and only ever reaches what you have actually flown up to.
+ * rides the runabout and only ever reaches what you have actually flown up to.
  *
  * It exists only at the helm. The map view keeps the sun it always had.
  */
@@ -38,13 +38,13 @@ export function RunaboutLamp() {
   const flight = useUiBus((b) => b.flightMode);
   const lamp = useRef<PointLight>(null);
 
-  useFrame(({ camera }, dt) => {
+  useFrame((_, dt) => {
     const l = lamp.current;
     if (!l) return;
-    // Slightly ahead and below the eye, so approaching hulls get a raking
-    // light and read as shape rather than a flat disc.
-    l.position.copy(camera.position);
-    l.position.y -= 0.35;
+    // The lamp belongs to the ship, not the lens, so chase view still lights
+    // the place the runabout is actually approaching.
+    l.position.copy(flightLive.pos);
+    l.position.y -= 0.08;
     // Fade the lamp out against a surface. Falloff is a power of distance, so
     // at a tenth of a unit off a planet this thing delivers a couple of
     // hundred times its nominal illuminance and the terrain washes out to

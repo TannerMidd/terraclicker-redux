@@ -60,7 +60,14 @@ import { handlingFor } from '../../engine/handling';
 import { loadoutEffects } from '../../engine/loadouts';
 import { autopilotCommand, type AutopilotCommand, type AutopilotPhase } from '../../engine/autopilot';
 import { solveNav, type NavSolution } from '../../engine/navigation';
-import { flightPrefs, readAxes, readPad, type FlightAction } from './flightBindings';
+import {
+  flightPrefs,
+  readAxes,
+  readPad,
+  saveFlightPrefs,
+  type FlightAction,
+  type FlightCameraMode,
+} from './flightBindings';
 import { C } from '../../content/constants';
 import { SORTIE_FLAG } from '../../content/firstSortie';
 import { attendable } from '../../engine/bridge';
@@ -331,6 +338,8 @@ export const flightLive = {
   nearRadius: 0,
   /** Scene clock, for evaluating orbiting bodies where they actually are. */
   clock: 0,
+  /** Whether the pilot is seated under the canopy or following the hull. */
+  cameraMode: 'cockpit' as FlightCameraMode,
 
   // — Civil Navigation, Provisional —
   /**
@@ -391,6 +400,12 @@ const FWD = new Vector3();
 const RIGHT = new Vector3();
 const DESIRED = new Vector3();
 const TMP = new Vector3();
+const CAMERA_DESIRED = new Vector3();
+const CAMERA_BODY = new Vector3();
+const CAMERA_NORMAL = new Vector3();
+const CAMERA_TANGENT = new Vector3();
+const CAMERA_LOOK = new Vector3();
+const CHASE_PULLBACK = 0.8;
 const UP = new Vector3(0, 1, 0);
 
 /** Map camera distance from origin onto the journey's 0–1 zoom, so every
@@ -507,6 +522,7 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.scanId = null;
   f.prompt = null;
   f.station = false;
+  f.cameraMode = flightPrefs().cameraMode;
   f.courseHold = false;
   f.autopilotPhase = 'off';
   autopilotTargetKey = '';
@@ -1801,14 +1817,59 @@ const JOURNEY_FAR = 4200;
 /** Copy the flight pose onto the camera, with the boost FOV kick. */
 export function applyFlightCamera(camera: Camera, dt: number): void {
   const f = flightLive;
-  camera.position.copy(f.pos);
-  EUL.set(f.pitch, f.yaw, f.roll);
-  camera.quaternion.setFromEuler(EUL);
+  EUL.set(f.pitch, f.yaw, f.cameraMode === 'cockpit' ? f.roll : 0);
+  Q.setFromEuler(EUL);
+
+  if (f.cameraMode === 'cockpit') {
+    camera.position.copy(f.pos);
+    camera.quaternion.copy(Q);
+  } else {
+    // Narrow screens need more room because horizontal FOV collapses first.
+    const aspect = Math.max(0.4, (camera as PerspectiveCamera).aspect || 1);
+    const pullback = CHASE_PULLBACK * Math.max(1, 0.74 / aspect);
+    CAMERA_DESIRED.set(0, pullback * 0.2, pullback).applyQuaternion(Q).add(f.pos);
+    let shoulderView = false;
+    // A camera behind the ship must not slip through a planet when the hull
+    // is skimming its collision shell. If the boom is obstructed, slide the
+    // lens onto a surface-tangent shoulder rather than through the hull.
+    for (const body of bodies) {
+      bodyPosition(body, f.clock, CAMERA_BODY);
+      const clearance = body.radius + FLIGHT_NEAR * 2.5;
+      if (CAMERA_DESIRED.distanceToSquared(CAMERA_BODY) >= clearance * clearance) continue;
+      shoulderView = true;
+
+      CAMERA_NORMAL.copy(f.pos).sub(CAMERA_BODY);
+      const shipRadius = CAMERA_NORMAL.length();
+      if (shipRadius < 1e-8) CAMERA_NORMAL.set(0, 1, 0);
+      else CAMERA_NORMAL.divideScalar(shipRadius);
+
+      CAMERA_TANGENT.set(0, 1, 0).applyQuaternion(Q);
+      CAMERA_TANGENT.addScaledVector(CAMERA_NORMAL, -CAMERA_TANGENT.dot(CAMERA_NORMAL));
+      if (CAMERA_TANGENT.lengthSq() < 1e-6) {
+        CAMERA_TANGENT.set(1, 0, 0).applyQuaternion(Q);
+        CAMERA_TANGENT.addScaledVector(CAMERA_NORMAL, -CAMERA_TANGENT.dot(CAMERA_NORMAL));
+      }
+      CAMERA_TANGENT.normalize();
+
+      const tangentClearance = Math.sqrt(Math.max(0, clearance * clearance - shipRadius * shipRadius));
+      const shoulder = Math.max(0.34, tangentClearance + FLIGHT_NEAR * 3);
+      CAMERA_DESIRED.copy(f.pos).addScaledVector(CAMERA_TANGENT, shoulder);
+    }
+    CAMERA_LOOK
+      .set(0, 0, -1)
+      .applyQuaternion(Q)
+      .multiplyScalar(shoulderView ? 0.08 : 0.65)
+      .add(f.pos);
+    camera.position.copy(CAMERA_DESIRED);
+    camera.up.copy(UP);
+    camera.lookAt(CAMERA_LOOK);
+  }
+
   const pcam = camera as PerspectiveCamera;
   if (typeof pcam.fov === 'number') {
     // Fixed lens. The old boost kick swung the field of view by 8 degrees,
     // which is a classic way to make somebody queasy for very little payoff.
-    const target = FLIGHT_FOV_BASE;
+    const target = f.cameraMode === 'cockpit' ? FLIGHT_FOV_BASE : 48;
     let dirty = false;
     if (Math.abs(pcam.fov - target) > 0.02) {
       pcam.fov += (target - pcam.fov) * (1 - Math.exp(-dt * 3));
@@ -1853,6 +1914,8 @@ function held(action: FlightAction): boolean {
 
 /** Latch so a held autopilot key toggles once rather than sixty times. */
 let courseHoldLatch = false;
+/** Camera switching is also a press, not a per-frame alternation. */
+let cameraViewLatch = false;
 /** A bound jump key is a press, not a frame-by-frame hold. */
 let jumpLatch = false;
 /** Whether the steering axis currently belongs to the pad, so it can let go. */
@@ -1870,7 +1933,7 @@ function pollGamepad(): void {
   const active = Boolean(pad?.connected && (
     pad.moveX !== 0 || pad.moveY !== 0 || pad.lookX !== 0 || pad.lookY !== 0
     || pad.thrust > 0 || pad.brake > 0 || pad.boost || pad.engage || pad.jump
-    || pad.deter || pad.courseHold || pad.exit
+    || pad.deter || pad.courseHold || pad.cameraView || pad.exit
   ));
   if (!active && !padInputActive) return;
   padInputActive = active;
@@ -1902,6 +1965,10 @@ function inputFromKeys(padSample?: ReturnType<typeof readPad> | null): void {
   const wantsHold = held('courseHold') || Boolean(pad?.courseHold);
   if (wantsHold && !courseHoldLatch) toggleAutopilot();
   courseHoldLatch = wantsHold;
+
+  const wantsView = held('cameraView') || Boolean(pad?.cameraView);
+  if (wantsView && !cameraViewLatch) toggleFlightCamera();
+  cameraViewLatch = wantsView;
 
   // Held keys are a digital axis. They only record WHICH WAY here; the frame
   // loop does the ramping, because a key event fires once and a turn has to
@@ -1963,6 +2030,21 @@ export function toggleAutopilot(): boolean {
   return true;
 }
 
+/** Change the camera without moving the runabout or disturbing its navigator. */
+export function setFlightCameraMode(mode: FlightCameraMode): FlightCameraMode {
+  const f = flightLive;
+  if (f.cameraMode === mode) return mode;
+  f.cameraMode = mode;
+  const prefs = flightPrefs();
+  if (prefs.cameraMode !== mode) saveFlightPrefs({ ...prefs, cameraMode: mode });
+  return mode;
+}
+
+/** Toggle between the physical canopy and the external chase camera. */
+export function toggleFlightCamera(): FlightCameraMode {
+  return setFlightCameraMode(flightLive.cameraMode === 'cockpit' ? 'chase' : 'cockpit');
+}
+
 /**
  * The mouse stick. Only exists while a button is down; `x0/y0` is where the
  * press landed and `x/y` where the pointer is now, so the HUD can draw the
@@ -1979,9 +2061,20 @@ function overFlightUi(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     target.closest(
-      '.fh-exit, .fh-sensors, .fh-refit, .fh-chart, .fh-controls, .fh-engage, .fh-touch, .fh-sortie, .fn-autopilot, .toast-stack, .modal, .modal-veil, .dock',
+      '.fh-exit, .fh-view-switch, .fh-autopilot-switch, .fh-sensors, .fh-refit, .fh-chart, .fh-controls, .fh-engage, .fh-touch, .fh-sortie, .toast-stack, .modal, .modal-veil, .dock',
     ) !== null
   );
+}
+
+/** Native button activation belongs to the focused cockpit control, not the ship. */
+function keyboardOwnedByControl(event: KeyboardEvent): boolean {
+  const target = event.target as {
+    closest?: (selector: string) => Element | null;
+  } | null;
+  if (!target?.closest) return false;
+  if (target.closest('input, textarea, select, [contenteditable]')) return true;
+  return (event.code === 'Space' || event.code === 'Enter')
+    && Boolean(target.closest('button, [role="button"]'));
 }
 
 /**
@@ -1991,8 +2084,7 @@ function overFlightUi(target: EventTarget | null): boolean {
  */
 export function attachFlightInput(): () => void {
   const onKeyDown = (e: KeyboardEvent) => {
-    const el = e.target as HTMLElement | null;
-    if (el && el.closest?.('input, textarea, select, [contenteditable]')) return;
+    if (keyboardOwnedByControl(e)) return;
     if (
       e.code === 'Space' ||
       e.code === 'ArrowUp' ||
@@ -2011,8 +2103,14 @@ export function attachFlightInput(): () => void {
   };
   const onBlur = () => {
     keys.clear();
-    jumpLatch = false;
-    inputFromKeys();
+    const pad = flightPrefs().gamepad ? readPad() : null;
+    // Clear axes without feeding held toggle buttons back through the press
+    // detector. Their latches stay armed until the physical button releases.
+    inputFromKeys(null);
+    jumpLatch = Boolean(pad?.jump);
+    courseHoldLatch = Boolean(pad?.courseHold);
+    cameraViewLatch = Boolean(pad?.cameraView);
+    flightInput.jump = false;
     mouseSteer.active = false;
     flightInput.steerX = 0;
     flightInput.steerY = 0;
@@ -2131,8 +2229,10 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>)['__tcFlight'] = {
     enter: () => setFlightMode(true),
     exit: () => setFlightMode(false),
+    view: (mode?: FlightCameraMode) => mode ? setFlightCameraMode(mode) : toggleFlightCamera(),
     state: () => ({
       active: flightLive.active,
+      cameraMode: flightLive.cameraMode,
       pos: flightLive.pos.toArray(),
       yaw: flightLive.yaw,
       pitch: flightLive.pitch,

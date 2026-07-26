@@ -29,6 +29,7 @@ export type FlightAction =
   | 'jump'
   | 'deter'
   | 'courseHold'
+  | 'cameraView'
   | 'exit';
 
 export const ACTION_LABELS: Record<FlightAction, string> = {
@@ -47,6 +48,7 @@ export const ACTION_LABELS: Record<FlightAction, string> = {
   jump: 'jump',
   deter: 'dispersal field',
   courseHold: 'destination autopilot',
+  cameraView: 'cockpit / chase view',
   exit: 'disembark',
 };
 
@@ -78,6 +80,7 @@ export const DEFAULT_BINDINGS: Record<FlightAction, Binding> = {
   jump: ['KeyJ'],
   deter: ['KeyF'],
   courseHold: ['KeyH'],
+  cameraView: ['KeyV'],
   exit: ['Escape'],
 };
 
@@ -118,6 +121,8 @@ export const AXIS_ROLE_LABELS: Record<AxisRole, string> = {
 
 export interface FlightPrefs {
   bindings: Record<FlightAction, Binding>;
+  /** The view the pilot last chose at the helm. */
+  cameraMode: FlightCameraMode;
   /**
    * Axes assigned on a device the Gamepad API refuses to describe. Empty for
    * everybody who is not flying a HOTAS, which is almost everybody.
@@ -135,8 +140,11 @@ export interface FlightPrefs {
   gamepad: boolean;
 }
 
+export type FlightCameraMode = 'cockpit' | 'chase';
+
 export const DEFAULT_PREFS: FlightPrefs = {
   bindings: DEFAULT_BINDINGS,
+  cameraMode: 'cockpit',
   axes: {},
   horizonLock: false,
   invertPitch: false,
@@ -172,6 +180,9 @@ function sanitize(raw: unknown): FlightPrefs {
   const obj = raw as Record<string, unknown>;
 
   if (typeof obj['horizonLock'] === 'boolean') prefs.horizonLock = obj['horizonLock'];
+  if (obj['cameraMode'] === 'cockpit' || obj['cameraMode'] === 'chase') {
+    prefs.cameraMode = obj['cameraMode'];
+  }
   if (typeof obj['invertPitch'] === 'boolean') prefs.invertPitch = obj['invertPitch'];
   if (typeof obj['gamepad'] === 'boolean') prefs.gamepad = obj['gamepad'];
   if (typeof obj['sensitivity'] === 'number' && Number.isFinite(obj['sensitivity'])) {
@@ -407,6 +418,7 @@ export const STANDARD_PAD_BINDINGS: Partial<Record<FlightAction, string>> = {
   jump: 'left bumper',
   deter: 'Y',
   courseHold: 'menu / start',
+  cameraView: 'right stick button',
   exit: 'view / back',
 };
 
@@ -432,6 +444,7 @@ export interface PadState {
   jump: boolean;
   deter: boolean;
   courseHold: boolean;
+  cameraView: boolean;
   exit: boolean;
 }
 
@@ -508,7 +521,7 @@ export function readPad(): PadState {
     connected: false,
     moveX: 0, moveY: 0, lookX: 0, lookY: 0,
     thrust: 0, brake: 0,
-    boost: false, engage: false, jump: false, deter: false, courseHold: false, exit: false,
+    boost: false, engage: false, jump: false, deter: false, courseHold: false, cameraView: false, exit: false,
   };
   if (typeof navigator === 'undefined' || !navigator.getGamepads) return empty;
 
@@ -543,6 +556,7 @@ export function readPad(): PadState {
       jump: b(4), // left bumper
       deter: b(3), // Y
       courseHold: b(9), // start
+      cameraView: b(11), // right stick button
       exit: b(8), // back / view
     };
   }

@@ -53,6 +53,15 @@ export function RunaboutHull() {
     }
     const f = flightLive;
 
+    // The cockpit nose is the pilot's near-field scale reference. In chase
+    // view the full external runabout owns that job, so keeping this tiny nose
+    // camera-mounted would look like a second ship stuck to the lens.
+    g.visible = f.cameraMode === 'cockpit';
+    if (!g.visible) {
+      fresh.current = true;
+      return;
+    }
+
     // Acceleration in the ship's own frame, so the lean is always "backwards"
     // relative to the pilot rather than to the universe.
     //
