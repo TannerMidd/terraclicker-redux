@@ -143,29 +143,32 @@ export function FieldManual() {
           </p>
         </Entry>
 
-        <Entry title="The hold: freight and passengers">
+        <Entry title="Missions: flight jobs and the cargo hold">
           <p>
-            Fit a <b>Cargo Hold</b> at the helm — press <kbd>r</kbd> in flight, and pay in
-            salvage — and the <b>Freight Board</b> in Operations starts posting work
-            between worlds you have actually delivered. Accept a job, fly first to its
-            origin to collect the payload, then fly to its destination to discharge it.
-            The freight pin follows whichever leg is current. There is no dock and no
-            load or unload button.
+            Finish <b>First Sortie</b> and the company fits a rank-one <b>Cargo Hold</b> free;
+            the recovered salvage still belongs to you for a different first refit. Deliver two
+            worlds so clients have both an origin and a destination, then open{' '}
+            <b>MS · Missions</b>. Flight Jobs remain visible there even when your current hold is
+            too small, along with the exact capacity they need.
+          </p>
+          <p>
+            <b>Accept &amp; Set Course</b> pins the job immediately. Fly first to the origin:
+            arrival collects the payload automatically and retargets the destination. Arrival
+            there unloads it and pays the reward. There is no dock, load, or unload button hiding
+            somewhere else.
           </p>
           <p>
             Freight is <b>mass</b>, and mass is the whole mechanic: a loaded runabout takes
-            longer to get moving and much longer to stop, and the approach governor needs
-            more room to save you from whatever you are pointed at. The hold takes{' '}
-            {CARGO_CAPACITY[1]}, {CARGO_CAPACITY[2]} then {CARGO_CAPACITY[3]} tonnes by
-            rank. Passengers weigh almost nothing and pay in Guide entries rather than
-            salvage.
+            longer to get moving and much longer to stop, and the approach governor needs more
+            room to save you from whatever you are pointed at. The hold takes{' '}
+            {CARGO_CAPACITY[1]}, {CARGO_CAPACITY[2]} then {CARGO_CAPACITY[3]} tonnes by rank.
+            Passengers weigh almost nothing and pay in Guide entries as well as reputation.
           </p>
           <p>
-            The board refreshes every {minutes(C.JOB_REFRESH_MS)} minutes. A job you have
-            already accepted is never taken back by a timer.
+            The board refreshes every {minutes(C.JOB_REFRESH_MS)} minutes. An accepted job never
+            expires, and its course pin clears only when it is delivered, abandoned, or lost.
           </p>
         </Entry>
-
         <Entry title="Mining: prospect, rig, come back">
           <p>
             There are <b>{SEAMS.length} seams</b> out in the dark, placed by your
@@ -227,27 +230,27 @@ export function FieldManual() {
           </p>
         </Entry>
 
-        <Entry title="Operations: contracts">
+        <Entry title="Missions: desk contracts">
           <p>
-            After your first delivery, three factions post work on the Operations board:{' '}
-            <b>{FACTION_META.magrathea.label}</b> (deliveries and system assembly),{' '}
-            <b>{FACTION_META.mice.label}</b> (bottleneck and survey requirements), and{' '}
-            <b>{FACTION_META.vogon.label}</b> (building ceilings and deadlines).
+            <b>MS · Missions</b> is available from the beginning. Its first board always includes
+            one plain one-world delivery contract, so the first mission teaches the core idle loop
+            before asking for surveys, bottlenecks, deadlines, or entire systems. The other offers
+            come from <b>{FACTION_META.magrathea.label}</b>,{' '}
+            <b>{FACTION_META.mice.label}</b>, and <b>{FACTION_META.vogon.label}</b>.
           </p>
           <p>
-            You may hold <b>one active contract</b> at a time, and only work done{' '}
-            <i>after acceptance</i> counts. Completing a contract pays{' '}
-            <b>Blueprints</b> and <b>reputation</b>; every{' '}
-            {C.CONTRACT_REPUTATION_PER_BP} reputation with a faction adds +
-            {C.CONTRACT_REPUTATION_BP_CAP} BP to that faction&rsquo;s future offers.
+            You may hold <b>one active desk contract</b> at a time, and only work done{' '}
+            <i>after acceptance</i> counts. Completing one pays <b>Blueprints</b> and{' '}
+            <b>reputation</b>; every {C.CONTRACT_REPUTATION_PER_BP} reputation with a faction
+            adds +{C.CONTRACT_REPUTATION_BP_CAP} BP to that faction&rsquo;s future offers.
           </p>
           <p>
-            Withdrawing costs nothing but the progress. Timed filings use simulation
-            time, so deadlines keep counting while you are away. The board offers one
-            free reissue at each system count if you dislike all three filings.
+            Withdrawing costs nothing but progress. Timed contracts use simulation time, so their
+            deadlines keep counting while you are away. The board offers one free reissue at each
+            system count. Completed desk contracts and the total number of flight deliveries stay
+            visible in the Missions record.
           </p>
         </Entry>
-
         <Entry title="Operations: dispatch routes">
           <p>
             A formed system can be assigned a <b>specialty route</b>: an aspect route (+
@@ -262,6 +265,23 @@ export function FieldManual() {
             only run routes its history justifies — an aspect route needs a member world
             with that recorded bottleneck; Science needs two surveyed worlds; Production
             is always legal, like paperwork.
+          </p>
+        </Entry>
+
+        <Entry title="Systems and galaxy accords">
+          <p>
+            Every formed system offers <b>Charter articles</b> in Magrathea. The offers are
+            shaped by the five member worlds, so surveys, bottlenecks, and installations leave
+            a political consequence after their production numbers are gone. Signing is a
+            choice for the current portfolio, not permanent account progression.
+          </p>
+          <p>
+            Five systems form a galaxy. Once three of its system seats have signed, their
+            articles ratify a <b>Galaxy Accord</b>: civic and works accords strengthen production,
+            observatory accords strengthen Science, and elemental accords strengthen all four
+            world aspects. Galaxies with different traditions also exchange a small production
+            bonus. Magrathea shows the next quorum before formation and the exact network total
+            afterwards; the universe renders the resulting links, halos, and moving traffic.
           </p>
         </Entry>
 

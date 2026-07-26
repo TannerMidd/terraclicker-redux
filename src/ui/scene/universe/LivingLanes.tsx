@@ -26,6 +26,7 @@ import {
 import { C } from '../../../content/constants';
 import { makeGlowSprite, makeTexSprite } from './shared';
 import { universeMotion, SPECIALTY_VISUAL, type SystemSpecialty } from './operationsVisual';
+import { screenAwareSpriteScale } from '../trafficMath';
 
 function lineBetween(a: Vector3, b: Vector3, material: LineBasicMaterial): Line {
   const geo = new BufferGeometry();
@@ -143,11 +144,14 @@ export function FreightLane({
  */
 export function GalaxyTradeLanes() {
   const focus = useUiBus((b) => b.focus);
+  const flightSystem = useUiBus((b) => b.flightMode ? b.flightNearSystem : null);
   const rev = useGame((g) => g.rev);
   void rev;
   const { s } = useGame.getState();
   let galaxyIndex: number | null = null;
-  if (focus) {
+  if (flightSystem !== null && flightSystem < s.run.galaxies * C.SYSTEMS_PER_GALAXY) {
+    galaxyIndex = Math.floor(flightSystem / C.SYSTEMS_PER_GALAXY);
+  } else if (focus) {
     if (focus.kind === 'galaxy') galaxyIndex = focus.index;
     else {
       const system =
@@ -170,6 +174,7 @@ function GalaxyTradeLanesInner({
   galaxyIndex: number;
   seed: number;
 }) {
+  const flight = useUiBus((b) => b.flightMode);
   const seats = useMemo(() => {
     const gSeed = galaxySeed(galaxyIndex, seed);
     const origin = galaxyPosition(galaxyIndex, seed);
@@ -212,13 +217,23 @@ function GalaxyTradeLanesInner({
   const sprites = useRef<(Sprite | null)[]>([]);
 
   useFrame((state) => {
+    laneMat.opacity = flight ? 0.26 : 0.11;
+    pulseMat.opacity = flight ? 1 : 0.9;
     if (universeMotion.reduced) return;
     const t = state.clock.elapsedTime;
+    const fov = (state.camera as { fov?: number }).fov ?? 42;
     pulses.forEach((pulse, i) => {
       const sprite = sprites.current[i];
       if (!sprite) return;
       const u = ((t + pulse.phase) % pulse.period) / pulse.period;
       sprite.position.copy(seats[pulse.a]!).lerp(seats[pulse.b]!, u);
+      if (flight) {
+        const distance = sprite.position.distanceTo(state.camera.position);
+        const scale = screenAwareSpriteScale(distance, fov, state.size.height, 13, 0.12, 1.5);
+        sprite.scale.set(scale, scale, 1);
+      } else {
+        sprite.scale.set(0.15, 0.15, 1);
+      }
     });
   });
 

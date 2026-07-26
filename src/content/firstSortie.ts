@@ -77,8 +77,8 @@ export const FIRST_SORTIE: readonly SortieStep[] = [
 
 export const SORTIE_COMPLETE_TEXT =
   'Sortie logged. You are now, in the only sense the department recognises, a pilot. '
-  + 'The runabout is yours whenever the desk becomes unbearable. The refit bay now has '
-  + 'enough salvage for your first practical decision.';
+  + 'The company has fitted its standard Cargo Hold, and the recovered salvage remains yours '
+  + 'for a first refit. Once two worlds are delivered, flight jobs appear under Missions.';
 
 /** Flag on the save marking the induction as done. */
 export const SORTIE_FLAG = 'firstSortieDone';
@@ -86,3 +86,5 @@ export const SORTIE_FLAG = 'firstSortieDone';
 export const SORTIE_PROGRESS_FLAG = 'firstSortieStep';
 /** The induction guarantees at least this much salvage after the recovered object pays. */
 export const SORTIE_STARTER_SALVAGE = 5;
+/** Company-standard hauling capability fitted without spending the starter allocation. */
+export const SORTIE_COMPANY_HOLD_RANK = 1;

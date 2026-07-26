@@ -58,6 +58,7 @@ import { rumouredSites } from '../../engine/subEtha';
 import { pinnedWaypoint, waypointId, waypoints, type WaypointRef } from '../../engine/waypoints';
 import { handlingFor } from '../../engine/handling';
 import { loadoutEffects } from '../../engine/loadouts';
+import { autopilotCommand, type AutopilotCommand, type AutopilotPhase } from '../../engine/autopilot';
 import { solveNav, type NavSolution } from '../../engine/navigation';
 import { flightPrefs, readAxes, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
@@ -340,8 +341,12 @@ export const flightLive = {
   nav: null as NavSolution | null,
   /** Label of whatever `nav` refers to, for the cockpit readout. */
   navLabel: '',
-  /** Course-hold: steer toward the pin without the pilot holding a heading. */
+  /** Compatibility name for the destination autopilot's engaged state. */
   courseHold: false,
+  /** What the destination computer is doing right now. */
+  autopilotPhase: 'off' as AutopilotPhase | 'off',
+  /** Arrival envelope of the resolved waypoint, in world units. */
+  navArrivalRadius: 5,
 };
 
 /** Player intent, written by input handlers (or tests), read by stepFlight. */
@@ -451,6 +456,29 @@ export function restartFirstSortieFlight(): boolean {
 /** Begin flight from the camera, except for the authored first launch. */
 export function beginFlightFromCamera(camera: Camera): void {
   if (!useGame.getState().s.flags[SORTIE_FLAG] && restartFirstSortieFlight()) return;
+  // A journey camera at the galaxy or cosmic-web bands is an observation
+  // platform, not a plausible place to have parked the runabout. Launch from
+  // home instead of materialising hundreds of units into empty space.
+  const broadView = camera.position.length() > BAND_DISTANCES[1]! * 1.55;
+  if (broadView) {
+    const st = useGame.getState().s;
+    const pin = pinnedWaypoint(st);
+    if (pin && resolveWaypoint(st, pin.ref, TMP) && TMP.lengthSq() > 1e-5) {
+      TUTORIAL_DIR.copy(TMP).normalize();
+      const start = TUTORIAL_DIR.clone().multiplyScalar(TUTORIAL_LAUNCH_RADIUS);
+      const toward = TMP.clone().sub(start).normalize();
+      beginFlightAt(
+        start,
+        Math.atan2(-toward.x, -toward.z),
+        Math.asin(Math.max(-1, Math.min(1, toward.y))),
+      );
+      return;
+    }
+    // The built universe lies predominantly down -Z. Start on that side of
+    // home and face outward, clear of the hero world's collision shell.
+    beginFlightAt(TMP.set(0, 0, -TUTORIAL_LAUNCH_RADIUS), 0, 0);
+    return;
+  }
   camera.getWorldDirection(FWD);
   beginFlightAt(camera.position, Math.atan2(-FWD.x, -FWD.z), Math.asin(Math.max(-1, Math.min(1, FWD.y))));
 }
@@ -479,6 +507,9 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.scanId = null;
   f.prompt = null;
   f.station = false;
+  f.courseHold = false;
+  f.autopilotPhase = 'off';
+  autopilotTargetKey = '';
   scanLostFor = 0;
   f.altitude = Infinity;
   f.altitudeOf = '';
@@ -524,7 +555,13 @@ export function stepFlight(dt: number, t: number): void {
     input.jump = false;
     return;
   }
-  applyCourseHold(dt);
+  // Any actual helm command takes the ship back immediately. Engage/jump and
+  // the dispersal field are deliberately absent: a passenger can operate a
+  // console while the navigator keeps flying.
+  if (f.courseHold && manualOverrideRequested()) {
+    disengageAutopilot('manual');
+  }
+  const autopilot = commandAutopilot();
   applyKeySteering(dt);
 
   const authority = f.ramp;
@@ -532,8 +569,15 @@ export function stepFlight(dt: number, t: number): void {
   // Steering → turn rates → orientation. Roll is cosmetic bank.
   const expeditionNow = useGame.getState().s.expedition;
   const turn = handlingFor(expeditionNow).turnMult * loadoutEffects(expeditionNow).agility;
-  const yawTarget = -steerCurve(input.steerX) * YAW_RATE_MAX * authority * turn;
-  const pitchTarget = -steerCurve(input.steerY) * PITCH_RATE_MAX * authority * turn;
+  const steerX = autopilot?.steerX ?? input.steerX;
+  const steerY = autopilot?.steerY ?? input.steerY;
+  // A physical stick needs its fine-aim dead zone; a closed-loop controller
+  // does not. Feeding autopilot corrections through the quadratic stick curve
+  // made it asymptote at the dead-zone edge and spend minutes "aligning".
+  const yawSteer = autopilot ? steerX : steerCurve(steerX);
+  const pitchSteer = autopilot ? steerY : steerCurve(steerY);
+  const yawTarget = -yawSteer * YAW_RATE_MAX * authority * turn;
+  const pitchTarget = -pitchSteer * PITCH_RATE_MAX * authority * turn;
   const rateK = 1 - Math.exp(-dt * RATE_RESP);
   f.yawRate += (yawTarget - f.yawRate) * rateK;
   f.pitchRate += (pitchTarget - f.pitchRate) * rateK;
@@ -577,7 +621,7 @@ export function stepFlight(dt: number, t: number): void {
   const relax = 1 + near01 * near01 * near01 * near01 * 40;
   const approachCap = Math.max(SURFACE_CAP, OMEGA_MAX * bodyDist * relax);
   f.cap = Math.min(rangeCap, approachCap);
-  const boosting = input.boost && authority > 0;
+  const boosting = (autopilot?.boost ?? input.boost) && authority > 0;
   f.boostBlend += ((boosting ? 1 : 0) - f.boostBlend) * (1 - Math.exp(-dt * 4));
   const cap = Math.min(
     (boosting ? Math.min(rangeCap * BOOST_MULT, BOOST_CAP) : rangeCap)
@@ -603,8 +647,10 @@ export function stepFlight(dt: number, t: number): void {
    * command anything at all — thrust, slide, rise, brake — and the pilot wins
    * outright and the hold does not exist.
    */
+  const commandedThrust = autopilot?.thrust ?? input.thrust;
+  const commandedBrake = autopilot?.brake ?? input.brake;
   const commanding =
-    input.thrust > 0 || input.strafe !== 0 || input.vert !== 0 || input.brake > 0;
+    commandedThrust > 0 || input.strafe !== 0 || input.vert !== 0 || commandedBrake > 0;
   // A sweep in progress keeps the helm held even in the instant the lock has
   // flickered out — that instant is exactly when letting go would cost it.
   const working = f.prompt !== null || f.scanProgress > 0;
@@ -614,8 +660,8 @@ export function stepFlight(dt: number, t: number): void {
   if (station) input.cruise = 0;
   f.station = station;
 
-  const thrust = Math.max(input.thrust, input.cruise) * authority;
-  const braking = input.brake * authority;
+  const thrust = Math.max(commandedThrust, autopilot ? 0 : input.cruise) * authority;
+  const braking = commandedBrake * authority;
   DESIRED.set(0, 0, 0)
     .addScaledVector(FWD, thrust)
     .addScaledVector(RIGHT, input.strafe * authority * 0.5)
@@ -1230,6 +1276,8 @@ const NAV_SELF_POS: [number, number, number] = [0, 0, 0];
 const NAV_SELF_VEL: [number, number, number] = [0, 0, 0];
 let navTargetValid = false;
 let navBrakeRate = RESP_BRAKE;
+/** Route identity at engagement, including the current leg of a stable job pin. */
+let autopilotTargetKey = '';
 /** One visit record per physical approach, released after flying away. */
 let arrivalLatch: string | null = null;
 
@@ -1254,10 +1302,18 @@ function resolveNavTarget(st: ReturnType<typeof useGame.getState>['s']): void {
     navTargetValid = false;
     f.navLabel = '';
     f.nav = null;
+    if (f.courseHold) disengageAutopilot('missing');
     return;
+  }
+  const routeKey = `${pin.id}:${pin.label}`;
+  // A freight pin is stable across both legs, but its physical destination is
+  // not. Stop at collection instead of silently departing for delivery.
+  if (f.courseHold && autopilotTargetKey && autopilotTargetKey !== routeKey) {
+    disengageAutopilot('arrived');
   }
   navTargetValid = true;
   f.navLabel = pin.label;
+  f.navArrivalRadius = arrivalRadiusFor(pin.ref);
   navBrakeRate = RESP_BRAKE / massFactor(st.expedition);
 }
 
@@ -1310,8 +1366,6 @@ function solveNavThisFrame(): void {
       for (const request of requests) actions.attendInPerson(request.uid);
       arrivalLatch = pin;
     }
-    // Nothing left to hold a course to.
-    f.courseHold = false;
   } else if (f.nav.distance >= ARRIVED_RELEASE_RANGE) {
     arrivalLatch = null;
   }
@@ -1321,22 +1375,85 @@ function solveNavThisFrame(): void {
 const ARRIVED_RANGE = 8;
 const ARRIVED_RELEASE_RANGE = 12;
 
-/**
- * Course hold steers; it never throttles. The pilot still decides how fast to
- * arrive and when to stop, which keeps the interesting half of flying — and
- * means a held course through something solid is still the pilot's problem,
- * exactly as it is with hands on the stick.
- */
-function applyCourseHold(dt: number): void {
+function manualOverrideRequested(): boolean {
+  const input = flightInput;
+  return input.thrust > 0.02
+    || input.brake > 0.02
+    || input.strafe !== 0
+    || input.vert !== 0
+    || input.boost
+    || input.cruise > 0.02
+    || input.keyYaw !== 0
+    || input.keyPitch !== 0
+    || mouseSteer.active
+    || touchSteer.id !== -1
+    || Math.abs(input.steerX) > 0.025
+    || Math.abs(input.steerY) > 0.025;
+}
+
+function commandAutopilot(): AutopilotCommand | null {
   const f = flightLive;
-  if (!f.courseHold || !f.nav) return;
-  const prefs = flightPrefs();
-  void dt;
-  // Feed the same steering channel a hand would, so every downstream rule —
-  // rate limits, ramp, the pause — applies unchanged.
-  flightInput.steerX = Math.max(-1, Math.min(1, f.nav.bearing * 1.6));
-  flightInput.steerY = Math.max(-1, Math.min(1,
-    -f.nav.elevation * 1.6 * (prefs.invertPitch ? -1 : 1)));
+  if (!f.courseHold) return null;
+  if (!f.nav) {
+    disengageAutopilot('missing');
+    return null;
+  }
+  const command = autopilotCommand({
+    nav: f.nav,
+    speed: f.speed,
+    cap: f.cap,
+    arrivalRadius: f.navArrivalRadius,
+  });
+  f.autopilotPhase = command.phase;
+  if (command.phase === 'arrived' && f.speed <= 0.035) {
+    disengageAutopilot('arrived');
+    useUiBus.getState().addToast({
+      kind: 'info',
+      kicker: 'AUTOPILOT',
+      title: `Arrived at ${f.navLabel}`,
+      body: 'All stop. Manual helm restored.',
+      ttlMs: 3600,
+    });
+  }
+  return command;
+}
+
+type AutopilotStop = 'manual' | 'arrived' | 'missing' | 'toggle';
+
+function disengageAutopilot(reason: AutopilotStop): void {
+  const f = flightLive;
+  const wasEngaged = f.courseHold;
+  f.courseHold = false;
+  autopilotTargetKey = '';
+  f.autopilotPhase = reason === 'arrived' ? 'arrived' : 'off';
+  if (reason === 'manual' && wasEngaged) {
+    useUiBus.getState().addToast({
+      kind: 'info',
+      kicker: 'AUTOPILOT DISENGAGED',
+      title: 'Manual helm',
+      body: 'Your control input took priority.',
+      ttlMs: 2600,
+    });
+  }
+}
+
+function arrivalRadiusFor(ref: WaypointRef): number {
+  if (ref.at === 'home') return 4.5;
+  if (ref.at === 'point') return 4;
+  if (ref.at === 'site') {
+    const site = sitesForSeed(useGame.getState().s.seed).find((candidate) => candidate.def.id === ref.id);
+    return site ? Math.max(3, boardRange(site.def.radius) - 0.2) : 4;
+  }
+  if (ref.kind === 'galaxy') return 24;
+  if (ref.kind === 'system') return 7;
+  return 5;
+}
+
+/** Position of the currently resolved objective, for the in-scene beacon. */
+export function flightNavTarget(out: Vector3): boolean {
+  if (!navTargetValid) return false;
+  out.copy(NAV_POS);
+  return true;
 }
 
 /**
@@ -1734,7 +1851,7 @@ function held(action: FlightAction): boolean {
   return false;
 }
 
-/** Latch so a held course-hold key toggles once rather than sixty times. */
+/** Latch so a held autopilot key toggles once rather than sixty times. */
 let courseHoldLatch = false;
 /** A bound jump key is a press, not a frame-by-frame hold. */
 let jumpLatch = false;
@@ -1780,12 +1897,10 @@ function inputFromKeys(padSample?: ReturnType<typeof readPad> | null): void {
   if (wantsJump && !jumpLatch) flightInput.jump = true;
   jumpLatch = wantsJump;
 
-  // Course hold: a toggle, and only ever available for somewhere you have
-  // actually been. The helm will fly a route it has flown; it will not fly
-  // you somewhere you have never seen, which would make the whole Deep Field
-  // a menu.
+  // Destination autopilot is a toggle. Only real, known waypoints can be
+  // pinned, so this cannot reveal an unresolved Deep Field contact.
   const wantsHold = held('courseHold') || Boolean(pad?.courseHold);
-  if (wantsHold && !courseHoldLatch) toggleCourseHold();
+  if (wantsHold && !courseHoldLatch) toggleAutopilot();
   courseHoldLatch = wantsHold;
 
   // Held keys are a digital axis. They only record WHICH WAY here; the frame
@@ -1816,24 +1931,36 @@ function inputFromKeys(padSample?: ReturnType<typeof readPad> | null): void {
   if (flightInput.brake > 0) flightInput.cruise = 0;
 }
 
-/**
- * Fly the pinned course without holding a heading.
- *
- * Gated on having arrived at the waypoint before: this is a convenience for
- * the commute, not a way to have the ship find things for you. Discovery stays
- * something you do at the helm.
- */
-function toggleCourseHold(): void {
+/** Engage or disengage destination autopilot for the current known pin. */
+export function toggleAutopilot(): boolean {
   const f = flightLive;
   if (f.courseHold) {
-    f.courseHold = false;
-    return;
+    disengageAutopilot('toggle');
+    return false;
   }
   const st = useGame.getState().s;
-  const pin = st.expedition.pinned;
-  if (!pin || !f.nav) return;
-  if (st.expedition.visited[pin] === undefined) return;
+  const pin = pinnedWaypoint(st);
+  if (!pin || !pin.known || !f.nav) {
+    useUiBus.getState().addToast({
+      kind: 'info',
+      kicker: 'AUTOPILOT',
+      title: 'Pin a known destination first',
+      body: 'Open the chart, choose a world, system, landmark, rig, or active mission objective, then engage.',
+      ttlMs: 4200,
+    });
+    return false;
+  }
   f.courseHold = true;
+  f.autopilotPhase = 'align';
+  autopilotTargetKey = `${pin.id}:${pin.label}`;
+  flightInput.cruise = 0;
+  flightInput.steerX = 0;
+  flightInput.steerY = 0;
+  // Clear keyboard easing too. Otherwise a released key can rewrite its last
+  // tiny steering value on the next frame and look like a fresh manual input.
+  keySteerX = 0;
+  keySteerY = 0;
+  return true;
 }
 
 /**
@@ -1852,7 +1979,7 @@ function overFlightUi(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
     target.closest(
-      '.fh-exit, .fh-sensors, .fh-refit, .fh-chart, .fh-controls, .fh-engage, .fh-touch, .fh-sortie, .toast-stack, .modal, .modal-veil, .dock',
+      '.fh-exit, .fh-sensors, .fh-refit, .fh-chart, .fh-controls, .fh-engage, .fh-touch, .fh-sortie, .fn-autopilot, .toast-stack, .modal, .modal-veil, .dock',
     ) !== null
   );
 }
@@ -2020,6 +2147,8 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       station: flightLive.station,
       nav: flightLive.nav,
       navLabel: flightLive.navLabel,
+      autopilot: flightLive.courseHold,
+      autopilotPhase: flightLive.autopilotPhase,
       range: flightLive.range,
     }),
     input: flightInput,

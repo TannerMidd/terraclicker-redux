@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { Vector3 } from 'three/webgpu';
-import { FIRST_SORTIE, SORTIE_FLAG, SORTIE_PROGRESS_FLAG, SORTIE_STARTER_SALVAGE } from '../src/content/firstSortie';
+import { FIRST_SORTIE, SORTIE_COMPANY_HOLD_RANK, SORTIE_FLAG, SORTIE_PROGRESS_FLAG, SORTIE_STARTER_SALVAGE } from '../src/content/firstSortie';
 import { SITUATIONS } from '../src/content/situations';
 import { C } from '../src/content/constants';
 import { attendInPerson } from '../src/engine/bridge';
@@ -68,6 +68,12 @@ describe('first-sortie completion', () => {
     const first = step(state, 0, [{ type: 'completeFirstSortie' }], OPTS);
 
     expect(state.expedition.salvage).toBe(SORTIE_STARTER_SALVAGE);
+    expect(state.expedition.refits.cargoHold).toBe(SORTIE_COMPANY_HOLD_RANK);
+    expect(first.effects).toContainEqual({
+      t: 'refitInstalled',
+      id: 'cargoHold',
+      rank: SORTIE_COMPANY_HOLD_RANK,
+    });
     expect(state.flags[SORTIE_FLAG]).toBe(1);
     expect(state.flags[SORTIE_PROGRESS_FLAG]).toBe(FIRST_SORTIE.length);
     expect(first.effects).toContainEqual({
@@ -77,8 +83,34 @@ describe('first-sortie completion', () => {
 
     const second = step(state, 0, [{ type: 'completeFirstSortie' }], OPTS);
     expect(state.expedition.salvage).toBe(SORTIE_STARTER_SALVAGE);
+    expect(state.expedition.refits.cargoHold).toBe(SORTIE_COMPANY_HOLD_RANK);
+    expect(second.effects.some((effect) => effect.t === 'refitInstalled')).toBe(false);
     expect(second.effects.some((effect) => effect.t === 'sortieCompleted')).toBe(false);
   });
+  it('never downgrades an existing Cargo Hold when induction is filed', () => {
+    const state = newGame(43, 0);
+    state.expedition.refits.cargoHold = 3;
+
+    const result = step(state, 0, [{ type: 'completeFirstSortie' }], OPTS);
+
+    expect(state.expedition.refits.cargoHold).toBe(3);
+    expect(result.effects.some((effect) => effect.t === 'refitInstalled')).toBe(false);
+  });
+  it('repairs an older completed-sortie save that predates the company hold', () => {
+    const state = newGame(44, 0);
+    state.flags[SORTIE_FLAG] = 1;
+    delete state.expedition.refits.cargoHold;
+
+    const result = step(state, 0, [], OPTS);
+
+    expect(state.expedition.refits.cargoHold).toBe(SORTIE_COMPANY_HOLD_RANK);
+    expect(result.effects).toContainEqual({
+      t: 'refitInstalled',
+      id: 'cargoHold',
+      rank: SORTIE_COMPANY_HOLD_RANK,
+    });
+  });
+
 });
 
 describe('commission sale cleanup', () => {

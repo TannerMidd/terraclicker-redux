@@ -18,6 +18,7 @@ import { C } from '../../../content/constants';
 import { format } from '../../../engine/num';
 import { DOSSIER_BY_ID } from '../../../content/dossiers';
 import { CHARTER_BY_ID } from '../../../content/charters';
+import { NetworkSection } from '../../panels/NetworkSection';
 
 const BRANCHES: PerkBranch[] = ['construction', 'improbability', 'bureaucracy'];
 
@@ -122,6 +123,7 @@ export function Magrathea() {
   return (
     <>
       <CharterArticles />
+      <NetworkSection />
       <DossierBriefs />
 
       <div className="dr-sec">

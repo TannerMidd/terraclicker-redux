@@ -157,7 +157,11 @@ export function refreshJobBoard(state: GameState): void {
   if (worlds.length < 2) return;
 
   while (exp.jobs.length < JOB_BOARD_SIZE) {
-    const def = pickWeighted(state.rng, 'freight', FREIGHT);
+    // The first board always includes work the company-standard rank-one hold
+    // can carry; later slots and later boards retain the complete mix.
+    const starterSlot = exp.deliveries === 0 && exp.jobs.length === 0;
+    const pool = starterSlot ? FREIGHT.filter((candidate) => candidate.mass <= CARGO_CAPACITY[1]) : FREIGHT;
+    const def = pickWeighted(state.rng, 'freight', pool);
     const a = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
     let b = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
     if (b === a) b = (b + 1) % worlds.length;
@@ -194,6 +198,9 @@ export function acceptJob(state: GameState, effects: SimEffect[], uid: number): 
   // Accepted, not collected. The cargo is still sitting at its origin, and
   // fetching it is the first half of the job.
   exp.manifest = { ...job, acceptedAtMs: state.gameTimeMs, pickedUpAtMs: null };
+  // Accepting work is also a navigation decision. This stable pin follows the
+  // manifest from collection to delivery without another trip through a menu.
+  exp.pinned = `job:${job.uid}`;
   effects.push({ t: 'jobAccepted', uid, id: job.id, from: job.fromName });
 }
 
@@ -207,6 +214,7 @@ export function deliverManifest(state: GameState, effects: SimEffect[]): void {
   const m = leg.manifest;
   const def = FREIGHT_BY_ID[m.id];
   exp.manifest = null;
+  if (exp.pinned === `job:${m.uid}`) exp.pinned = null;
   exp.deliveries += 1;
   state.lifetime.deliveries += 1;
   exp.salvage += m.salvage;
@@ -233,6 +241,7 @@ export function loseManifest(
   const m = state.expedition.manifest;
   if (!m) return;
   state.expedition.manifest = null;
+  if (state.expedition.pinned === `job:${m.uid}`) state.expedition.pinned = null;
   effects.push({ t: 'manifestLost', id: m.id, reason });
 }
 

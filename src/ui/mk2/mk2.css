@@ -59,7 +59,7 @@
   --spine: 68px;
   --rail: 72px;
   --col: clamp(300px, 25vw, 356px);
-  --panel-w: clamp(352px, 27vw, 432px);
+  --panel-w: min(clamp(352px, 27vw, 432px), calc(100vw - var(--rail)));
   --window-right: calc(var(--rail) + var(--panel-w));
 
   color: var(--ink);

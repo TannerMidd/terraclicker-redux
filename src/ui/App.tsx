@@ -448,8 +448,8 @@ function useEffectWiring(): void {
               kicker: 'FIRST SORTIE FILED',
               title: 'Pilot status: sufficiently official',
               body: e.salvage > 0
-                ? `Starter allocation +${e.salvage} salvage. The Sensor Array is now affordable.`
-                : 'The recovered salvage already covers a first refit decision.',
+                ? `Company Cargo Hold fitted. Starter allocation +${e.salvage} salvage remains for a refit. Deliver two worlds, then open Missions for flight jobs.`
+                : 'Company Cargo Hold fitted. Deliver two worlds, then open Missions for flight jobs.',
               ttlMs: 7200,
             });
             audio.completeSting();

@@ -82,6 +82,10 @@ describe('Operations contract board', () => {
     expect(a.operations.offers).toHaveLength(C.CONTRACT_OFFER_COUNT);
     expect(new Set(a.operations.offers.map((entry) => entry.templateId)).size).toBe(3);
     expect(a.operations.offerGeneration).toBe(1);
+    expect(a.operations.offers[0]).toMatchObject({
+      templateId: 'delivery',
+      objective: { kind: 'planets', count: 1 },
+    });
 
     const otherStreams = {
       planets: a.rng.planets,

@@ -2415,11 +2415,17 @@ button {
   width: min(420px, 52vw);
   text-align: center;
   pointer-events: none;
+  z-index: 5;
   opacity: 0;
-  transition: opacity 200ms ease;
+  visibility: hidden;
+  transition: opacity 200ms ease, visibility 0s linear 200ms;
   text-shadow: 0 1px 10px rgba(0, 0, 0, 0.9);
 }
-.fh-nav.on { opacity: 1; }
+.fh-nav.on {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
 
 .fn-strip {
   position: relative;
@@ -2442,10 +2448,10 @@ button {
   top: -4px;
   width: 9px;
   height: 9px;
-  margin-left: -4.5px;
+  transform: translateX(-50%);
   background: var(--magrathea, #7fd1c8);
   clip-path: polygon(50% 100%, 0 0, 100% 0);
-  transition: transform 90ms linear;
+  transition: left 90ms linear, opacity 120ms ease;
 }
 /* Past the strip's reach the marker pins to an edge and hollows out: the
    waypoint is behind you, and the ribbon says so without extra chrome. */
@@ -2468,6 +2474,36 @@ button {
 }
 .fh-nav.hot span { color: var(--warn, #e8b26a); }
 .fh-nav.hot .fn-marker { background: var(--warn, #e8b26a); }
+.fn-autopilot {
+  min-width: 210px;
+  margin-top: 8px;
+  padding: 7px 14px;
+  border: 1px solid color-mix(in srgb, var(--atmo) 68%, transparent);
+  border-radius: 2px;
+  background: rgba(5, 13, 20, 0.82);
+  color: var(--atmo);
+  font: 700 10px/1.2 var(--font-mono);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 18px rgba(90, 215, 232, 0.1);
+}
+.fn-autopilot:hover,
+.fn-autopilot:focus-visible { background: rgba(17, 40, 49, 0.94); color: var(--ink); }
+.fn-autopilot.on {
+  border-color: var(--magrathea, #7fd1c8);
+  background: color-mix(in srgb, var(--magrathea, #7fd1c8) 16%, rgba(5, 13, 20, 0.9));
+  color: var(--ink);
+}
+.fn-autopilot-help {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-faint);
+  font: 9px/1.2 var(--font-mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 
 /* ————— The chart panel ————— */
 
@@ -3189,12 +3225,28 @@ button {
 .fcr-pin { font-size: 9px; letter-spacing: 0.12em; color: var(--ink-faint); min-width: 42px; text-align: right; }
 .fh-chart-row.pinned .fcr-pin { color: var(--atmo); }
 .fh-chart-foot {
-  padding: 8px 12px;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
   border-top: 1px solid rgba(42, 51, 80, 0.4);
   font-size: 10.5px;
   line-height: 1.45;
   color: var(--ink-faint);
 }
+.fh-chart-autopilot {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--atmo) 60%, transparent);
+  background: rgba(90, 215, 232, 0.07);
+  color: var(--atmo);
+  font: 700 10px/1.2 var(--font-mono);
+  letter-spacing: 0.11em;
+  cursor: pointer;
+}
+.fh-chart-autopilot:hover:not(:disabled),
+.fh-chart-autopilot:focus-visible { background: rgba(90, 215, 232, 0.14); color: var(--ink); }
+.fh-chart-autopilot.on { border-color: var(--magrathea, #7fd1c8); color: var(--ink); }
+.fh-chart-autopilot:disabled { opacity: 0.4; cursor: not-allowed; }
 .fm-pin {
   margin-left: 8px;
   padding: 1px 7px;

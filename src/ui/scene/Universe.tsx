@@ -8,6 +8,8 @@ import { FocusedSystem } from './universe/FocusedSystem';
 import { GalaxyTradeLanes } from './universe/LivingLanes';
 import { DeepField } from './universe/DeepField';
 import { Megaprojects, Rigs } from './universe/Structures';
+import { FlightGuidance } from './FlightGuidance';
+import { CivilizationNetwork } from './universe/CivilizationNetwork';
 
 /**
  * The universe you have built, all of it visible and none of it faked:
@@ -26,12 +28,14 @@ export function Universe() {
       <AssemblingSystem />
       <SystemGlyphs />
       <Galaxies />
+      <CivilizationNetwork />
       <ProtoGalaxy />
       <CosmicWeb />
       <FormationFX />
       <FocusedSystem />
       <GalaxyTradeLanes />
       <DeepField />
+      <FlightGuidance />
       {/* What you left behind: rigs on their seams, monuments over home. */}
       <Rigs />
       <Megaprojects />

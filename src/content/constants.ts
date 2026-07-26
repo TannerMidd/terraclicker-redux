@@ -108,6 +108,20 @@ export const C = {
   HERITAGE_ACTIVE_LIMIT: 8,
   HERITAGE_ASPECT_MULT: 1.01,
 
+  // Galaxy accords: intentionally small, additive contributions with hard
+  // aggregate caps so this depth layer complements Operations instead of
+  // becoming a second compounding prestige track.
+  NETWORK_QUORUM_ARTICLES: 3,
+  NETWORK_CIVIC_PROD: 0.008,
+  NETWORK_WORKS_PROD: 0.012,
+  NETWORK_OBSERVATORY_SCIENCE: 0.03,
+  NETWORK_ELEMENTAL_ASPECT: 0.01,
+  NETWORK_DIVERSITY_PER_KIND: 0.005,
+  NETWORK_DIVERSITY_CAP: 0.015,
+  NETWORK_PROD_CAP: 0.12,
+  NETWORK_SCIENCE_CAP: 0.18,
+  NETWORK_ASPECT_CAP: 0.1,
+
   // Sub-Etha (the channel keeps filing offline — see engine/subEtha.ts)
   SUBETHA_FIRST_MS: 90_000,
   SUBETHA_MIN_GAP_MS: 75_000,

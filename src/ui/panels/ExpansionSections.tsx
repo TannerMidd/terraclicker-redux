@@ -53,6 +53,7 @@ import {
 } from '../../engine/freight';
 import { findWaypoint, manifestWaypointId } from '../../engine/waypoints';
 import { actions, useGame } from '../../state/store';
+import { useUiBus } from '../fx/uiBus';
 
 export function MegaprojectSection() {
   const rev = useGame((g) => g.rev);
@@ -136,97 +137,152 @@ export function FreightSection() {
   const manifestDef = manifest ? FREIGHT_BY_ID[manifest.id] : null;
   const leg = currentManifestLeg(s);
   const objectiveId = manifest ? manifestWaypointId(manifest) : null;
-  const objectiveAvailable =
-    objectiveId !== null && findWaypoint(s, objectiveId) !== null;
+  const objectiveAvailable = objectiveId !== null && findWaypoint(s, objectiveId) !== null;
   const objectivePinned = objectiveId !== null && exp.pinned === objectiveId;
+  const deliveredWorlds = s.run.completedPlanets.length;
+  const routesReady = deliveredWorlds >= 2;
+  const launch = () => useUiBus.getState().setFlightMode(true);
 
   return (
-    <>
-      <div className="panel-h">Freight Board</div>
-      {capacity === 0 ? (
-        <div className="contract-empty">
-          No hold fitted. The runabout will carry a great deal of nothing until the Cargo Hold
-          refit is installed at the helm.
-        </div>
-      ) : manifest ? (
-        <div className="manifest-card">
-          <div className="mf-head">
-            <span className="mf-label">{manifestDef?.label ?? manifest.id}</span>
-            <span className="mf-pay">{manifest.salvage} salvage</span>
+    <section className="mission-board" aria-label="Flight jobs">
+      <div className="mission-section-title">
+        <span>
+          <b>Flight Jobs</b>
+          <em>HELM MISSIONS</em>
+        </span>
+        <span className="mission-board-count">
+          {manifest ? '1 ACTIVE' : `${exp.jobs.length} POSTED`}
+        </span>
+      </div>
+      <p className="dr-note">
+        Accept here, then fly the highlighted route. Arrival collects and unloads automatically;
+        there is no hidden dock button.
+      </p>
+      <div className="mission-readiness" aria-label="Flight job readiness">
+        <span className={s.flags.firstSortieDone ? 'met' : ''}>
+          {s.flags.firstSortieDone ? '✓' : '1'} PILOT INDUCTION
+        </span>
+        <span className={capacity > 0 ? 'met' : ''}>
+          {capacity > 0 ? '✓' : '2'} CARGO HOLD · {capacity}t
+        </span>
+        <span className={routesReady ? 'met' : ''}>
+          {routesReady ? '✓' : '3'} ROUTES · {Math.min(2, deliveredWorlds)}/2 WORLDS
+        </span>
+      </div>
+
+      {manifest ? (
+        <div className="mission-active-card">
+          <div className="mission-type-row">
+            <span>ACTIVE FLIGHT MISSION · LEG {leg?.phase === 'collect' ? '1' : '2'} OF 2</span>
+            <b>+{manifest.salvage} SALVAGE</b>
           </div>
-          <div className="mf-note">{manifestDef?.note}</div>
-          <div className="mf-route">
-            {manifest.fromName} → <b>{manifest.toName}</b>
-            {manifestDef ? ` · ${manifestDef.mass}t` : ''}
+          <h3>{manifestDef?.label ?? manifest.id}</h3>
+          <p>{manifestDef?.note}</p>
+          <div className="mission-objective">
+            <small>{leg?.phase === 'collect' ? 'FLY TO PICKUP' : 'FLY TO DELIVERY'}</small>
+            <b>{leg?.targetName ?? manifest.toName}</b>
+            <span>
+              {manifest.fromName} → {manifest.toName}
+              {manifestDef ? ` · ${manifestDef.mass}t` : ''}
+            </span>
           </div>
-          <div className="mf-hint">
-            {leg?.phase === 'collect' ? (
-              <>
-                Fly first to <b>{leg.targetName}</b> to collect it. The hold is empty until
-                pickup. Its system has to be revealed for the port to see you.
-              </>
-            ) : (
-              <>
-                Cargo aboard. Fly to <b>{leg?.targetName ?? manifest.toName}</b>; it
-                discharges on arrival. Its system has to be revealed for the port to see you.
-              </>
-            )}
-          </div>
-          {objectiveAvailable && objectiveId && (
-            <>
+          <p className="mission-auto-note">
+            {leg?.phase === 'collect'
+              ? 'Pickup is automatic on arrival. The course then retargets the destination.'
+              : 'Cargo is aboard. Delivery and payment are automatic on arrival.'}
+          </p>
+          <div className="mission-actions">
+            {objectiveAvailable && objectiveId && (
               <button
-                className="btn"
-                aria-pressed={objectivePinned}
-                onClick={() => actions.setWaypoint(objectivePinned ? null : objectiveId)}
+                className="dr-btn"
+                disabled={objectivePinned}
+                onClick={() => actions.setWaypoint(objectiveId)}
               >
-                {objectivePinned
-                  ? `Unpin ${leg?.targetName ?? 'objective'}`
-                  : leg?.phase === 'collect'
-                    ? `Pin collection · ${leg.targetName}`
-                    : `Pin delivery · ${leg?.targetName ?? manifest.toName}`}
-              </button>{' '}
-            </>
-          )}
-          <button className="btn ghost" onClick={() => actions.abandonManifest()}>
-            {leg?.phase === 'collect' ? 'Withdraw from the job' : 'Jettison the manifest'}
-          </button>
-        </div>
-      ) : exp.jobs.length === 0 ? (
-        <div className="contract-empty">
-          Nothing posted. The board refills on its own, and only ever between worlds you have
-          actually delivered.
+                {objectivePinned ? 'COURSE SET' : `SET COURSE · ${leg?.targetName ?? 'OBJECTIVE'}`}
+              </button>
+            )}
+            <button className="dr-btn mission-launch" onClick={launch}>TAKE THE HELM</button>
+            <button className="dr-btn ghost" onClick={() => actions.abandonManifest()}>
+              {leg?.phase === 'collect' ? 'WITHDRAW' : 'JETTISON CARGO'}
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="job-list">
-          {exp.jobs.map((job) => {
-            const def = FREIGHT_BY_ID[job.id];
-            if (!def) return null;
-            const fits = def.mass <= capacity;
-            return (
-              <button
-                key={job.uid}
-                className="job-item"
-                disabled={!fits}
-                onClick={() => actions.acceptJob(job.uid)}
-              >
-                <div className="job-head">
-                  <span className="job-label">{def.label}</span>
-                  <span className="job-pay">{job.salvage} salvage</span>
-                </div>
-                <div className="job-note">{def.note}</div>
-                <div className="job-route">
-                  {job.fromName} → {job.toName} · {def.mass}t
-                  {!fits && <span className="job-over"> · too heavy for this hold</span>}
-                </div>
-              </button>
-            );
-          })}
-        </div>
+        <>
+          {exp.deliveries === 0 && exp.jobs.length > 0 && (
+            <div className="mission-callout">
+              <b>Your first flight job is ready.</b>
+              <span>Choose a route below. ACCEPT &amp; SET COURSE does both jobs at once.</span>
+            </div>
+          )}
+          {capacity === 0 && (
+            <div className="mission-prereq">
+              <b>Cargo Hold required</b>
+              <span>
+                Finish First Sortie for the company rank-one hold, or fit one from the helm.
+                Offers remain visible below so you can see what capacity they need.
+              </span>
+              <button className="dr-btn" onClick={launch}>TAKE THE HELM</button>
+            </div>
+          )}
+          {!routesReady && (
+            <div className="mission-prereq">
+              <b>Flight routes need two delivered worlds</b>
+              <span>
+                Deliver {2 - deliveredWorlds} more world{2 - deliveredWorlds === 1 ? '' : 's'}.
+                Then clients can name both an origin and a destination.
+              </span>
+              <strong>{Math.min(2, deliveredWorlds)} / 2 WORLDS DELIVERED</strong>
+            </div>
+          )}
+          {routesReady && exp.jobs.length === 0 && (
+            <div className="mission-empty">
+              <b>No flight jobs posted right now</b>
+              <span>The board refills automatically; accepted work never expires.</span>
+            </div>
+          )}
+          {exp.jobs.length > 0 && (
+            <div className="mission-job-list">
+              {exp.jobs.map((job) => {
+                const def = FREIGHT_BY_ID[job.id];
+                if (!def) return null;
+                const fits = def.mass <= capacity;
+                const expires = Math.max(0, job.expiresAtMs - s.gameTimeMs);
+                const faction = FACTION_META[def.faction];
+                const rep = def.kind === 'passenger' ? 2 : 1;
+                return (
+                  <article key={job.uid} className={`mission-job${fits ? ' job-ready' : ''}`}>
+                    <div className="mission-type-row">
+                      <span>{faction.label.toUpperCase()} · {formatDuration(expires)} LEFT</span>
+                      <b>+{job.salvage} SALVAGE · +{rep} REP</b>
+                    </div>
+                    <h3>{def.label}</h3>
+                    <p>{def.note}</p>
+                    <div className="mission-route">
+                      <b>{job.fromName}</b><i>→</i><b>{job.toName}</b><span>{def.mass}t</span>
+                    </div>
+                    {!fits && (
+                      <p className="mission-blocked">
+                        Requires {def.mass}t capacity · your hold carries {capacity}t
+                      </p>
+                    )}
+                    <button
+                      className="dr-btn mission-accept"
+                      disabled={!fits}
+                      onClick={() => actions.acceptJob(job.uid)}
+                    >
+                      {fits ? 'ACCEPT & SET COURSE' : `NEEDS ${def.mass}t HOLD`}
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
-    </>
+    </section>
   );
 }
-
 export function RigSection() {
   const rev = useGame((g) => g.rev);
   void rev;

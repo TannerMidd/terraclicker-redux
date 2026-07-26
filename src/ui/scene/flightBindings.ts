@@ -46,7 +46,7 @@ export const ACTION_LABELS: Record<FlightAction, string> = {
   engage: 'scan / board',
   jump: 'jump',
   deter: 'dispersal field',
-  courseHold: 'course hold',
+  courseHold: 'destination autopilot',
   exit: 'disembark',
 };
 

@@ -108,25 +108,23 @@ export const DRAWERS: Record<DrawerId, DrawerMeta> = {
     },
   },
   operations: {
-    code: 'OP',
-    rail: 'OPS',
-    eyebrow: 'The business',
-    title: 'Operations',
-    dek: 'Start with Filings for contracts and deadlines. Works holds freight, rigs, and monuments; Dispatch assigns system routes; Heritage records what survives a sale.',
+    code: 'MS',
+    rail: 'MISSIONS',
+    eyebrow: 'Work for the taking',
+    title: 'Missions',
+    dek: 'Accept Desk Contracts or Flight Jobs here. Projects, routes, and the permanent record have their own tabs and never hide the next job.',
     ledger: () => {
       const { s } = useGame.getState();
       const leg = currentManifestLeg(s);
-      const rigs = Object.values(s.expedition.rigs);
-      const ready = rigs.filter((rig) => Math.floor(rig.banked) > 0).length;
       const contract = s.operations.active
         ? 'ACTIVE'
         : s.operations.offers.length > 0
           ? `${s.operations.offers.length} OFFER${s.operations.offers.length === 1 ? '' : 'S'}`
           : 'NONE';
       return [
-        { k: 'CONTRACT', v: contract, color: s.operations.active ? 'var(--atmo)' : undefined },
-        { k: 'FREIGHT', v: leg ? leg.phase.toUpperCase() : s.expedition.jobs.length > 0 ? `${s.expedition.jobs.length} JOBS` : 'NONE', color: leg ? 'var(--atmo)' : undefined },
-        { k: 'RIGS', v: ready > 0 ? `${ready} READY` : rigs.length > 0 ? `${rigs.length} OUT` : 'NONE', color: ready > 0 ? 'var(--bio)' : undefined },
+        { k: 'DESK MISSION', v: contract, color: s.operations.active ? 'var(--atmo)' : undefined },
+        { k: 'FLIGHT MISSION', v: leg ? leg.phase.toUpperCase() : s.expedition.jobs.length > 0 ? `${s.expedition.jobs.length} JOBS` : 'NONE', color: leg ? 'var(--atmo)' : undefined },
+        { k: 'COMPLETED', v: String(s.operations.completed.length + s.lifetime.deliveries) },
       ];
     },
   },

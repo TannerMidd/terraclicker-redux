@@ -84,6 +84,7 @@ import {
 } from './standingOrders';
 import {
   FIRST_SORTIE,
+  SORTIE_COMPANY_HOLD_RANK,
   SORTIE_FLAG,
   SORTIE_PROGRESS_FLAG,
   SORTIE_STARTER_SALVAGE,
@@ -202,6 +203,18 @@ function addTu(state: GameState, gain: Decimal): void {
   state.run.tuEarned = state.run.tuEarned.add(gain);
   state.lifetime.tuEarned = state.lifetime.tuEarned.add(gain);
 }
+
+/** Repair saves that filed First Sortie before the company hold became standard issue. */
+function ensureSortieCompanyHold(state: GameState, effects: SimEffect[]): void {
+  if (!state.flags[SORTIE_FLAG]) return;
+  const holdRank = state.expedition.refits['cargoHold'] ?? 0;
+  if (holdRank >= SORTIE_COMPANY_HOLD_RANK) return;
+  state.expedition.refits['cargoHold'] = SORTIE_COMPANY_HOLD_RANK;
+  effects.push({
+    t: 'refitInstalled', id: 'cargoHold', rank: SORTIE_COMPANY_HOLD_RANK,
+  });
+}
+
 
 function fillGauge(state: GameState, aspect: AspectId, amount: Decimal, overflowRate: number): void {
   const p = state.planet;
@@ -431,7 +444,12 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     case 'completeFirstSortie': {
       if (state.flags[SORTIE_FLAG]) break;
       const salvage = Math.max(0, SORTIE_STARTER_SALVAGE - state.expedition.salvage);
+      const holdRank = state.expedition.refits['cargoHold'] ?? 0;
       state.expedition.salvage += salvage;
+      if (holdRank < SORTIE_COMPANY_HOLD_RANK) {
+        state.expedition.refits['cargoHold'] = SORTIE_COMPANY_HOLD_RANK;
+        effects.push({ t: 'refitInstalled', id: 'cargoHold', rank: SORTIE_COMPANY_HOLD_RANK });
+      }
       state.flags[SORTIE_FLAG] = 1;
       state.flags[SORTIE_PROGRESS_FLAG] = FIRST_SORTIE.length;
       effects.push({ t: 'sortieCompleted', salvage });
@@ -847,6 +865,7 @@ export function step(
   opts: StepOptions = {},
 ): StepResult {
   const effects: SimEffect[] = [];
+  ensureSortieCompanyHold(state, effects);
   const offline = Boolean(opts.offline);
   const TICK = C.LOGIC_TICK_MS;
   ensureContractBoard(state);

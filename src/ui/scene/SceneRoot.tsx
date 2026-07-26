@@ -73,6 +73,16 @@ export default function SceneRoot() {
           powerPreference: 'high-performance',
         });
         await renderer.init();
+        // WebGPU allocates its depth attachment during init. On a fresh mobile
+        // canvas that can still be the HTML default (300x150) even though CSS
+        // has already laid out the real viewport, producing invalid first
+        // render passes until R3F's resize observer catches up.
+        const canvas = (props as { canvas?: HTMLCanvasElement }).canvas;
+        const initialWidth = Math.round(canvas?.clientWidth ?? 0);
+        const initialHeight = Math.round(canvas?.clientHeight ?? 0);
+        if (initialWidth > 0 && initialHeight > 0) {
+          renderer.setSize(initialWidth, initialHeight, false);
+        }
         renderer.toneMapping = THREE.AgXToneMapping;
         renderer.toneMappingExposure = 1.15;
         return renderer;

@@ -46,7 +46,8 @@ import {
 } from '../../content/contracts';
 import { RESEARCH } from '../../content/research';
 import { statuteOffers } from '../../engine/statutes';
-import { currentManifestLeg } from '../../engine/freight';
+import { cargoCapacity, currentManifestLeg } from '../../engine/freight';
+import { ATTENDANCE_SALVAGE } from '../../engine/bridge';
 import { Drawer, DRAWERS, type DrawerId } from './drawers';
 import './mk2.css';
 
@@ -69,7 +70,9 @@ export type AttentionKind =
   | 'prestige'
   | 'research'
   | 'rig'
-  | 'offer';
+  | 'offer'
+  | 'flightOffer'
+  | 'missionPrereq';
 
 export interface AttentionItem {
   id: string;
@@ -158,6 +161,37 @@ export function buildAttentionItems(state: GameState, derived: Derived): Attenti
     });
   }
 
+  if (!leg && state.expedition.jobs.length > 0) {
+    const capacity = cargoCapacity(state.expedition);
+    const first = state.expedition.deliveries === 0;
+    items.push({
+      id: 'flight-jobs',
+      kind: 'flightOffer',
+      priority: first ? 18 : 68,
+      title: first ? 'Your first flight jobs are posted' : `${state.expedition.jobs.length} flight jobs available`,
+      detail: capacity > 0
+        ? `${state.expedition.jobs.length} routes / ${capacity}t hold / accept in Missions`
+        : `${state.expedition.jobs.length} routes visible / Cargo Hold required / open Missions`,
+      drawer: 'operations',
+      tone: first ? 'ready' : 'quiet',
+    });
+  } else if (
+    !leg
+    && state.flags.firstSortieDone
+    && state.expedition.deliveries === 0
+    && state.run.completedPlanets.length < 2
+  ) {
+    const worlds = state.run.completedPlanets.length;
+    items.push({
+      id: 'flight-jobs-prerequisite',
+      kind: 'missionPrereq',
+      priority: 69,
+      title: 'Flight jobs unlock after two worlds',
+      detail: `${worlds}/2 delivered / routes need an origin and destination / open Missions`,
+      drawer: 'operations',
+      tone: 'quiet',
+    });
+  }
   if (!state.run.dossier && state.run.dossierOffers.length > 0) {
     items.push({
       id: 'dossier',
@@ -246,7 +280,7 @@ export function buildAttentionItems(state: GameState, derived: Derived): Attenti
       id: 'contract-offers',
       kind: 'offer',
       priority: 70,
-      title: 'Choose an Operations filing',
+      title: 'Choose a desk mission',
       detail: `${state.operations.offers.length} offer${state.operations.offers.length === 1 ? '' : 's'} on the board`,
       drawer: 'operations',
       tone: 'quiet',
@@ -615,9 +649,6 @@ function AnswerCard({
   const pinId = inst.world ? waypointId('world', inst.world) : null;
   const canPin = pinId ? Boolean(findWaypoint(s, pinId)) : false;
   const pinned = pinId !== null && s.expedition.pinned === pinId;
-  const canAttend =
-    Boolean(inst.world) && pinId !== null && s.expedition.visited[pinId] !== undefined;
-
   return (
     <div className="mk2-answer-slot">
       <div className="mk2-answer">
@@ -632,24 +663,19 @@ function AnswerCard({
             <div className="mk2-answer-title">{def.name}</div>
             <p className="mk2-answer-text">{fillSituationText(def.text, inst.worldName)}</p>
           </div>
-          {(canPin || canAttend) && (
+          {canPin && (
             <div className="mk2-answer-acts">
-              {canPin && (
-                <button
-                  className={pinned ? 'on' : ''}
-                  onClick={() => actions.setWaypoint(pinned ? null : pinId)}
-                >
-                  {pinned ? `PINNED · ${inst.worldName}` : `PIN ${inst.worldName.toUpperCase()}`}
-                </button>
-              )}
-              {canAttend && (
-                <button className="attend" onClick={() => actions.attendInPerson(inst.uid)}>
-                  ATTEND IN PERSON
-                </button>
-              )}
+              <button
+                className="attend"
+                onClick={() => {
+                  actions.setWaypoint(pinId);
+                  useUiBus.getState().setFlightMode(true);
+                }}
+              >
+                {pinned ? 'TAKE THE HELM' : 'FLY THERE'} · +{ATTENDANCE_SALVAGE} SALVAGE
+              </button>
             </div>
-          )}
-          <div className="mk2-answer-opts">
+          )}          <div className="mk2-answer-opts">
             {def.options.map((o) => {
               const costs = situationCosts(d, o);
               const canTu = !costs.tu || s.tu.gte(costs.tu);
@@ -961,6 +987,7 @@ function useUnlocked(): (id: DrawerId) => boolean {
           || s.research.completed.length > 0
           || Boolean(s.research.active);
       case 'operations':
+        return true;
       case 'vortex':
         return s.lifetime.planetsCompleted > 0;
       case 'orders':

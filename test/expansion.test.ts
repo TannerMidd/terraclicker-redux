@@ -124,6 +124,27 @@ describe('the hold', () => {
     expect(s.expedition.salvage).toBe(salvage + job.salvage);
   });
 
+  it('sets one stable course on acceptance and clears it on every terminal outcome', () => {
+    const s = withWorlds(142);
+    fit(s, 'cargoHold', 3);
+    refreshJobBoard(s);
+    const first = s.expedition.jobs[0]!;
+
+    step(s, 0, [{ type: 'acceptJob', uid: first.uid }], OPTS);
+    expect(s.expedition.pinned).toBe(`job:${first.uid}`);
+    step(s, 0, [{ type: 'pickUpManifest' }], OPTS);
+    expect(s.expedition.pinned).toBe(`job:${first.uid}`);
+    step(s, 0, [{ type: 'deliverManifest' }], OPTS);
+    expect(s.expedition.manifest).toBeNull();
+    expect(s.expedition.pinned).toBeNull();
+
+    const second = s.expedition.jobs[0]!;
+    step(s, 0, [{ type: 'acceptJob', uid: second.uid }], OPTS);
+    expect(s.expedition.pinned).toBe(`job:${second.uid}`);
+    step(s, 0, [{ type: 'abandonManifest' }], OPTS);
+    expect(s.expedition.manifest).toBeNull();
+    expect(s.expedition.pinned).toBeNull();
+  });
   it('makes the ship heavier to fly, and only while actually loaded', () => {
     const s = withWorlds(15);
     fit(s, 'cargoHold', 1);
@@ -156,6 +177,15 @@ describe('the hold', () => {
       expect(names.has(job.toName)).toBe(true);
       expect(job.fromName).not.toBe(job.toName);
     }
+  });
+
+  it('always posts a first route the company Cargo Hold can carry', () => {
+    const s = withWorlds(121);
+    fit(s, 'cargoHold', 1);
+    refreshJobBoard(s);
+    const first = s.expedition.jobs[0];
+    expect(first).toBeDefined();
+    expect(FREIGHT_BY_ID[first!.id]!.mass).toBeLessThanOrEqual(cargoCapacity(s.expedition));
   });
 
   it('is never taken from you by a clock', () => {

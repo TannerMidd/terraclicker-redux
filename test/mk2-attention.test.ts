@@ -66,6 +66,32 @@ describe('Mk II priority queue', () => {
     expect(manifest?.title).toBe('Deliver to Destination');
   });
 
+  it('explains the flight-job prerequisite, then announces the first posted routes', () => {
+    const state = newGame(20260726, 0);
+    state.flags.firstSortieDone = 1;
+
+    let item = buildAttentionItems(state, computeDerived(state, OPTS))
+      .find((candidate) => candidate.kind === 'missionPrereq');
+    expect(item?.title).toBe('Flight jobs unlock after two worlds');
+    expect(item?.detail).toContain('0/2 delivered');
+
+    state.expedition.refits.cargoHold = 1;
+    state.expedition.jobs = [{
+      uid: 77,
+      id: 'labware',
+      from: 1,
+      to: 2,
+      fromName: 'Origin',
+      toName: 'Destination',
+      distance: 12,
+      salvage: 8,
+      expiresAtMs: 90_000,
+    }];
+    item = buildAttentionItems(state, computeDerived(state, OPTS))
+      .find((candidate) => candidate.kind === 'flightOffer');
+    expect(item?.title).toBe('Your first flight jobs are posted');
+    expect(item?.detail).toContain('accept in Missions');
+  });
   it('covers idle research, permanent decisions, ready rigs, and prestige', () => {
     const state = newGame(20260725, 0);
     state.buildings.researchLab = 1;

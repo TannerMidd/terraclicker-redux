@@ -28,14 +28,14 @@ import { formatDuration } from '../../../engine/num';
 import { AspectGlyph } from '../../assets';
 import { MegaprojectSection, FreightSection, RigSection } from '../../panels/ExpansionSections';
 
-const TABS = ['filings', 'works', 'dispatch', 'heritage'] as const;
+const TABS = ['missions', 'projects', 'dispatch', 'heritage'] as const;
 type Tab = (typeof TABS)[number];
 
 const TAB_LABEL: Record<Tab, string> = {
-  filings: 'FILINGS',
-  works: 'WORKS',
-  dispatch: 'DISPATCH',
-  heritage: 'HERITAGE',
+  missions: 'MISSIONS',
+  projects: 'PROJECTS',
+  dispatch: 'ROUTES',
+  heritage: 'RECORD',
 };
 
 const FACTION_COLOR: Record<string, string> = {
@@ -44,111 +44,122 @@ const FACTION_COLOR: Record<string, string> = {
   vogon: 'var(--vogon, #8a8f5a)',
 };
 
-function Filings() {
+function DeskContracts() {
   const { s } = useGame.getState();
   const ops = s.operations;
 
-  if (ops.active) {
-    const active = ops.active;
-    const offer = active.offer;
-    const template = CONTRACT_TEMPLATE_META[offer.templateId];
-    const faction = FACTION_META[offer.faction];
-    const target = objectiveTarget(offer.objective);
-    const pct = target > 0 ? Math.min(100, (active.progress / target) * 100) : 100;
-    const remaining =
-      active.deadlineAtGameMs === null
-        ? null
-        : Math.max(0, active.deadlineAtGameMs - s.gameTimeMs);
-
-    return (
-      <>
-        <div className="dr-card lit">
-          <div className="dr-card-head">
-            <span className="dr-sec-k" style={{ color: 'var(--atmo)' }}>Accepted filing</span>
-            <span className="dr-sec-k" style={{ color: FACTION_COLOR[offer.faction] }}>
-              {faction.label}
-            </span>
-          </div>
-          <div className="dr-card-name">{template.name}</div>
-          <div className="dr-card-body">{objectiveText(offer.objective)}</div>
-          <div className="dr-card-head" style={{ marginTop: 11 }}>
-            <b className="dr-card-clock" style={{ color: 'var(--ink)' }}>
-              {active.progress} / {target}
-            </b>
-            <span className="dr-card-clock" style={{ color: 'var(--improbable)' }}>
-              {remaining === null ? 'No deadline' : `${formatDuration(remaining)} remaining`}
-            </span>
-          </div>
-          <div className="dr-meter"><i style={{ width: `${pct}%` }} /></div>
-          <div className="dr-card-head" style={{ marginTop: 11 }}>
-            <span className="dr-card-clock" style={{ color: 'var(--improbable)' }}>
-              {contractRewardText(offer.rewardBp, offer.rewardReputation)}
-            </span>
-            <button className="dr-btn" onClick={() => actions.abandonContract()}>WITHDRAW</button>
-          </div>
-        </div>
-        <p className="dr-note">
-          {objectiveRule(offer.objective)} A missed deadline or commission reset closes the file
-          unpaid. You may also withdraw at any time. No TU, BP, or reputation is deducted.
-        </p>
-      </>
-    );
-  }
-
   return (
-    <>
-      <div className="dr-sec">
-        <span className="dr-sec-k">Acceptance board</span>
-        <span className="dr-rule" />
-        <button
-          className="dr-btn"
-          disabled={ops.rerolledAtSystem === s.run.systems}
-          onClick={() => actions.rerollContracts()}
-        >
-          REISSUE
-        </button>
+    <section className="mission-board" aria-label="Desk contracts">
+      <div className="mission-section-title">
+        <span>
+          <b>Desk Contracts</b>
+          <em>IDLE MISSIONS</em>
+        </span>
+        <span className="mission-board-count">
+          {ops.active ? '1 ACTIVE' : `${ops.offers.length} POSTED`}
+        </span>
       </div>
       <p className="dr-note">
-        Three deterministic offers. Accepting one removes the others until the filing is
-        completed or closed.
+        These advance through the idle game. Accept one, then deliver the stated worlds or
+        systems; only progress made after acceptance counts.
       </p>
-      {ops.offers.length === 0 ? (
-        <p className="dr-note">The board is being stamped. This is not a metaphor.</p>
-      ) : (
-        ops.offers.map((offer) => {
-          const template = CONTRACT_TEMPLATE_META[offer.templateId];
-          const faction = FACTION_META[offer.faction];
-          const window =
-            offer.objective.kind === 'timed'
-              ? ` Filing window: ${formatDuration(offer.objective.durationMs)}.`
-              : '';
-          return (
-            <button
-              key={offer.id}
-              className="dr-offer-row"
-              onClick={() => actions.acceptContract(offer.id)}
-              aria-label={`Accept ${template.name} from ${faction.label}`}
-            >
-              <span className="dr-card-head">
+
+      {ops.active ? (() => {
+        const active = ops.active;
+        const offer = active.offer;
+        const template = CONTRACT_TEMPLATE_META[offer.templateId];
+        const faction = FACTION_META[offer.faction];
+        const target = objectiveTarget(offer.objective);
+        const pct = target > 0 ? Math.min(100, (active.progress / target) * 100) : 100;
+        const remaining = active.deadlineAtGameMs === null
+          ? null
+          : Math.max(0, active.deadlineAtGameMs - s.gameTimeMs);
+        return (
+          <>
+            <div className="dr-card lit mission-contract-active">
+              <div className="dr-card-head">
+                <span className="dr-sec-k" style={{ color: 'var(--atmo)' }}>ACTIVE DESK MISSION</span>
                 <span className="dr-sec-k" style={{ color: FACTION_COLOR[offer.faction] }}>
                   {faction.label}
                 </span>
-                <span className="dr-card-clock" style={{ color: 'var(--improbable)', fontWeight: 600 }}>
+              </div>
+              <div className="dr-card-name">{template.name}</div>
+              <div className="dr-card-body">{objectiveText(offer.objective)}</div>
+              <div className="dr-card-head" style={{ marginTop: 11 }}>
+                <b className="dr-card-clock" style={{ color: 'var(--ink)' }}>
+                  {active.progress} / {target}
+                </b>
+                <span className="dr-card-clock" style={{ color: 'var(--improbable)' }}>
+                  {remaining === null ? 'No deadline' : `${formatDuration(remaining)} remaining`}
+                </span>
+              </div>
+              <div className="dr-meter"><i style={{ width: `${pct}%` }} /></div>
+              <div className="dr-card-head" style={{ marginTop: 11 }}>
+                <span className="dr-card-clock" style={{ color: 'var(--improbable)' }}>
                   {contractRewardText(offer.rewardBp, offer.rewardReputation)}
                 </span>
-              </span>
-              <b>{template.name}</b>
-              <em>{objectiveText(offer.objective)}{window}</em>
-              <i>{objectiveRule(offer.objective)}</i>
+                <button className="dr-btn" onClick={() => actions.abandonContract()}>WITHDRAW</button>
+              </div>
+            </div>
+            <p className="dr-note">
+              {objectiveRule(offer.objective)} A missed deadline or commission reset closes the
+              mission unpaid. Withdrawing costs progress, but no TU, BP, or reputation.
+            </p>
+          </>
+        );
+      })() : (
+        <>
+          <div className="dr-sec">
+            <span className="dr-sec-k">Available desk missions</span>
+            <span className="dr-rule" />
+            <button
+              className="dr-btn"
+              disabled={ops.rerolledAtSystem === s.run.systems}
+              onClick={() => actions.rerollContracts()}
+            >
+              REISSUE
             </button>
-          );
-        })
+          </div>
+          {ops.offers.length === 0 ? (
+            <p className="dr-note">The board is being stamped. This is not a metaphor.</p>
+          ) : (
+            <div className="mission-contract-list">
+              {ops.offers.map((offer) => {
+                const template = CONTRACT_TEMPLATE_META[offer.templateId];
+                const faction = FACTION_META[offer.faction];
+                const window = offer.objective.kind === 'timed'
+                  ? ` Filing window: ${formatDuration(offer.objective.durationMs)}.`
+                  : '';
+                return (
+                  <article key={offer.id} className="dr-offer-row mission-contract">
+                    <span className="dr-card-head">
+                      <span className="dr-sec-k" style={{ color: FACTION_COLOR[offer.faction] }}>
+                        {faction.label}
+                      </span>
+                      <span className="dr-card-clock" style={{ color: 'var(--improbable)', fontWeight: 600 }}>
+                        {contractRewardText(offer.rewardBp, offer.rewardReputation)}
+                      </span>
+                    </span>
+                    <b>{template.name}</b>
+                    <em>{objectiveText(offer.objective)}{window}</em>
+                    <i>{objectiveRule(offer.objective)}</i>
+                    <button
+                      className="dr-btn mission-accept"
+                      onClick={() => actions.acceptContract(offer.id)}
+                      aria-label={`Accept ${template.name} from ${faction.label}`}
+                    >
+                      ACCEPT DESK CONTRACT
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
-      <div style={{ height: 20 }} />
-    </>
+    </section>
   );
 }
-
 function Dispatch() {
   const { s, d } = useGame.getState();
   const ops = s.operations;
@@ -291,10 +302,43 @@ function Heritage() {
   );
 }
 
+function MissionRecord() {
+  const { s } = useGame.getState();
+  const recent = [...s.operations.completed].slice(-3).reverse();
+  const total = s.operations.completed.length + s.lifetime.deliveries;
+  return (
+    <section className="mission-record" aria-label="Completed mission record">
+      <div className="mission-section-title compact">
+        <span>
+          <b>Completed Record</b>
+          <em>PERSISTS WITH THIS SAVE</em>
+        </span>
+        <span className="mission-board-count">{total} TOTAL</span>
+      </div>
+      <div className="mission-record-stats">
+        <span><b>{s.operations.completed.length}</b> DESK CONTRACTS</span>
+        <span><b>{s.lifetime.deliveries}</b> FLIGHT DELIVERIES</span>
+      </div>
+      {recent.length > 0 && (
+        <div className="mission-record-list">
+          {recent.map((entry) => (
+            <div key={`${entry.id}-${entry.completedAtGameMs}`}>
+              <span>
+                <b>{CONTRACT_TEMPLATE_META[entry.templateId].name}</b>
+                <em>{FACTION_META[entry.faction].label}</em>
+              </span>
+              <strong>+{entry.rewardBp} BP · +{entry.rewardReputation} REP</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 export function Operations() {
   const rev = useGame((g) => g.rev);
   void rev;
-  const [tab, setTab] = useState<Tab>('filings');
+  const [tab, setTab] = useState<Tab>('missions');
   const { s } = useGame.getState();
 
   return (
@@ -323,11 +367,16 @@ export function Operations() {
         ))}
       </div>
 
-      {tab === 'filings' && <Filings />}
-      {tab === 'works' && (
+      {tab === 'missions' && (
+        <>
+          <FreightSection />
+          <DeskContracts />
+          <MissionRecord />
+        </>
+      )}
+      {tab === 'projects' && (
         <>
           <MegaprojectSection />
-          <FreightSection />
           <RigSection />
         </>
       )}

@@ -14,6 +14,7 @@ import { ASPECTS, type AspectId, type Derived, type GameState, type StepOptions 
 import { appliedSystemSpecialties, dispatchesUsedBy, dispatchSlotsFor } from './operations';
 import { dossierEffects, dossierSystemsDelta } from './dossiers';
 import { charterEffects } from './charters';
+import { deriveGalaxyNetwork } from './networks';
 import { programmeEffects } from './programmes';
 import { statuteEffects } from './statutes';
 
@@ -230,6 +231,12 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   allMult = allMult.mul(articles.prodMult);
   scienceMult *= articles.scienceMult;
   for (const a of ASPECTS) aspectMult[a] *= articles.aspectMult[a];
+
+  // Galaxy accords and intergalactic exchange.
+  const network = deriveGalaxyNetwork(state).effects;
+  allMult = allMult.mul(network.prodMult);
+  scienceMult *= network.scienceMult;
+  for (const a of ASPECTS) aspectMult[a] *= network.aspectMult[a];
 
   // ——— planet context: type bias, quirks, survey ———
   const planetType = PLANET_TYPE_BY_ID[state.planet.type];

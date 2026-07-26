@@ -196,16 +196,28 @@ function makeOffer(
 export function refreshContractBoard(state: GameState, effects?: SimEffect[]): boolean {
   if (state.operations.active) return false;
   const generation = state.operations.offerGeneration + 1;
-  const templates = sample(
-    state.rng,
-    'contracts',
-    CONTRACT_TEMPLATE_IDS,
-    C.CONTRACT_OFFER_COUNT,
-  );
+  // A new player needs one promise they can understand immediately. The
+  // remaining two slots retain the seeded variety, but the first filing is
+  // always one current-loop delivery rather than a survey or whole system.
+  const firstBoard = state.operations.offerGeneration === 0
+    && state.lifetime.planetsCompleted === 0;
+  const templates: ContractTemplateId[] = firstBoard
+    ? [
+        'delivery',
+        ...sample(
+          state.rng,
+          'contracts',
+          CONTRACT_TEMPLATE_IDS.filter((id) => id !== 'delivery'),
+          C.CONTRACT_OFFER_COUNT - 1,
+        ),
+      ]
+    : sample(state.rng, 'contracts', CONTRACT_TEMPLATE_IDS, C.CONTRACT_OFFER_COUNT);
   state.operations.offerGeneration = generation;
-  state.operations.offers = templates.map((templateId, slot) =>
-    makeOffer(state, templateId, generation, slot),
-  );
+  state.operations.offers = templates.map((templateId, slot) => {
+    const offer = makeOffer(state, templateId, generation, slot);
+    if (firstBoard && slot === 0) offer.objective = { kind: 'planets', count: 1 };
+    return offer;
+  });
   effects?.push({ t: 'contractBoardRefreshed', generation });
   return true;
 }

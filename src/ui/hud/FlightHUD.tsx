@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
-import { flightInput, flightLive, helmChart, interdiction, mouseSteer } from '../scene/flightControl';
+import { flightInput, flightLive, helmChart, interdiction, mouseSteer, toggleAutopilot } from '../scene/flightControl';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
@@ -50,6 +50,8 @@ function HelmChart({ onClose }: { onClose: () => void }) {
 
   const rows = helmChart();
   const pinned = useGame.getState().s.expedition.pinned;
+  const pinnedRow = rows.find((row) => row.pinned);
+  const canAutopilot = Boolean(pinnedRow?.known && flightLive.nav);
 
   return (
     <div className="fh-chart" role="dialog" aria-label="Chart">
@@ -91,8 +93,18 @@ function HelmChart({ onClose }: { onClose: () => void }) {
         })}
       </div>
       <div className="fh-chart-foot">
-        Pin one and the ribbon carries the bearing. <b>{boundKey('courseHold')}</b> holds the course to anywhere you
-        have already been.
+        <span>Pin a known place, then the ship aligns, cruises, brakes, and stops there. Any helm input returns to manual.</span>
+        <button
+          className={`fh-chart-autopilot${flightLive.courseHold ? ' on' : ''}`}
+          disabled={!canAutopilot}
+          aria-label={flightLive.courseHold ? 'Disengage destination autopilot' : 'Engage autopilot to the pinned route'}
+          aria-pressed={flightLive.courseHold}
+          onClick={() => toggleAutopilot()}
+        >
+          {flightLive.courseHold
+            ? `DISENGAGE · ${flightLive.autopilotPhase.toUpperCase()}`
+            : `ENGAGE AUTOPILOT · ${boundKey('courseHold')}`}
+        </button>
       </div>
     </div>
   );
@@ -268,6 +280,7 @@ function NavRibbon() {
   const marker = useRef<HTMLDivElement>(null);
   const name = useRef<HTMLElement>(null);
   const readout = useRef<HTMLElement>(null);
+  const autopilot = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let raf = 0;
@@ -283,23 +296,41 @@ function NavRibbon() {
       }
       if (!el.classList.contains('on')) el.classList.add('on');
 
-      // Bearing is signed with port negative, so it maps straight onto x.
-      // Clamped to the strip: something directly behind pins to an edge and
-      // stays there, which reads as "turn around" without any extra chrome.
+      // Position the marker in the ribbon itself. Transform percentages are
+      // relative to the nine-pixel marker, which used to make a 420px ribbon
+      // move by only a few pixels and turned every bearing into "ahead".
       const clamped = Math.max(-1, Math.min(1, nav.bearing / (Math.PI * 0.6)));
       if (marker.current) {
-        marker.current.style.transform = `translateX(${(clamped * 50).toFixed(2)}%)`;
+        marker.current.style.left = `${(50 + clamped * 48).toFixed(2)}%`;
         marker.current.classList.toggle('astern', Math.abs(nav.bearing) > Math.PI * 0.6);
       }
       if (name.current && name.current.textContent !== flightLive.navLabel) {
         name.current.textContent = flightLive.navLabel;
       }
       if (readout.current) {
-        const hold = flightLive.courseHold ? ' · COURSE HOLD' : '';
+        const elevation = Math.round((nav.elevation * 180) / Math.PI);
+        const vertical = Math.abs(elevation) < 4
+          ? 'level'
+          : `${Math.abs(elevation)}° ${elevation < 0 ? 'down' : 'up'}`;
+        const pilot = flightLive.courseHold
+          ? ` · AUTOPILOT ${flightLive.autopilotPhase.toUpperCase()}`
+          : ' · MANUAL';
         const text = nav.overshooting
-          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · too fast to stop${hold}`
-          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${etaLabel(nav.etaSeconds)}${hold}`;
+          ? `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${vertical} · too fast to stop${pilot}`
+          : `${rangeLabel(nav.distance)} · ${bearingLabel(nav.bearing)} · ${vertical} · ${etaLabel(nav.etaSeconds)}${pilot}`;
         if (readout.current.textContent !== text) readout.current.textContent = text;
+      }
+      if (autopilot.current) {
+        const engaged = flightLive.courseHold;
+        const text = engaged
+          ? `DISENGAGE · ${flightLive.autopilotPhase.toUpperCase()}`
+          : `ENGAGE AUTOPILOT · ${boundKey('courseHold')}`;
+        if (autopilot.current.textContent !== text) autopilot.current.textContent = text;
+        autopilot.current.classList.toggle('on', engaged);
+        autopilot.current.setAttribute('aria-pressed', String(engaged));
+        autopilot.current.setAttribute('aria-label', engaged
+          ? `Disengage destination autopilot; current phase ${flightLive.autopilotPhase}`
+          : `Engage autopilot to ${flightLive.navLabel}`);
       }
       el.classList.toggle('hot', nav.overshooting);
     };
@@ -315,6 +346,16 @@ function NavRibbon() {
       </div>
       <b ref={name} />
       <span ref={readout} />
+      <button
+        ref={autopilot}
+        className="fn-autopilot"
+        aria-label="Engage autopilot to the active route"
+        aria-pressed="false"
+        onClick={() => toggleAutopilot()}
+      >
+        ENGAGE AUTOPILOT · {boundKey('courseHold')}
+      </button>
+      <small className="fn-autopilot-help">any helm input returns to manual</small>
     </div>
   );
 }
@@ -797,7 +838,7 @@ function FlightHUDInner() {
       <FlightEventFeed />
 
       <div className="fh-top">
-        <span className="fh-chip">manual flight · the company runabout</span>
+        <span className="fh-chip">the company runabout · helm online</span>
         <button className="fh-exit" onClick={() => useUiBus.getState().setFlightMode(false)}>
           disembark <kbd>{boundKey('exit')}</kbd>
         </button>
@@ -896,7 +937,7 @@ function FlightHUDInner() {
             <b>{boundKey('yawLeft')}/{boundKey('yawRight')}</b> steer · <b>{boundKey('thrust')}</b> thrust ·{' '}
             <b>{boundKey('brake')}</b> brake · <b>{boundKey('boost')}</b> boost ·{' '}
             <b>{boundKey('engage')}</b> scan/board · <b>{boundKey('jump')}</b> jump ·{' '}
-            <b>M</b> chart · <b>K</b> controls · <b>{boundKey('exit')}</b> disembark
+            <b>M</b> chart · <b>{boundKey('courseHold')}</b> autopilot · <b>K</b> controls · <b>{boundKey('exit')}</b> disembark
           </>
         )}
       </div>
