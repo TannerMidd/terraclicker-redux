@@ -1,8 +1,8 @@
 import { Suspense, lazy, useEffect } from 'react';
 import { onEffects, useGame } from '../state/store';
 import { ErrorBoundary } from './ErrorBoundary';
-import { HUD } from './hud/HUD';
-import { Dock } from './panels/Dock';
+import { Mk2Shell } from './mk2/Shell';
+import { SceneOverlays } from './mk2/SceneOverlays';
 import { OfflineModal } from './hud/OfflineModal';
 import { SurveyModal } from './hud/SurveyModal';
 import { FlightHUD } from './hud/FlightHUD';
@@ -349,8 +349,8 @@ export function App() {
             <SceneRoot />
           </Suspense>
         </div>
-        <HUD />
-        <Dock />
+        {!flightMode && <Mk2Shell />}
+        <SceneOverlays />
         <FlightHUD />
         <SurveyModal />
         <OfflineModal />

@@ -1,0 +1,246 @@
+/**
+ * The drawer interiors, in Mk II's language.
+ *
+ * The nine panels already know how to do their jobs — what to buy, what a
+ * contract costs, which world is the heritage candidate. None of that logic
+ * has anything to do with how the casing looks, so this re-skins their markup
+ * where it stands rather than forking nine working components.
+ *
+ * The conversion is the same three moves everywhere:
+ *
+ *   - Nothing is a floating card. Mk II is an instrument, so rows are full
+ *     width, separated by a hairline, and marked by a coloured left edge
+ *     rather than by a border box with corners.
+ *   - Every number is IBM Plex Mono and tabular. A column of readings that
+ *     jitters as its digits change is a column nobody can scan.
+ *   - Section headings are the same stamped label as everywhere else in the
+ *     device: 8.5px, mono, letterspaced, with a rule running off to the right.
+ */
+
+.mk2-panel-body {
+  font-family: var(--sans);
+  font-size: 13px;
+}
+
+/* ── Section headings ── */
+.mk2-panel-body .panel-h {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 11px 18px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-faint);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.mk2-panel-body .panel-h::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+.mk2-panel-body .panel-sub {
+  margin: 0;
+  padding: 9px 18px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+
+/* ── Readings ── */
+.mk2-panel-body .num,
+.mk2-panel-body .s-v,
+.mk2-panel-body .b-cost,
+.mk2-panel-body .u-cost,
+.mk2-panel-body .r-dur {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.mk2-panel-body .stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.mk2-panel-body .stat {
+  background: var(--bg);
+  border: none;
+  border-radius: 0;
+  padding: 9px 0 9px 18px;
+}
+.mk2-panel-body .s-v { font-size: 14px; font-weight: 600; color: var(--ink); }
+.mk2-panel-body .s-k {
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+  color: var(--ink-label);
+}
+.mk2-panel-body .s-desc { font-size: 11px; color: var(--ink-faint); }
+
+/* ── Buttons: flat, square, and the same everywhere ── */
+.mk2-panel-body .btn,
+.mk2-panel-body .qty-btn,
+.mk2-panel-body button.so-toggle {
+  border-radius: 0;
+  border: 1px solid var(--line-3);
+  background: rgba(233, 238, 249, .04);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+}
+.mk2-panel-body .btn:hover:not(:disabled),
+.mk2-panel-body .qty-btn:hover:not(.active) { background: rgba(233, 238, 249, .09); border-color: var(--atmo); }
+.mk2-panel-body .qty-btn.active { background: var(--bio); border-color: var(--bio); color: var(--void); font-weight: 600; }
+.mk2-panel-body .btn.danger { border-color: rgba(255, 93, 93, .4); color: var(--danger); background: none; }
+
+/* ── Installations ── */
+.mk2-panel-body .upgrade-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--line-faint);
+  padding: 0;
+  margin: 0;
+  overflow: visible;
+}
+.mk2-panel-body .upgrade-card {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  width: auto;
+  min-width: 0;
+  padding: 11px 12px;
+  border: none;
+  border-left: 2px solid var(--improbable);
+  border-radius: 0;
+  background: rgba(245, 200, 76, .05);
+}
+.mk2-panel-body .upgrade-card:disabled,
+.mk2-panel-body .upgrade-card.locked { border-left-color: var(--line-3); background: var(--bg); opacity: .52; }
+.mk2-panel-body .upgrade-card:hover:not(:disabled) { background: rgba(245, 200, 76, .1); }
+.mk2-panel-body .u-icon { width: 26px; height: 26px; object-fit: contain; }
+.mk2-panel-body .u-name { font-size: 12.5px; font-weight: 600; }
+.mk2-panel-body .u-cost { font-size: 11px; color: var(--improbable); margin-top: 2px; }
+.mk2-panel-body .u-desc { font-size: 11px; color: var(--ink-dim); margin-top: 3px; line-height: 1.4; }
+
+.mk2-panel-body .qty-row { display: flex; gap: 0; padding: 9px 18px; }
+.mk2-panel-body .qty-row .qty-btn { border-left-width: 0; padding: 2px 10px; }
+.mk2-panel-body .qty-row .qty-btn:first-child { border-left-width: 1px; }
+
+.mk2-panel-body .shop-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 11px 18px;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+/* Mk I lit an affordable row with a glow box. Mk II lights the edge. */
+.mk2-panel-body .shop-item,
+.mk2-panel-body .upgrade-card { box-shadow: none; outline: none; }
+.mk2-panel-body .shop-item.affordable { border-left-color: var(--bio); background: rgba(88, 214, 138, .045); }
+.mk2-panel-body .shop-item:hover { background: rgba(174, 199, 255, .05); }
+.mk2-panel-body .shop-item.locked { opacity: .4; }
+.mk2-panel-body .shop-item .fill {
+  position: absolute; left: 0; bottom: 0; right: 0; top: auto;
+  height: 2px;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--bio), var(--atmo));
+  opacity: .5;
+  border-radius: 0;
+}
+.mk2-panel-body .b-icon { width: 34px; height: 34px; object-fit: contain; }
+.mk2-panel-body .locked-icon {
+  display: grid; place-items: center;
+  border: 1px dashed var(--line-3);
+  font-family: var(--display);
+  color: var(--ink-label);
+}
+.mk2-panel-body .row1 { display: flex; align-items: baseline; gap: 7px; }
+.mk2-panel-body .b-name { font-size: 13.5px; font-weight: 600; }
+.mk2-panel-body .b-cost { font-size: 13px; font-weight: 600; color: var(--bio); white-space: nowrap; }
+.mk2-panel-body .shop-item:not(.affordable) .b-cost { color: var(--ink-dim); }
+.mk2-panel-body .row2 { display: flex; gap: 9px; margin-top: 3px; flex-wrap: wrap; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+
+/* ── Cards that were boxes: contracts, megaprojects, heritage, research ── */
+.mk2-panel-body .contract-card,
+.mk2-panel-body .mega-card,
+.mk2-panel-body .candidate,
+.mk2-panel-body .research-active,
+.mk2-panel-body .reservation,
+.mk2-panel-body .so-block {
+  border-radius: 0;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--atmo);
+  background: linear-gradient(110deg, rgba(90, 215, 232, .06), transparent 62%);
+}
+.mk2-panel-body .contract-title,
+.mk2-panel-body .heritage-name,
+.mk2-panel-body .m-name { font-family: var(--display); font-weight: 650; letter-spacing: -.012em; }
+.mk2-panel-body .contract-faction,
+.mk2-panel-body .heritage-badge,
+.mk2-panel-body .contract-head,
+.mk2-panel-body .so-head,
+.mk2-panel-body .dispatch-head,
+.mk2-panel-body .heritage-meta {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.mk2-panel-body .contract-reward { font-family: var(--mono); font-weight: 600; color: var(--improbable); }
+.mk2-panel-body .progress-track { border-radius: 0; height: 3px; background: var(--line-soft); }
+.mk2-panel-body .progress-bar { border-radius: 0; background: linear-gradient(90deg, var(--atmo), var(--bio)); }
+
+/* ── Rows of settings and toggles ── */
+.mk2-panel-body .set-row {
+  border-radius: 0;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  background: none;
+  padding: 11px 18px;
+}
+.mk2-panel-body .so-toggle input,
+.mk2-panel-body .set-row input[type='checkbox'] { accent-color: var(--bio); }
+.mk2-panel-body input[type='text'],
+.mk2-panel-body textarea,
+.mk2-panel-body select {
+  border-radius: 0;
+  border: 1px solid var(--line-3);
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+/* Chips and pills lose their corners; this is a device, not a web page. */
+.mk2-panel-body .chip,
+.mk2-panel-body .so-chips > *,
+.mk2-panel-body .d-quirk,
+.mk2-panel-body .heritage-rule {
+  border-radius: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+}
