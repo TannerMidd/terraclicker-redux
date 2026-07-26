@@ -70,13 +70,36 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* The casing itself. Layout only — the tokens above are shared. */
+/**
+ * The casing itself. Layout only — the tokens above are shared.
+ *
+ * TRANSPARENT, and it must stay transparent. The window is a hole in the
+ * chrome through which the actual rendered universe is seen; painting a
+ * background here covers the canvas with a flat rectangle and the scene
+ * silently disappears behind its own instrument panel. The individual chrome
+ * pieces are each opaque, which is what masks the canvas at the edges.
+ *
+ * Likewise pointer-events: the casing is a full-screen layer, so a solid one
+ * swallows every click meant for the world. Nothing here takes the pointer
+ * except the parts that are actually controls.
+ */
 .mk2 {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--bg);
+  background: transparent;
+  pointer-events: none;
 }
+.mk2-top,
+.mk2-spine,
+.mk2-bottom,
+.mk2-rail,
+.mk2-binnacle,
+.mk2-panel,
+.mk2-reopen,
+.mk2-coldopen { pointer-events: auto; }
+/* The glass takes no clicks at all — that is the whole point of it. */
+.mk2-window { pointer-events: none; }
 
 .mk2.panel-closed {
   --window-right: var(--rail);

@@ -227,8 +227,14 @@ export function ColdOpen() {
   const dismissed = useUiBus((b) => b.coldOpenDismissed);
   if (started || dismissed) return null;
 
+  const open = () => useUiBus.getState().dismissColdOpen();
+
+  // The cover is opaque, so it is also the thing standing between the reader
+  // and the world it is telling them to touch. Touching the cover therefore
+  // counts: it lifts, and the instruction carries on inside the device where
+  // the world is actually reachable.
   return (
-    <div className="mk2-coldopen-veil">
+    <div className="mk2-coldopen-veil" onClick={open}>
       <div className="mk2-coldopen-inner">
         <img src={BRAND_ASSETS.dontPanic} alt="DON’T PANIC" />
         <div className="k">Guide entry 0</div>
@@ -239,7 +245,15 @@ export function ColdOpen() {
           Restoring a universe? Use the department without starting this one.
         </p>
         <div className="mk2-coldopen-bar"><i /></div>
-        <button onClick={() => useUiBus.getState().dismissColdOpen()}>SKIP TO THE DESK</button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            open();
+            useUiBus.getState().setDockTab('settings');
+          }}
+        >
+          SKIP TO THE DESK
+        </button>
       </div>
     </div>
   );
