@@ -107,7 +107,655 @@
 .mk2-panel-body .qty-btn.active { background: var(--bio); border-color: var(--bio); color: var(--void); font-weight: 600; }
 .mk2-panel-body .btn.danger { border-color: rgba(255, 93, 93, .4); color: var(--danger); background: none; }
 
-/* ── Installations ── */
+/* ═══ Mk II drawer primitives ═══
+   Converted drawers use these directly. Everything below them is the
+   re-skin that keeps a not-yet-converted panel looking like it belongs. */
+
+/* A stamped section label with a rule running off to the right, and an
+   optional reading on the far end. Sticky, so a long list keeps its heading. */
+.dr-sec {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 18px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-faint);
+}
+.dr-sec + .dr-sec { border-top: 1px solid var(--line-faint); }
+.dr-sec-k {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.dr-rule { flex: 1; height: 1px; background: var(--line-soft); }
+.dr-sec-note { font-family: var(--mono); font-size: 9px; color: var(--ink-label); }
+
+/* The buy-quantity segmented control. */
+.dr-qty { display: flex; border: 1px solid var(--line-2); }
+.dr-qty button {
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+.dr-qty button + button { border-left: 1px solid var(--line-2); }
+.dr-qty button.on { background: var(--bio); color: var(--void); font-weight: 600; }
+
+/* Upgrades: two up, because there are never many and each one is a sentence. */
+.dr-upgrades { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line-faint); }
+.dr-upgrade {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 11px 12px;
+  border: none;
+  border-left: 2px solid var(--line-3);
+  background: var(--bg);
+  text-align: left;
+  opacity: .52;
+}
+.dr-upgrade.on { border-left-color: var(--improbable); background: rgba(245, 200, 76, .05); opacity: 1; }
+.dr-upgrade.on:hover { background: rgba(245, 200, 76, .1); }
+.dr-upgrade img { width: 26px; height: 26px; object-fit: contain; }
+.dr-upgrade b { display: block; font-size: 12.5px; font-weight: 600; }
+.dr-upgrade-cost { display: block; font-family: var(--mono); font-size: 11px; color: var(--improbable); margin-top: 2px; }
+.dr-upgrade:not(.on) .dr-upgrade-cost { color: var(--ink-dim); }
+.dr-upgrade-desc { display: block; font-size: 11px; color: var(--ink-dim); margin-top: 3px; line-height: 1.4; }
+
+/* The workhorse row: icon, copy, reading. Used by every list in the device. */
+.dr-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 11px 18px;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.dr-row.on { border-left-color: var(--bio); background: rgba(88, 214, 138, .045); }
+.dr-row:not(:disabled):hover { background: rgba(174, 199, 255, .05); }
+.dr-row:disabled { cursor: default; }
+.dr-row:not(.on):not(.locked) { opacity: .82; }
+.dr-row.locked { opacity: .4; }
+.dr-row-icon { width: 34px; height: 34px; object-fit: contain; }
+.dr-row-icon.dashed {
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line-3);
+  font-family: var(--display);
+  color: var(--ink-label);
+}
+.dr-row-copy { min-width: 0; }
+.dr-row-name { display: flex; align-items: baseline; gap: 7px; }
+.dr-row-name b { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-row-name i { font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--ink-label); flex: none; }
+.dr-chips {
+  display: flex;
+  gap: 9px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-faint);
+}
+.dr-chips span { display: inline-flex; align-items: center; gap: 3px; }
+.dr-row-cost { text-align: right; flex: none; }
+.dr-row-cost b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dr-row-cost span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .16em;
+  color: var(--ink-label);
+  margin-top: 1px;
+}
+/* Progress toward the next one, along the bottom edge of its own row. */
+.dr-row-meter {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--bio), var(--atmo));
+  opacity: .45;
+}
+
+.dr-row-desc {
+  display: block;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  margin-top: 2px;
+}
+
+/* Prose that is the drawer talking rather than listing. */
+.dr-note {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-dim);
+  text-wrap: pretty;
+}
+
+/* A lit box: the one thing in the drawer that is currently happening. */
+.dr-card {
+  margin: 16px 18px 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-3);
+  background: rgba(255, 255, 255, .015);
+}
+.dr-card.lit {
+  border-color: rgba(90, 215, 232, .34);
+  border-left-color: var(--atmo);
+  background: linear-gradient(110deg, rgba(90, 215, 232, .07), transparent 62%);
+}
+.dr-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dr-card-clock { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+.dr-card-name { margin-top: 4px; font-family: var(--display); font-size: 18px; font-weight: 650; }
+.dr-card-body { margin-top: 3px; font-size: 12px; color: var(--ink-dim); line-height: 1.5; }
+.dr-card-note { margin-top: 6px; font-size: 12px; }
+.dr-meter { height: 3px; margin-top: 10px; background: var(--line-soft); overflow: hidden; }
+.dr-meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--atmo), var(--bio)); }
+
+/* Concluded work, as a wall of chips rather than another list. */
+.dr-chipwrap { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 18px 20px; }
+.dr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-dim);
+}
+.dr-chip i { font-style: normal; }
+
+/* Forms: a master switch, then ruled rows of plain instructions. */
+.dr-master {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 16px 18px 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--line-3);
+  background: rgba(255, 255, 255, .015);
+  cursor: pointer;
+}
+.dr-master.on { border-color: rgba(179, 107, 255, .34); border-left-color: var(--magrathea); background: rgba(179, 107, 255, .07); }
+.dr-master input { margin-top: 3px; flex: none; accent-color: var(--magrathea); }
+.dr-master b { display: block; font-size: 13px; font-weight: 600; }
+.dr-master em { display: block; font-style: normal; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); }
+
+.dr-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+.dr-check:hover { background: rgba(174, 199, 255, .035); }
+.dr-check input { margin-top: 3px; flex: none; accent-color: var(--bio); }
+.dr-check b { display: block; font-size: 12.5px; font-weight: 600; }
+.dr-check em { display: block; font-style: normal; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); }
+
+.dr-slider { padding: 10px 18px 12px; }
+.dr-slider > label { display: flex; justify-content: space-between; font-size: 12.5px; }
+.dr-slider > label b { font-weight: 600; }
+.dr-slider > label span { font-family: var(--mono); color: var(--magrathea); }
+.dr-slider input[type='range'] { width: 100%; margin: 7px 0 4px; accent-color: var(--magrathea); }
+.dr-slider em { display: block; font-style: normal; font-size: 11px; line-height: 1.45; color: var(--ink-faint); }
+
+/* A chip you can press is a chip that shows its rank when chosen. */
+.dr-chip.pick { background: none; color: var(--ink-dim); }
+.dr-chip.pick:hover { border-color: var(--atmo); color: var(--ink); }
+.dr-chip.pick.on { border-color: rgba(88, 214, 138, .5); color: var(--ink); }
+.dr-chip.pick.done { opacity: .45; }
+.dr-chip.pick b {
+  display: grid;
+  place-items: center;
+  min-width: 13px;
+  height: 13px;
+  background: var(--bio);
+  color: var(--void);
+  font-size: 8.5px;
+  font-weight: 600;
+}
+
+/* Filters and a search field, stuck to the top of a long list. */
+.dr-filters {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 9px 18px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line-faint);
+}
+.dr-filter-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.dr-filter {
+  padding: 3px 9px;
+  border: 1px solid var(--line-2);
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+.dr-filter:hover { color: var(--ink); border-color: var(--atmo); }
+.dr-filter.on { background: var(--atmo); border-color: var(--atmo); color: var(--void); font-weight: 600; }
+.dr-search {
+  width: 100%;
+  margin-top: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-2);
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 12px;
+}
+.dr-search::placeholder { color: var(--ink-label); }
+.dr-search:focus { outline: none; border-color: var(--atmo); }
+
+/* A waypoint row: name, what kind of thing it is, and the pin. */
+.dr-wp {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 18px;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.dr-wp:hover { background: rgba(174, 199, 255, .05); }
+.dr-wp.on { border-left-color: var(--atmo); background: rgba(90, 215, 232, .06); }
+.dr-wp-copy { min-width: 0; }
+.dr-wp-copy b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dr-wp-copy em {
+  display: block;
+  font-style: normal;
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dr-wp-kind {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.dr-wp-pin {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  color: var(--ink-label);
+  min-width: 44px;
+  text-align: right;
+}
+.dr-wp.on .dr-wp-pin { color: var(--atmo); }
+
+/* The Vortex reading: the only number in the device allowed to be useless. */
+.dr-vortex { padding: 16px 18px 4px; }
+.dr-vortex-pct {
+  font-family: var(--display);
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1;
+  color: var(--magrathea);
+  font-variant-numeric: tabular-nums;
+}
+.dr-vortex .dr-meter { margin-top: 10px; }
+.dr-vortex-cap { margin-top: 6px; font-size: 11.5px; color: var(--ink-faint); }
+
+/* Two-up readings that are sentences rather than numbers. */
+.dr-pairs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.dr-pairs > div { background: var(--bg); padding: 10px 0 10px 18px; }
+.dr-pairs b { display: block; font-size: 13px; font-weight: 600; }
+.dr-pairs span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .15em;
+  color: var(--ink-label);
+  margin-top: 2px;
+}
+
+/* Enacted law, and what may still be passed. */
+.dr-law {
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid var(--magrathea);
+}
+.dr-law b { display: block; font-size: 12.5px; font-weight: 600; }
+.dr-law em { display: block; font-style: normal; font-size: 11.5px; color: var(--ink-dim); margin-top: 1px; }
+.dr-card.offer { display: block; width: calc(100% - 36px); text-align: left; }
+.dr-card.offer:hover { border-left-color: var(--magrathea); background: rgba(179, 107, 255, .06); }
+
+/* Reservation clauses: met, or a percentage of the way to having happened. */
+.dr-clause {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: baseline;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--line-faint);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+.dr-clause.met { color: var(--ink); }
+.dr-clause.met > span:first-child { color: var(--bio); }
+.dr-clause b { font-family: var(--mono); font-size: 10px; color: var(--ink-label); }
+
+/* The record: a wall of readings, three up. */
+.dr-record {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.dr-record > div { background: var(--bg); padding: 9px 0 9px 18px; }
+.dr-record b {
+  display: block;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dr-record span {
+  display: block;
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: .15em;
+  color: var(--ink-label);
+  margin-top: 1px;
+}
+
+.dr-subhead {
+  padding: 10px 18px 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.dr-card.brass { border-color: rgba(214, 178, 106, .4); border-left-color: var(--brass); }
+.dr-card.brass:hover { background: rgba(214, 178, 106, .07); }
+
+/* The offer for the portfolio — the one decision that ends a commission. */
+.dr-offer { padding: 14px 18px 16px; border-bottom: 1px solid var(--line); }
+.dr-offer-bp {
+  font-family: var(--display);
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -.028em;
+  line-height: 1;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.dr-offer.on .dr-offer-bp { color: var(--magrathea); }
+.dr-offer p { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); text-wrap: pretty; }
+.dr-sell {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px;
+  border: 1px solid var(--line-3);
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+}
+.dr-offer.on .dr-sell { border-color: var(--magrathea); color: var(--magrathea); background: rgba(179, 107, 255, .08); }
+.dr-offer.on .dr-sell:hover { background: rgba(179, 107, 255, .16); }
+.dr-sell:disabled { cursor: default; }
+
+/* A catalogue perk, with its rank read as pips rather than as a fraction. */
+.dr-perk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 10px 18px;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+  opacity: .6;
+}
+.dr-perk.on, .dr-perk.maxed { opacity: 1; }
+.dr-perk.on { border-left-color: var(--magrathea); background: rgba(179, 107, 255, .05); }
+.dr-perk.on:hover { background: rgba(179, 107, 255, .1); }
+.dr-perk-copy { min-width: 0; }
+.dr-pips { display: flex; gap: 3px; margin-top: 5px; }
+.dr-pips i { width: 14px; height: 3px; background: var(--line-2); }
+.dr-pips i.on { background: var(--magrathea); }
+
+/* A settings row: what it does on the left, the switch always in the same
+   place on the right. Controls that wander stop being read. */
+.dr-set {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line-faint);
+}
+.dr-set.block { display: block; }
+.dr-set > span:first-child { min-width: 0; }
+.dr-set b { display: block; font-size: 13px; font-weight: 600; }
+.dr-set em { display: block; font-style: normal; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); margin-top: 1px; }
+.dr-set.danger b { color: var(--danger); }
+.dr-btn {
+  flex: none;
+  padding: 5px 12px;
+  border: 1px solid var(--line-3);
+  background: rgba(233, 238, 249, .04);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-decoration: none;
+  display: inline-block;
+}
+.dr-btn:hover { background: rgba(233, 238, 249, .09); border-color: var(--atmo); }
+.dr-btn:disabled { opacity: .45; cursor: default; }
+.dr-btn.red { border-color: rgba(255, 93, 93, .4); color: var(--danger); background: none; }
+.dr-btn.red:hover { background: rgba(255, 93, 93, .1); border-color: var(--danger); }
+select.dr-btn { appearance: none; padding-right: 22px; }
+.dr-import {
+  display: block;
+  width: 100%;
+  min-height: 62px;
+  margin: 9px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line-3);
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  resize: vertical;
+}
+.dr-import:focus { outline: none; border-color: var(--atmo); }
+.dr-err { font-size: 11.5px; color: var(--danger); margin-bottom: 8px; }
+
+/* Sub-tabs inside a drawer. One level deep, never two. */
+.dr-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  gap: 1px;
+  background: var(--line-soft);
+  border-bottom: 1px solid var(--line);
+}
+.dr-tab {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-top: 2px solid transparent;
+  background: var(--bg-panel);
+  color: var(--ink-faint);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .16em;
+}
+.dr-tab:hover { color: var(--ink-2); background: rgba(174, 199, 255, .04); }
+.dr-tab.on { border-top-color: var(--atmo); color: var(--ink); background: var(--bg); }
+
+/* A world in the atlas: a delivery certificate that kept changing. */
+.dr-world { padding: 11px 18px; border-bottom: 1px solid var(--line-faint); }
+.dr-world-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.dr-world-head b { font-family: var(--display); font-size: 15px; font-weight: 650; }
+.dr-world-head span { font-family: var(--mono); font-size: 9px; letter-spacing: .14em; color: var(--ink-label); }
+.dr-world-bio { margin: 6px 0 0; font-size: 11.5px; line-height: 1.5; color: var(--ink-dim); text-wrap: pretty; }
+.dr-world-foot { display: flex; align-items: center; gap: 7px; margin-top: 8px; flex-wrap: wrap; }
+
+/* A guide entry: the plate, and whether it has been written yet. */
+.dr-entry {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 11px;
+  align-items: start;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line-faint);
+  opacity: .42;
+}
+.dr-entry.on { opacity: 1; }
+.dr-entry img { width: 54px; height: 40px; object-fit: contain; }
+.dr-entry b { display: block; font-size: 13px; font-weight: 600; }
+.dr-entry em { display: block; font-style: normal; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); margin-top: 2px; }
+
+/* One line of channel traffic. */
+.dr-log {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--line-faint);
+}
+.dr-log-when { font-family: var(--mono); font-size: 9px; color: var(--ink-label); }
+.dr-log-body { font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); }
+.dr-log-body i { font-style: normal; color: var(--bio); font-family: var(--mono); font-size: 9px; }
+
+/* A Deep Field catalogue entry. */
+.dr-df { padding: 10px 18px; border-bottom: 1px solid var(--line-faint); border-left: 2px solid transparent; opacity: .55; }
+.dr-df.on { opacity: 1; border-left-color: var(--atmo); }
+.dr-df-head { display: flex; align-items: center; gap: 8px; }
+.dr-df-head b { font-size: 13px; font-weight: 600; }
+
+.dr-pairs.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* An offer on the board: faction, reward, what it wants, and the rule. */
+.dr-offer-row {
+  display: block;
+  width: 100%;
+  padding: 11px 18px;
+  border: none;
+  border-bottom: 1px solid var(--line-faint);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+.dr-offer-row:hover { border-left-color: var(--improbable); background: rgba(245, 200, 76, .05); }
+.dr-offer-row b { display: block; margin-top: 2px; font-size: 13.5px; font-weight: 600; }
+.dr-offer-row em { display: block; font-style: normal; font-size: 11.5px; line-height: 1.45; color: var(--ink-dim); margin-top: 2px; }
+.dr-offer-row i {
+  display: block;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-label);
+  margin-top: 5px;
+}
+
+/* A system, and the three routes it may be pointed at. */
+.dr-system { margin: 12px 18px 0; padding: 11px 12px; border: 1px solid var(--line-2); }
+.dr-routes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 9px; }
+.dr-route {
+  padding: 7px 5px;
+  border: 1px solid var(--line-2);
+  background: none;
+  color: var(--ink-dim);
+  text-align: center;
+}
+.dr-route:hover:not(:disabled) { border-color: var(--atmo); color: var(--ink); }
+.dr-route:disabled { opacity: .35; cursor: default; }
+.dr-route.on { border-color: var(--atmo); background: rgba(90, 215, 232, .1); color: var(--ink); }
+.dr-route b { display: block; font-size: 9.5px; font-weight: 600; }
+.dr-route span { display: block; font-family: var(--mono); font-size: 8.5px; color: var(--ink-label); margin-top: 1px; }
+
+/* An archived world, and whether it is still one of the newest eight. */
+.dr-heritage {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line-faint);
+}
+.dr-heritage b { display: block; font-size: 13px; font-weight: 600; }
+.dr-heritage em {
+  display: block;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .1em;
+  color: var(--ink-label);
+  margin-top: 1px;
+}
+.dr-heritage-effect { font-family: var(--mono); font-size: 11px; color: var(--bio); }
+
+/* ── Re-skin for the shared sections that are still Mk I markup ──
+   All nine drawers are converted, but four components inside them are not
+   their own drawer and are used from more than one place: the megaproject,
+   freight and rig sections (all inside Operations → Works) and the Field
+   Manual (inside Guide → Manual). They keep their markup and borrow the
+   language here rather than being forked. */
 .mk2-panel-body .upgrade-strip {
   display: grid;
   grid-template-columns: 1fr 1fr;

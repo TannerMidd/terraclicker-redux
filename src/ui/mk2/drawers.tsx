@@ -12,15 +12,15 @@
 import { useGame } from '../../state/store';
 import { format, formatDuration } from '../../engine/num';
 import { C } from '../../content/constants';
-import { ShopPanel } from '../panels/ShopPanel';
-import { ResearchPanel } from '../panels/ResearchPanel';
-import { OperationsPanel } from '../panels/OperationsPanel';
-import { GuidePanel } from '../panels/GuidePanel';
-import { VortexPanel } from '../panels/VortexPanel';
-import { ChartPanel } from '../panels/ChartPanel';
-import { StandingOrdersPanel } from '../panels/StandingOrdersPanel';
-import { MagratheaPanel } from '../panels/MagratheaPanel';
-import { SettingsPanel } from '../panels/SettingsPanel';
+import { Installations } from './drawers/Installations';
+import { Research } from './drawers/Research';
+import { Operations } from './drawers/Operations';
+import { Guide } from './drawers/Guide';
+import { Vortex } from './drawers/Vortex';
+import { Chart } from './drawers/Chart';
+import { Orders } from './drawers/Orders';
+import { Magrathea } from './drawers/Magrathea';
+import { Settings } from './drawers/Settings';
 import './drawers.css';
 
 export type DrawerId =
@@ -204,23 +204,23 @@ export const DRAWERS: Record<DrawerId, DrawerMeta> = {
 export function Drawer({ id }: { id: DrawerId }) {
   switch (id) {
     case 'shop':
-      return <ShopPanel />;
+      return <Installations />;
     case 'research':
-      return <ResearchPanel />;
+      return <Research />;
     case 'orders':
-      return <StandingOrdersPanel />;
+      return <Orders />;
     case 'operations':
-      return <OperationsPanel />;
+      return <Operations />;
     case 'magrathea':
-      return <MagratheaPanel />;
+      return <Magrathea />;
     case 'chart':
-      return <ChartPanel />;
+      return <Chart />;
     case 'guide':
-      return <GuidePanel />;
+      return <Guide />;
     case 'vortex':
-      return <VortexPanel />;
+      return <Vortex />;
     case 'settings':
-      return <SettingsPanel />;
+      return <Settings />;
     default:
       return null;
   }
