@@ -109,6 +109,14 @@ interface UiBus {
   dockRequest: string | null;
   setDockTab: (tab: string) => void;
   clearDockRequest: () => void;
+  /**
+   * The cold open covers everything until the world is touched once. Somebody
+   * who came here to restore a save has to get past it without starting a
+   * universe, so this is a session flag rather than a saved one — it is not a
+   * preference, it is "I have seen this, let me at the department".
+   */
+  coldOpenDismissed: boolean;
+  dismissColdOpen: () => void;
   setFlightNearSystem: (index: number | null) => void;
 }
 
@@ -167,6 +175,8 @@ export const useUiBus = create<UiBus>((set) => ({
   dockRequest: null,
   setDockTab: (tab) => set({ dockRequest: tab }),
   clearDockRequest: () => set({ dockRequest: null }),
+  coldOpenDismissed: false,
+  dismissColdOpen: () => set({ coldOpenDismissed: true }),
   setFlightMode: (on) => {
     if (typeof document !== 'undefined') document.body.style.cursor = '';
     // Taking the helm releases any visit; handing it back clears the reveal.

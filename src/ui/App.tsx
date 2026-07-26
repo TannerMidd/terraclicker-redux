@@ -3,7 +3,7 @@ import { onEffects, useGame } from '../state/store';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Mk2Shell } from './mk2/Shell';
 import { SceneOverlays } from './mk2/SceneOverlays';
-import { OfflineModal } from './hud/OfflineModal';
+import { ColdOpen, MorningCircular } from './mk2/Overlays';
 import { SurveyModal } from './hud/SurveyModal';
 import { FlightHUD } from './hud/FlightHUD';
 import { useUiBus } from './fx/uiBus';
@@ -353,7 +353,8 @@ export function App() {
         <SceneOverlays />
         <FlightHUD />
         <SurveyModal />
-        <OfflineModal />
+        <MorningCircular />
+        {!flightMode && <ColdOpen />}
       </div>
     </ErrorBoundary>
   );
