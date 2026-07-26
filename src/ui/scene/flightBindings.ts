@@ -75,8 +75,45 @@ export const DEFAULT_BINDINGS: Record<FlightAction, Binding> = {
   courseHold: ['KeyH'],
 };
 
+/**
+ * One physical axis on one device, and what it is wired to.
+ *
+ * Standard-mapping pads are read by fixed index because the API promises that
+ * layout. Everything else — a flight stick, a throttle quadrant, rudder
+ * pedals — promises nothing at all, so the only honest way to know which axis
+ * is the rudder is to have the pilot move it and watch which number changed.
+ */
+export interface AxisBind {
+  /** Gamepad.id of the device this axis belongs to. */
+  device: string;
+  index: number;
+  invert: boolean;
+  /** 0–0.5. Wider than a thumbstick's, because springs age. */
+  deadzone: number;
+  /**
+   * A stick centres and reads -1..1; a throttle lever does not centre and its
+   * idle end is whichever way round the manufacturer felt like wiring it. A
+   * `lever` axis is therefore rescaled to 0..1 rather than treated as signed.
+   */
+  lever: boolean;
+}
+
+export type AxisRole = 'yaw' | 'pitch' | 'throttle' | 'strafe';
+export const AXIS_ROLES: readonly AxisRole[] = ['yaw', 'pitch', 'throttle', 'strafe'];
+export const AXIS_ROLE_LABELS: Record<AxisRole, string> = {
+  yaw: 'turn (yaw)',
+  pitch: 'nose up / down',
+  throttle: 'throttle',
+  strafe: 'slide left / right',
+};
+
 export interface FlightPrefs {
   bindings: Record<FlightAction, Binding>;
+  /**
+   * Axes assigned on a device the Gamepad API refuses to describe. Empty for
+   * everybody who is not flying a HOTAS, which is almost everybody.
+   */
+  axes: Partial<Record<AxisRole, AxisBind>>;
   /**
    * Cosmetic bank on turns. Already reduced once for comfort; this turns it
    * off entirely for anyone who still finds a tilting horizon unpleasant.
@@ -91,6 +128,7 @@ export interface FlightPrefs {
 
 export const DEFAULT_PREFS: FlightPrefs = {
   bindings: DEFAULT_BINDINGS,
+  axes: {},
   horizonLock: false,
   invertPitch: false,
   sensitivity: 1,
@@ -99,10 +137,27 @@ export const DEFAULT_PREFS: FlightPrefs = {
 
 const STORAGE_KEY = 'tc.flight.prefs.v1';
 
+function sanitizeAxis(raw: unknown): AxisBind | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o['device'] !== 'string' || typeof o['index'] !== 'number') return null;
+  if (!Number.isInteger(o['index']) || o['index'] < 0 || o['index'] > 63) return null;
+  return {
+    device: o['device'],
+    index: o['index'],
+    invert: o['invert'] === true,
+    deadzone: typeof o['deadzone'] === 'number' && Number.isFinite(o['deadzone'])
+      ? Math.max(0, Math.min(0.5, o['deadzone']))
+      : 0.08,
+    lever: o['lever'] === true,
+  };
+}
+
 function sanitize(raw: unknown): FlightPrefs {
   const prefs: FlightPrefs = {
     ...DEFAULT_PREFS,
     bindings: { ...DEFAULT_BINDINGS },
+    axes: {},
   };
   if (typeof raw !== 'object' || raw === null) return prefs;
   const obj = raw as Record<string, unknown>;
@@ -126,6 +181,14 @@ function sanitize(raw: unknown): FlightPrefs {
       }
     }
   }
+
+  const axes = obj['axes'];
+  if (typeof axes === 'object' && axes !== null) {
+    for (const role of AXIS_ROLES) {
+      const bind = sanitizeAxis((axes as Record<string, unknown>)[role]);
+      if (bind) prefs.axes[role] = bind;
+    }
+  }
   return prefs;
 }
 
@@ -134,14 +197,14 @@ let cached: FlightPrefs | null = null;
 export function flightPrefs(): FlightPrefs {
   if (cached) return cached;
   if (typeof localStorage === 'undefined') {
-    cached = { ...DEFAULT_PREFS, bindings: { ...DEFAULT_BINDINGS } };
+    cached = { ...DEFAULT_PREFS, bindings: { ...DEFAULT_BINDINGS }, axes: {} };
     return cached;
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     cached = sanitize(raw ? JSON.parse(raw) : null);
   } catch {
-    cached = { ...DEFAULT_PREFS, bindings: { ...DEFAULT_BINDINGS } };
+    cached = { ...DEFAULT_PREFS, bindings: { ...DEFAULT_BINDINGS }, axes: {} };
   }
   return cached;
 }
@@ -205,6 +268,65 @@ function axis(value: number | undefined): number {
   if (Math.abs(v) < DEADZONE) return 0;
   // Rescale past the deadzone so the first responsive degree is not a jump.
   return Math.sign(v) * ((Math.abs(v) - DEADZONE) / (1 - DEADZONE));
+}
+
+/**
+ * Every connected device, whatever shape it claims to be.
+ *
+ * `readPad` deliberately ignores anything that is not standard-mapping,
+ * because it reads fixed indices. This does the opposite job: it hands back
+ * the raw axes so a pilot can point at the one they just moved.
+ */
+export function readDevices(): { id: string; axes: readonly number[] }[] {
+  if (typeof navigator === 'undefined' || !navigator.getGamepads) return [];
+  const out: { id: string; axes: readonly number[] }[] = [];
+  for (const pad of navigator.getGamepads()) {
+    if (!pad || !pad.connected) continue;
+    out.push({ id: pad.id, axes: Array.from(pad.axes) });
+  }
+  return out;
+}
+
+/** What the bound axes read right now, already shaped and deadzoned. */
+export interface AxisState {
+  yaw: number;
+  pitch: number;
+  strafe: number;
+  /** 0..1, or null when no throttle axis is bound. */
+  throttle: number | null;
+  /** True while at least one bound device is actually present. */
+  live: boolean;
+}
+
+export function readAxes(prefs: FlightPrefs): AxisState {
+  const out: AxisState = { yaw: 0, pitch: 0, strafe: 0, throttle: null, live: false };
+  const bound = prefs.axes;
+  if (!bound.yaw && !bound.pitch && !bound.strafe && !bound.throttle) return out;
+
+  const devices = readDevices();
+  const value = (bind: AxisBind | undefined): number | null => {
+    if (!bind) return null;
+    const dev = devices.find((d) => d.id === bind.device);
+    if (!dev) return null;
+    const raw = dev.axes[bind.index];
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+    out.live = true;
+    const signed = bind.invert ? -raw : raw;
+    if (bind.lever) {
+      // A lever's travel is its whole range, so it is rescaled rather than
+      // deadzoned about a centre it does not have.
+      return Math.max(0, Math.min(1, (signed + 1) / 2));
+    }
+    const mag = Math.abs(signed);
+    if (mag <= bind.deadzone) return 0;
+    return Math.sign(signed) * ((mag - bind.deadzone) / (1 - bind.deadzone));
+  };
+
+  out.yaw = value(bound.yaw) ?? 0;
+  out.pitch = value(bound.pitch) ?? 0;
+  out.strafe = value(bound.strafe) ?? 0;
+  out.throttle = value(bound.throttle);
+  return out;
 }
 
 export function readPad(): PadState {

@@ -3091,3 +3091,113 @@ button {
   color: var(--ink);
 }
 .rv-text:last-child { margin-bottom: 0; color: var(--magrathea, #7fd1c8); }
+
+/* ── Helm: assigning axes on a device that will not describe itself ── */
+.fc-stick {
+  margin: 14px 0 4px;
+  padding: 12px 0 4px;
+  border-top: 1px solid var(--line-soft, rgba(42, 51, 80, 0.55));
+}
+.fc-stick-head b { display: block; font-size: 13px; }
+.fc-stick-head em {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+.fc-axis-controls { display: flex; align-items: center; gap: 6px; }
+.fc-axis-invert,
+.fc-axis-clear {
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.fc-axis-invert:hover,
+.fc-axis-clear:hover { color: var(--ink); border-color: var(--atmo); }
+
+/* ── The chart, at the helm ── */
+.fh-chart {
+  position: absolute;
+  right: 18px;
+  top: 96px;
+  width: 340px;
+  max-height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  background: rgba(6, 9, 16, 0.94);
+  box-shadow: 0 26px 64px rgba(0, 0, 0, 0.6);
+  z-index: 6;
+  pointer-events: auto;
+}
+.fh-chart .fs-head { display: flex; align-items: center; gap: 8px; }
+.fc-chart-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.fc-chart-close:hover { color: var(--ink); }
+.fh-chart-list { flex: 1; min-height: 0; overflow-y: auto; }
+.fh-chart-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(42, 51, 80, 0.35);
+  border-left: 2px solid transparent;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.fh-chart-row:hover { background: rgba(174, 199, 255, 0.06); }
+.fh-chart-row.pinned { border-left-color: var(--atmo); background: rgba(90, 215, 232, 0.08); }
+.fh-chart-row.unknown { opacity: 0.55; }
+.fcr-main { min-width: 0; }
+.fcr-main b { display: block; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fcr-main em {
+  display: block;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fcr-nav { text-align: right; }
+.fcr-nav b { display: block; font-size: 12px; font-variant-numeric: tabular-nums; }
+.fcr-nav em { display: block; font-style: normal; font-size: 10px; color: var(--ink-dim); }
+.fcr-pin { font-size: 9px; letter-spacing: 0.12em; color: var(--ink-faint); min-width: 42px; text-align: right; }
+.fh-chart-row.pinned .fcr-pin { color: var(--atmo); }
+.fh-chart-foot {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(42, 51, 80, 0.4);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+.fm-pin {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.fm-pin:hover { color: var(--ink); border-color: var(--atmo); }
+.fm-pin.on { color: var(--atmo); border-color: var(--atmo); }

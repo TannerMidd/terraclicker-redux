@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useUiBus, zoomLive } from '../fx/uiBus';
-import { flightInput, flightLive, interdiction, mouseSteer } from '../scene/flightControl';
+import { flightInput, flightLive, helmChart, interdiction, mouseSteer } from '../scene/flightControl';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
@@ -26,6 +26,72 @@ function speedLabel(frac: number, boosting: boolean, station: boolean): string {
   if (frac < 0.3) return 'loitering';
   if (frac < 0.7) return 'cruising';
   return 'making excellent time';
+}
+
+/**
+ * The chart, at the helm.
+ *
+ * Flying into a galaxy meant flying at a smear and hoping a system turned up,
+ * because leaving the seat was the only way to find out where anything was.
+ * Every row here is somewhere you can actually go, nearest first, with the
+ * turn you need and the range to it — and pinning one drives the same ribbon
+ * and the same course hold as a pin made at the desk.
+ */
+function HelmChart({ onClose }: { onClose: () => void }) {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => force((n) => n + 1), 220);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const rows = helmChart();
+  const pinned = useGame.getState().s.expedition.pinned;
+
+  return (
+    <div className="fh-chart" role="dialog" aria-label="Chart">
+      <div className="fs-head">
+        chart
+        <span>{rows.length} places</span>
+        <button className="fc-chart-close" onClick={onClose} aria-label="Close the chart">×</button>
+      </div>
+      <div className="fh-chart-list">
+        {rows.length === 0 && <div className="fs-none">nothing charted yet</div>}
+        {rows.map((r) => {
+          // Which way to turn, said as an instruction rather than a number.
+          const deg = Math.round((r.bearing * 180) / Math.PI);
+          const turn = Math.abs(deg) < 6
+            ? 'dead ahead'
+            : `${Math.abs(deg)}° ${deg < 0 ? 'port' : 'starboard'}`;
+          const up = Math.round((r.elevation * 180) / Math.PI);
+          return (
+            <button
+              key={r.id}
+              className={`fh-chart-row${r.pinned ? ' pinned' : ''}${r.known ? '' : ' unknown'}`}
+              onClick={() => actions.setWaypoint(pinned === r.id ? null : r.id)}
+              aria-pressed={r.pinned}
+            >
+              <span className="fcr-main">
+                <b>{r.label}</b>
+                <em>{r.detail}</em>
+              </span>
+              <span className="fcr-nav">
+                <b>{r.distance < 1000 ? `${r.distance.toFixed(0)}u` : `${(r.distance / 1000).toFixed(1)}ku`}</b>
+                <em>
+                  {turn}
+                  {Math.abs(up) >= 6 ? ` · ${Math.abs(up)}° ${up < 0 ? 'down' : 'up'}` : ''}
+                </em>
+              </span>
+              <span className="fcr-pin">{r.pinned ? 'PINNED' : 'PIN'}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="fh-chart-foot">
+        Pin one and the ribbon carries the bearing. <b>H</b> holds the course to anywhere you
+        have already been.
+      </div>
+    </div>
+  );
 }
 
 /** Whatever key currently engages a contact, as the console would say it. */
@@ -70,12 +136,32 @@ function ManifestStrip() {
   const def = FREIGHT_BY_ID[m.id];
   const waiting = m.pickedUpAtMs === null;
   const hold = handlingLabel(handlingFor(useGame.getState().s.expedition));
+
+  /**
+   * A job names two worlds and used to leave you to find them, which is the
+   * whole of the complaint about missions being unclear: the objective was
+   * always legible and the DESTINATION never was. The leg you are actually on
+   * is pinnable from here, so "collect at Eden I" becomes a bearing.
+   */
+  const target = helmChart().find((r) => r.label === (waiting ? m.fromName : m.toName));
+
   return (
     <div className={`fh-manifest${waiting ? ' waiting' : ''}`}>
       <span className="fm-label">{def?.label ?? m.id}</span>
       <span className="fm-to">
         {waiting ? `collect at ${m.fromName}` : `→ ${m.toName}`}
       </span>
+      {target && (
+        <button
+          className={`fm-pin${target.pinned ? ' on' : ''}`}
+          onClick={() => actions.setWaypoint(target.pinned ? null : target.id)}
+          title={`Carry a bearing to ${target.label}`}
+        >
+          {target.pinned
+            ? `${target.distance < 1000 ? `${target.distance.toFixed(0)}u` : `${(target.distance / 1000).toFixed(1)}ku`} ahead`
+            : 'pin it'}
+        </button>
+      )}
       {!waiting && hold && <span className="fm-hold">{hold}</span>}
       <span className="fm-pay">{m.salvage} salvage</span>
     </div>
@@ -336,6 +422,7 @@ function FlightHUDInner() {
   >([]);
   const [refit, setRefit] = useState(false);
   const [controls, setControls] = useState(false);
+  const [chart, setChart] = useState(false);
   const coarse = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
     [],
@@ -349,6 +436,7 @@ function FlightHUDInner() {
       if (el?.closest?.('input, textarea, select, [contenteditable]')) return;
       if (e.code === 'KeyR') setRefit((v) => !v);
       if (e.code === 'KeyK') setControls((v) => !v);
+      if (e.code === 'KeyM') setChart((v) => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -559,6 +647,9 @@ function FlightHUDInner() {
         </div>
         <div ref={contacts} className="fs-list" />
         <div className="fs-none">no contacts</div>
+        <button className="fs-refit" onClick={() => setChart((v) => !v)}>
+          chart <kbd>m</kbd>
+        </button>
         <button className="fs-refit" onClick={() => setRefit(true)}>
           refit <kbd>r</kbd>
         </button>
@@ -566,6 +657,7 @@ function FlightHUDInner() {
           controls <kbd>k</kbd>
         </button>
       </div>
+      {chart && <HelmChart onClose={() => setChart(false)} />}
 
       <InterdictionBanner />
       <div className="fh-console">

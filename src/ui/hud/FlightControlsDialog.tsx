@@ -1,12 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ACTION_LABELS,
+  AXIS_ROLES,
+  AXIS_ROLE_LABELS,
   DEFAULT_BINDINGS,
   flightPrefs,
   keyLabel,
+  readDevices,
   readPad,
   resetFlightPrefs,
   saveFlightPrefs,
+  type AxisRole,
   type FlightAction,
   type FlightPrefs,
 } from '../scene/flightBindings';
@@ -20,6 +24,151 @@ import {
  * Written in the register of an equipment requisition, because that is what it
  * is.
  */
+/**
+ * Wiring up a flight stick.
+ *
+ * A HOTAS enumerates as a gamepad and then declines to say what any of its
+ * axes are for, so there is no table of defaults that could possibly be
+ * right. The only honest method is the one every flight sim has used for
+ * thirty years: ask the pilot to move the thing they mean, watch which number
+ * changed most, and write that down.
+ *
+ * The throttle is captured as a LEVER — rescaled across its whole travel
+ * rather than deadzoned about a centre it does not have — because a throttle
+ * that idles at -1 and reads 0 at half open is not a stick and cannot be
+ * treated as one.
+ */
+function StickSection({
+  prefs,
+  update,
+}: {
+  prefs: FlightPrefs;
+  update: (next: FlightPrefs) => void;
+}) {
+  const [devices, setDevices] = useState<{ id: string; axes: readonly number[] }[]>([]);
+  const [capturing, setCapturing] = useState<AxisRole | null>(null);
+  const baseline = useRef<Map<string, readonly number[]>>(new Map());
+
+  // Poll while the dialog is open: an axis only reveals itself by moving.
+  useEffect(() => {
+    const id = window.setInterval(() => setDevices(readDevices()), 60);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Take a snapshot when capture starts; whatever travels furthest from it wins.
+  useEffect(() => {
+    if (!capturing) {
+      baseline.current.clear();
+      return;
+    }
+    const snap = new Map<string, readonly number[]>();
+    for (const d of readDevices()) snap.set(d.id, [...d.axes]);
+    baseline.current = snap;
+  }, [capturing]);
+
+  useEffect(() => {
+    if (!capturing) return;
+    let best: { device: string; index: number; travel: number; from: number; to: number } | null = null;
+    for (const d of devices) {
+      const base = baseline.current.get(d.id);
+      if (!base) continue;
+      for (let i = 0; i < d.axes.length; i++) {
+        const from = base[i] ?? 0;
+        const to = d.axes[i] ?? 0;
+        const travel = Math.abs(to - from);
+        if (travel > 0.35 && (!best || travel > best.travel)) {
+          best = { device: d.id, index: i, travel, from, to };
+        }
+      }
+    }
+    if (!best) return;
+    const lever = capturing === 'throttle';
+    update({
+      ...prefs,
+      axes: {
+        ...prefs.axes,
+        [capturing]: {
+          device: best.device,
+          index: best.index,
+          // Pushed the axis negative to mean "more"? Then it is inverted.
+          invert: lever ? best.to < best.from : best.to < best.from,
+          deadzone: lever ? 0 : 0.08,
+          lever,
+        },
+      },
+    });
+    setCapturing(null);
+  }, [devices, capturing, prefs, update]);
+
+  const nonStandard = devices.filter((d) => d.axes.length > 0);
+  if (nonStandard.length === 0 && Object.keys(prefs.axes).length === 0) return null;
+
+  return (
+    <div className="fc-stick">
+      <div className="fc-stick-head">
+        <b>Flight stick, throttle, pedals</b>
+        <em>
+          {nonStandard.length > 0
+            ? nonStandard.map((d) => d.id.replace(/\s*\(Vendor.*$/, '')).join(' · ')
+            : 'Nothing connected. Assignments are kept for when it is.'}
+        </em>
+      </div>
+      <p className="fc-note">
+        These devices describe themselves to the browser as a list of numbers and nothing
+        else, so the department cannot guess which one is the rudder. Choose a control, then
+        move the axis you mean.
+      </p>
+      {AXIS_ROLES.map((role) => {
+        const bind = prefs.axes[role];
+        return (
+          <div key={role} className="fc-row">
+            <span className="fc-label">{AXIS_ROLE_LABELS[role]}</span>
+            <span className="fc-axis-controls">
+              {bind && (
+                <button
+                  className="fc-axis-invert"
+                  title="Reverse this axis"
+                  onClick={() =>
+                    update({
+                      ...prefs,
+                      axes: { ...prefs.axes, [role]: { ...bind, invert: !bind.invert } },
+                    })
+                  }
+                >
+                  {bind.invert ? 'reversed' : 'normal'}
+                </button>
+              )}
+              <button
+                className={`fc-key${capturing === role ? ' listening' : ''}`}
+                onClick={() => setCapturing(capturing === role ? null : role)}
+              >
+                {capturing === role
+                  ? 'move it now…'
+                  : bind
+                    ? `axis ${bind.index}`
+                    : 'unassigned'}
+              </button>
+              {bind && (
+                <button
+                  className="fc-axis-clear"
+                  title="Unassign"
+                  onClick={() => {
+                    const axes = { ...prefs.axes };
+                    delete axes[role];
+                    update({ ...prefs, axes });
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
   const [prefs, setPrefs] = useState<FlightPrefs>(() => ({
     ...flightPrefs(),
@@ -88,6 +237,8 @@ export function FlightControlsDialog({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </div>
+
+      <StickSection prefs={prefs} update={update} />
 
       <div className="fc-toggles">
         <label className="fc-toggle">

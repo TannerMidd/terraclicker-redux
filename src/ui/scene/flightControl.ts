@@ -54,11 +54,11 @@ import {
 } from '../../engine/freight';
 import { SEAM_BY_ID } from '../../content/freight';
 import { rumouredSites } from '../../engine/subEtha';
-import { pinnedWaypoint, type WaypointRef } from '../../engine/waypoints';
+import { pinnedWaypoint, waypoints, type WaypointRef } from '../../engine/waypoints';
 import { handlingFor } from '../../engine/handling';
 import { loadoutEffects } from '../../engine/loadouts';
 import { solveNav, type NavSolution } from '../../engine/navigation';
-import { flightPrefs, readPad, type FlightAction } from './flightBindings';
+import { flightPrefs, readAxes, readPad, type FlightAction } from './flightBindings';
 import { C } from '../../content/constants';
 
 // ————— Tuning —————
@@ -1221,6 +1221,39 @@ function applyCourseHold(dt: number): void {
  * arguing every frame.
  */
 function applyKeySteering(dt: number): void {
+  const prefsNow = flightPrefs();
+
+  /**
+   * A flight stick, if one has been wired up.
+   *
+   * Read every frame rather than on key events, because a stick is held —
+   * there is no event when you simply keep pushing it. An analogue axis is
+   * already smooth, so it goes straight to the steering channel with no ramp,
+   * and it outranks the keys: if the pilot's hand is on the stick, the stick
+   * is what they meant.
+   */
+  if (prefsNow.gamepad) {
+    const ax = readAxes(prefsNow);
+    if (ax.live) {
+      if (ax.throttle !== null) flightInput.cruise = ax.throttle;
+      if (ax.strafe !== 0) flightInput.strafe = Math.max(-1, Math.min(1, ax.strafe));
+      if (ax.yaw !== 0 || ax.pitch !== 0) {
+        flightInput.steerX = Math.max(-1, Math.min(1, ax.yaw * prefsNow.sensitivity));
+        flightInput.steerY = Math.max(-1, Math.min(1,
+          ax.pitch * prefsNow.sensitivity * (prefsNow.invertPitch ? -1 : 1)));
+        keySteerX = 0;
+        keySteerY = 0;
+        return;
+      }
+      // Stick centred: it still owns the axis, so nothing is left commanded.
+      if (flightInput.keyYaw === 0 && flightInput.keyPitch === 0
+        && !mouseSteer.active && touchSteer.id === -1) {
+        flightInput.steerX = 0;
+        flightInput.steerY = 0;
+      }
+    }
+  }
+
   const yaw = flightInput.keyYaw;
   const pitch = flightInput.keyPitch;
   if (yaw === 0 && pitch === 0 && keySteerX === 0 && keySteerY === 0) return;
@@ -1238,6 +1271,77 @@ function applyKeySteering(dt: number): void {
   flightInput.steerX = Math.max(-1, Math.min(1, keySteerX * prefs.sensitivity));
   flightInput.steerY = Math.max(-1, Math.min(1,
     keySteerY * prefs.sensitivity * (prefs.invertPitch ? -1 : 1)));
+}
+
+/**
+ * The chart, from the pilot's seat.
+ *
+ * Flying into a galaxy used to mean flying at a smear of light and hoping a
+ * system turned up, because the only things the cockpit could name were the
+ * nearest landmark and whatever the sensors had already resolved. The chart
+ * knew where everything was the entire time — it was just on the other side
+ * of disembarking.
+ *
+ * So the helm asks it directly: every addressable place, with a bearing and a
+ * range from where the ship actually is, nearest first. Pinning one from here
+ * feeds the same ribbon and the same course hold that a pin from the desk
+ * does; this is a second door onto the chart, not a second chart.
+ */
+export interface HelmChartEntry {
+  id: string;
+  label: string;
+  detail: string;
+  kind: string;
+  known: boolean;
+  distance: number;
+  /** Signed yaw error, negative to port — the same convention as the ribbon. */
+  bearing: number;
+  elevation: number;
+  pinned: boolean;
+}
+
+const CHART_POS = new Vector3();
+const CHART_T: [number, number, number] = [0, 0, 0];
+const CHART_SELF: [number, number, number] = [0, 0, 0];
+const CHART_VEL: [number, number, number] = [0, 0, 0];
+
+export function helmChart(limit = 60): HelmChartEntry[] {
+  const f = flightLive;
+  const st = useGame.getState().s;
+  const out: HelmChartEntry[] = [];
+
+  CHART_SELF[0] = f.pos.x;
+  CHART_SELF[1] = f.pos.y;
+  CHART_SELF[2] = f.pos.z;
+  CHART_VEL[0] = f.vel.x;
+  CHART_VEL[1] = f.vel.y;
+  CHART_VEL[2] = f.vel.z;
+
+  for (const w of waypoints(st)) {
+    if (!resolveWaypoint(st, w.ref, CHART_POS)) continue;
+    CHART_T[0] = CHART_POS.x;
+    CHART_T[1] = CHART_POS.y;
+    CHART_T[2] = CHART_POS.z;
+    const nav = solveNav(
+      { pos: CHART_SELF, vel: CHART_VEL, yaw: f.yaw, pitch: f.pitch, brakeRate: RESP_BRAKE },
+      CHART_T,
+    );
+    if (!nav) continue;
+    out.push({
+      id: w.id,
+      label: w.label,
+      detail: w.detail,
+      kind: w.kind,
+      known: w.known,
+      distance: nav.distance,
+      bearing: nav.bearing,
+      elevation: nav.elevation,
+      pinned: st.expedition.pinned === w.id,
+    });
+  }
+
+  out.sort((a, b) => a.distance - b.distance);
+  return out.slice(0, limit);
 }
 
 /** Turn a structural `WaypointRef` into a position in flight space. */
