@@ -18,6 +18,10 @@ export type FlightAction =
   | 'brake'
   | 'strafeLeft'
   | 'strafeRight'
+  | 'yawLeft'
+  | 'yawRight'
+  | 'pitchUp'
+  | 'pitchDown'
   | 'up'
   | 'down'
   | 'boost'
@@ -30,6 +34,10 @@ export const ACTION_LABELS: Record<FlightAction, string> = {
   brake: 'brake',
   strafeLeft: 'slide left',
   strafeRight: 'slide right',
+  yawLeft: 'turn left',
+  yawRight: 'turn right',
+  pitchUp: 'nose up',
+  pitchDown: 'nose down',
   up: 'rise',
   down: 'descend',
   boost: 'boost',
@@ -42,10 +50,23 @@ export const ACTION_LABELS: Record<FlightAction, string> = {
 export type Binding = readonly string[];
 
 export const DEFAULT_BINDINGS: Record<FlightAction, Binding> = {
-  thrust: ['KeyW', 'ArrowUp'],
-  brake: ['KeyS', 'ArrowDown'],
-  strafeLeft: ['KeyA', 'ArrowLeft'],
-  strafeRight: ['KeyD', 'ArrowRight'],
+  thrust: ['KeyW'],
+  brake: ['KeyS'],
+  strafeLeft: ['KeyA'],
+  strafeRight: ['KeyD'],
+  /**
+   * Steering on the keyboard, which the helm simply did not have.
+   *
+   * Turning was mouse-only — hold the left button and drag — so anybody
+   * flying with both hands on the keys had a ship that could slide sideways
+   * but could not turn, which is a strange craft to be given and no fun at
+   * all. The arrows now steer; they used to be duplicates of WASD, which is
+   * the least useful thing four keys can be.
+   */
+  yawLeft: ['ArrowLeft'],
+  yawRight: ['ArrowRight'],
+  pitchUp: ['ArrowUp'],
+  pitchDown: ['ArrowDown'],
   up: ['Space'],
   down: ['KeyC'],
   boost: ['ShiftLeft', 'ShiftRight'],

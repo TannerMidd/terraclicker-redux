@@ -344,7 +344,23 @@ export const flightInput = {
   jump: false,
   /** Holding the dispersal field key. */
   deter: false,
+  /** Which way the steering keys are pressed, -1..1. Ramped by stepFlight. */
+  keyYaw: 0,
+  keyPitch: 0,
 };
+
+/**
+ * Keyboard steering, smoothed.
+ *
+ * A key that instantly commands the maximum turn rate is the difference
+ * between flying and being thrown, so the deflection ramps in — and ramps
+ * back out on release, which self-levels the ship without the pilot doing
+ * anything about it. 4/s reaches useful authority in a quarter second and
+ * full deflection in about one, which reads as a ship rather than a switch.
+ */
+const KEY_STEER_RATE = 4;
+let keySteerX = 0;
+let keySteerY = 0;
 
 const EUL = new Euler(0, 0, 0, 'YXZ');
 const Q = new Quaternion();
@@ -441,6 +457,7 @@ export function stepFlight(dt: number, t: number): void {
   }
   solveNavThisFrame();
   applyCourseHold(dt);
+  applyKeySteering(dt);
 
   const authority = f.ramp * (f.paused ? 0 : 1);
 
@@ -1195,6 +1212,34 @@ function applyCourseHold(dt: number): void {
     -f.nav.elevation * 1.6 * (prefs.invertPitch ? -1 : 1)));
 }
 
+/**
+ * The arrows fly the ship.
+ *
+ * Runs after course hold, so a hand on the keys takes the heading back from
+ * the autopilot the moment it asks for it — and after the mouse check, so
+ * whichever device is actually being held wins rather than the two of them
+ * arguing every frame.
+ */
+function applyKeySteering(dt: number): void {
+  const yaw = flightInput.keyYaw;
+  const pitch = flightInput.keyPitch;
+  if (yaw === 0 && pitch === 0 && keySteerX === 0 && keySteerY === 0) return;
+
+  const k = 1 - Math.exp(-dt * KEY_STEER_RATE);
+  keySteerX += (yaw - keySteerX) * k;
+  keySteerY += (pitch - keySteerY) * k;
+  // Snap the last sliver to zero so a released key genuinely stops the turn
+  // rather than leaving a permanent hundredth of a degree per second on.
+  if (yaw === 0 && Math.abs(keySteerX) < 5e-3) keySteerX = 0;
+  if (pitch === 0 && Math.abs(keySteerY) < 5e-3) keySteerY = 0;
+
+  if (mouseSteer.active || touchSteer.id !== -1) return;
+  const prefs = flightPrefs();
+  flightInput.steerX = Math.max(-1, Math.min(1, keySteerX * prefs.sensitivity));
+  flightInput.steerY = Math.max(-1, Math.min(1,
+    keySteerY * prefs.sensitivity * (prefs.invertPitch ? -1 : 1)));
+}
+
 /** Turn a structural `WaypointRef` into a position in flight space. */
 function resolveWaypoint(
   st: ReturnType<typeof useGame.getState>['s'],
@@ -1459,6 +1504,12 @@ function inputFromKeys(): void {
   const wantsHold = held('courseHold') || Boolean(pad?.courseHold);
   if (wantsHold && !courseHoldLatch) toggleCourseHold();
   courseHoldLatch = wantsHold;
+
+  // Held keys are a digital axis. They only record WHICH WAY here; the frame
+  // loop does the ramping, because a key event fires once and a turn has to
+  // keep happening.
+  flightInput.keyYaw = (held('yawRight') ? 1 : 0) - (held('yawLeft') ? 1 : 0);
+  flightInput.keyPitch = (held('pitchDown') ? 1 : 0) - (held('pitchUp') ? 1 : 0);
 
   // The right stick steers, and shares the sensitivity and invert settings
   // with the mouse so a pilot who has tuned one has tuned both.

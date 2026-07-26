@@ -614,7 +614,8 @@ function FlightHUDInner() {
           <>left thumb steers · right thumb thrusts · double-tap right to boost · hold engage to scan</>
         ) : (
           <>
-            <b>hold left mouse</b> to steer · <b>W</b> thrust · <b>S</b> brake · <b>A</b>/<b>D</b> slide ·{' '}
+            <b>arrows</b> or <b>hold left mouse</b> to steer · <b>W</b> thrust · <b>S</b> brake ·{' '}
+            <b>A</b>/<b>D</b> slide ·{' '}
             <b>space</b>/<b>C</b> rise/sink · <b>shift</b> boost · <b>E</b> scan/board ·{' '}
             <b>J</b> jump · <b>R</b> refit · <b>esc</b> disembark
           </>

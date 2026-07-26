@@ -237,8 +237,23 @@ export function CameraRig() {
   };
 
   useEffect(() => {
+    /**
+     * Is the pointer over the casing rather than the glass?
+     *
+     * Every one of these is a surface that scrolls or drags on its own, and a
+     * wheel event that reaches the camera from inside one of them zooms the
+     * universe while the reader is trying to read a list. The Mk II chrome
+     * must be named here in full: the root layer takes no pointer events, so
+     * the event target is always the specific piece that was under the
+     * cursor, never a wrapper that would have caught them all.
+     */
     const overUi = (target: EventTarget | null) =>
-      target instanceof HTMLElement && target.closest('.dock, .modal, .modal-veil, .zoom-rail, .uni-caption-wrap');
+      target instanceof HTMLElement
+      && target.closest(
+        '.modal, .modal-veil, .zoom-rail, .uni-caption-wrap,'
+        + '.mk2-panel, .mk2-rail, .mk2-top, .mk2-bottom, .mk2-spine,'
+        + '.mk2-binnacle, .mk2-column, .mk2-reopen, .mk2-veil, .mk2-coldopen-veil',
+      );
 
     const userInput = () => {
       // Any deliberate camera input reclaims it from a cinematic.
