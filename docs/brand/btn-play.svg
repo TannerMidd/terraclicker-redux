@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="470" height="60" viewBox="0 0 470 60"
+  role="img" aria-labelledby="t"><title id="t">PLAY IT FREE IN YOUR BROWSER</title>
+  <defs>
+    <filter id="g" x="-30%" y="-60%" width="160%" height="220%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="458" height="48" rx="30" fill="#58D68A" opacity="0.55" filter="url(#g)"/>
+  <rect x="1" y="1" width="468" height="58" rx="30" fill="#58D68A"/>
+  <rect x="1" y="1" width="468" height="29" rx="30" fill="url(#sheen)"/>
+  <path d="M34 19 L54 30 L34 41 Z" fill="#042616"/>
+  <text x="246" y="36.3" text-anchor="middle" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
+    font-size="18" font-weight="800" letter-spacing="1.6" fill="#042616">PLAY IT FREE IN YOUR BROWSER</text>
+</svg>

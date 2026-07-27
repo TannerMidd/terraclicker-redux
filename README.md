@@ -1,52 +1,106 @@
-# TerraClicker Redux
+<div align="center">
 
-> Terraform the cosmos one click at a time. Mostly harmless.
+<img src="docs/brand/readme-banner.svg" width="900" alt="TerraClicker Redux — terraform the cosmos one click at a time. Mostly harmless.">
 
-## ▶ [Play it, free, in your browser](https://tannermidd.github.io/terraclicker-redux/play/)
+<p>
+  <a href="https://tannermidd.github.io/terraclicker-redux/play/"><img src="docs/brand/btn-play.svg" height="60" alt="Play it free in your browser"></a>
+  &nbsp;&nbsp;
+  <a href="https://tannermidd.github.io/terraclicker-redux/"><img src="docs/brand/btn-guide.svg" height="60" alt="What is this?"></a>
+</p>
 
-You are very welcome here. There is no account to make, nothing to install, no ads, no
-premium currency and nothing to unsubscribe from afterwards — you click the link, a planet
-turns up, and the rest is between the two of you. Your save lives in your own browser and
-can be exported as a string whenever you want to carry a run to another machine. Desktop
-and phone both work.
+**No account · no install · no ads · your save stays in your own browser · desktop and phone**
 
-If you'd rather know what you're agreeing to first, the
-[front page](https://tannermidd.github.io/terraclicker-redux/) explains the game before you
-commit an evening to it.
+</div>
 
 ---
 
-A Hitchhiker-flavored incremental game about terraforming planets to order. Click a world,
-industrialize it, and watch ice caps recede, oceans rise and city lights wake on the night
-side — then finish it, and a stranger world drifts in. Five planets make a system, five
-systems a galaxy. Nothing you finish is thrown away: take the runabout out and every world
-you delivered is still in its orbit, close enough to fly to and solid enough to land on and
-walk around. When Magrathea reopens, you sell the whole portfolio to the mice and start
-again, richer in Blueprints.
+## You have been assigned a planet
 
-Built to the specs in [DESIGN.md](DESIGN.md), [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md),
-[docs/PROGRESSION.md](docs/PROGRESSION.md) and [docs/EXPEDITIONS.md](docs/EXPEDITIONS.md).
+Nobody asked whether you wanted one. It is dry, airless and roughly the colour of a filing
+cabinet, and the paperwork says you have until it isn't.
 
-## Showcase
+So click it. Every click buys Terraform Units, every Unit buys industry, and the industry
+fills four gauges — **Thermal**, **Atmospheric**, **Hydrologic**, **Biotic**. Those gauges
+are not a progress bar. They are uniforms wired straight into the planet's shader, so the
+ice caps genuinely retreat, the oceans genuinely find the low ground, vegetation genuinely
+climbs out of the coastlines, and the night side genuinely lights up. There is no separate
+artwork for *sixty percent done*. There is only the planet, at sixty percent.
 
-*(Captured headlessly with `scripts/shot.mjs` — the same rig used for visual verification.)*
+Fill all four and the commission closes — and the world doesn't vanish to make room for the
+next one. It takes an orbit and stays there while a stranger world drifts in. Five planets
+make a system, five systems a galaxy, and the galaxy starts, slowly, to turn.
+
+> **Click** → **Terraform Units** → **14 tiers of industry** → **four gauges** → **a finished world that stays** → ↻ *something stranger arrives*
+
+Then, when you have a ship, you can go back and visit any of it. Press <kbd>F</kbd> and the
+camera becomes the company runabout. Nothing out there is scenery: the worlds are solid, the
+Deep Field was placed by your universe's seed before you arrived, and any planet with a floor
+will let you land on it and get out and walk around, at one unit to the metre, on ground you
+made. The settlement lights you saw on the night side turn out to be a town — lit, or not,
+by how well you have looked after the place.
+
+Eventually a custom-planet firm with an old reputation offers to buy the entire portfolio.
+Take the money. Everything resets except the Blueprints and a short list of things the mice
+were never buying: your Guide entries, your logbook, the laws you passed, the monuments.
+
+## Have a look
+
+*Captured headlessly with `scripts/shot.mjs` — the same rig the project uses for visual
+verification, which is why they look like the game rather than like a poster.*
+
+### The planet
 
 | | |
 |---|---|
-| ![Barren Terra Prima](docs/screenshots/01-hero-barren.png) | ![Mid-terraforming](docs/screenshots/02-terraforming.png) |
-| *Terra Prima, untouched. Dry basins, big ice caps, thin air.* | *The same planet under management: oceans risen, vegetation creeping, clouds forming, your satellites in orbit.* |
-| ![Vogon raid](docs/screenshots/03-vogon-raid.png) | ![Magrathea](docs/screenshots/04-magrathea.png) |
+| ![Barren Terra Prima](landing/media/01-hero-barren.webp) | ![Mid-terraforming](landing/media/02-terraforming.webp) |
+| *Hour one. Dry basins, big ice caps, thin air.* | *The same world under management: oceans risen, vegetation creeping, your satellites on station.* |
+| ![Vogon raid](landing/media/03-vogon-raid.webp) | ![Magrathea](landing/media/04-magrathea.webp) |
 | *A Vogon poetry reading in progress. Production −50%. The ships hang in the sky in much the same way that bricks don't.* | *A volcanic commission, lava veins still warm, and Magrathea's offer on the desk.* |
-| ![Total Perspective Vortex](docs/screenshots/05-vortex.png) | ![Mobile](docs/screenshots/06-mobile.png) |
-| *The Total Perspective Vortex. You are here.* | *One-hand mode: planet up top, Guide below.* |
-| ![The universe accumulates](docs/screenshots/07-universe.png) | ![A galaxy forms](docs/screenshots/08-galaxy.png) |
-| *Scroll out: every world you finished is still there — orbiting its star, forming systems, running freighter routes.* | *Twenty-five worlds later, a galaxy swallows its five systems and starts to turn.* |
-| ![At the helm](docs/screenshots/09-flight.png) | ![A Deep Field contact](docs/screenshots/10-deep-field.png) |
-| *Press `F` and the camera becomes the company runabout. Nothing out here is staged for you.* | *A Deep Field landmark, scanned. It was here before you and is unmoved by the commission.* |
-| ![Groundfall](docs/screenshots/11-groundfall.png) | ![A settlement at dusk](docs/screenshots/12-settlement.png) |
-| *Boots on a world you finished. One unit is one metre, and the coastline is the one you watched fill from orbit.* | *Port Correction, 105 m off. The lights you saw on the night side turn out to be somewhere.* |
+| ![Total Perspective Vortex](landing/media/05-vortex.webp) | <img src="landing/media/06-mobile.webp" width="250" alt="The game on a phone in portrait"> |
+| *The Total Perspective Vortex. You are here.* | *One-hand mode: planet up top, Guide below, same save.* |
 
-## Run it
+### Out there
+
+| | |
+|---|---|
+| ![The universe accumulates](landing/media/07-universe.webp) | ![A galaxy forms](landing/media/08-galaxy.webp) |
+| *Scroll out: every world you finished is still there, orbiting the star it was billed to.* | *Twenty-five worlds later, a galaxy swallows its five systems and begins to turn.* |
+| ![At the helm](landing/media/09-flight.webp) | ![A Deep Field contact](landing/media/10-deep-field.webp) |
+| *Press `F` and the camera becomes the runabout. Nothing out here is staged for you.* | *A Deep Field landmark, scanned. It was here before you and is unmoved by the commission.* |
+
+### On the ground
+
+| | |
+|---|---|
+| ![Groundfall](landing/media/11-groundfall.webp) | ![A dust front](landing/media/13-dust-front.webp) |
+| *Boots on a world you finished. The coastline is the one you watched fill from orbit — a test holds the two together.* | *A heavy dust front. It never hurts you; it changes what you can do, and it has just uncovered a seam the sand was sitting on.* |
+
+<div align="center">
+
+![A settlement at dusk](landing/media/12-settlement.webp)
+
+*Port Correction, 105 m off. You built the world; somebody else moved in.*
+
+</div>
+
+## Also in the box
+
+|  |  |
+|---|---|
+| **Marvin** | Buy him once. He clicks the planet every second, forever, and mentions how he feels about it. |
+| **Research, including the Answer** | One item takes 42 real hours and pays a permanent +42% through every prestige. Its description is "42". The follow-up never finishes. |
+| **Improbability** | Heart of Gold drives raise the improbability level and improbable things start turning up: whales, petunias, bubbles worth clicking. |
+| **Weather that is arithmetic** | A pure function of world, place and clock — so the front you see turning from orbit is the dust you land in. |
+| **The Survey Skimmer** | A ground-effect sled that folds out of the runabout in three salvage-funded ranks; the last one makes open water something you cross. |
+| **Six planet types, fourteen quirks** | One world refuses to terraform on Mondays. One has a pet asteroid, which has a name you are not told. Planet 42 is always Earth. |
+| **An actual ending** | There is a booking at a restaurant at the end of things. It turns out to have been made already. It pays no multiplier. |
+
+---
+
+## For the curious (and the compiler)
+
+<details>
+<summary><b>Run it locally</b></summary>
 
 ```bash
 npm install
@@ -62,29 +116,13 @@ npm run dev        # http://localhost:5173
 | `npm run site` | build + assemble the published site into `site/` |
 | `npm run site:preview` | serve `site/` at http://localhost:4180 (landing + game together) |
 | `npm run landing:check` | headless landing-page audit at six widths (needs `site:preview`) |
-| `npm run deploy` | build, assemble, push to the public Pages repo |
+| `npm run deploy` | build, assemble, push, and verify the live bundle hash |
 | `node scripts/shot.mjs out.png` | headless verification screenshot (Playwright) |
 
-## The published site
+</details>
 
-Two things ship to `https://tannermidd.github.io/terraclicker-redux/`:
-
-| Path | What | Source |
-|---|---|---|
-| `/` | landing page — what the game is, what's in it, screens, FAQ | `landing/` (hand-written HTML/CSS, no build step) |
-| `/play/` | the game | `dist/` (vite build; `base` is `'./'`, so the path doesn't matter) |
-
-`scripts/assemble-site.mjs` owns that layout and is the only place it's defined —
-both `npm run deploy` and the Pages workflow go through it. Saves are keyed to the
-origin, not the path, so moving the game under `/play/` did not disturb anyone's run.
-
-Landing screenshots are re-encoded from `docs/screenshots/*.png` to WebP by
-`npm run shots:optimize` (3.9 MB → 0.5 MB) and committed to `landing/media/`.
-`npm run landing:check` is the front door's answer to `shot.mjs`: it loads the page
-at six widths against a running `site:preview` and fails on console errors, dead
-requests, broken images, missing alt text or horizontal overflow.
-
-## Architecture in one breath
+<details>
+<summary><b>How it is built</b></summary>
 
 A **pure, deterministic engine** (`src/engine`) advances in exact 250 ms ticks with seeded
 RNG streams stored in the save — one 8-hour offline call and 480 one-minute calls produce
@@ -95,14 +133,53 @@ persisted. The scene (`src/ui/scene`) is three.js **WebGPURenderer + TSL** node 
 React renders the Guide-styled UI and never simulates. Saves are zod-validated, versioned,
 migrated, and exportable as compressed "Share and Enjoy" strings.
 
-## The important facts
+The surface is the same promise held twice: `surface/terrainField.ts` evaluates the exact
+macro field `planetGeometry.ts` does, so the continent you saw from orbit is the continent
+you land on, and a test locks the two together.
 
-- The planet you are clicking is being visibly terraformed by the numbers you generate.
-- Marvin will click it for you, once per second, and he will not be thanked.
-- Vogon constructor ships hang in the sky in much the same way that bricks don't.
-- The number 42 renders gold. No explanation is ever given.
+Built to the specs in [DESIGN.md](DESIGN.md), [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md),
+[docs/PROGRESSION.md](docs/PROGRESSION.md) and [docs/EXPEDITIONS.md](docs/EXPEDITIONS.md).
 
-## License
+</details>
 
-TBD before any public release. The Hitchhiker references are affectionate homage in
-original words; no text from the books is reproduced.
+<details>
+<summary><b>What gets published</b></summary>
+
+Two things ship to `https://tannermidd.github.io/terraclicker-redux/`:
+
+| Path | What | Source |
+|---|---|---|
+| `/` | landing page — what the game is, what's in it, screens, FAQ | `landing/` (hand-written HTML/CSS, no build step) |
+| `/play/` | the game | `dist/` (vite build; `base` is `'./'`, so the path doesn't matter) |
+
+`scripts/assemble-site.mjs` owns that layout and is the only place it's defined — both
+`npm run deploy` and the Pages workflow go through it. Saves are keyed to the origin, not
+the path, so moving the game under `/play/` did not disturb anyone's run.
+
+Landing screenshots are re-encoded from `docs/screenshots/*.png` to WebP by
+`npm run shots:optimize` and committed to `landing/media/`. `npm run landing:check` is the
+front door's answer to `shot.mjs`: it loads the page at six widths against a running
+`site:preview` and fails on console errors, dead requests, broken images, missing alt text
+or horizontal overflow.
+
+</details>
+
+---
+
+<div align="center">
+
+<img src="public/assets/brand/dont-panic.svg" width="300" alt="DON'T PANIC">
+
+### The planet isn't going to click itself
+
+Well — it is, eventually. You have to buy Marvin first.
+
+**[▶ Play TerraClicker Redux](https://tannermidd.github.io/terraclicker-redux/play/)**
+
+</div>
+
+---
+
+**License:** TBD before any public release. The Hitchhiker references are affectionate homage
+in original words; no text from the books is reproduced, and this is not endorsed by or
+associated with the rights holders.
