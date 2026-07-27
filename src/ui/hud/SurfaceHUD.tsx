@@ -25,6 +25,7 @@ import {
 import { LANDMARK_SIGHT_M } from '../scene/surface/surfaceLandmarks';
 import {
   THERMAL_SHIP_RANGE_M,
+  THERMAL_SKIMMER_RANGE_M,
   THERMAL_TRAIL_RANGE_M,
   WEATHER_LABEL,
 } from '../../engine/weather';
@@ -39,6 +40,11 @@ function engageKey(): string {
   return keyLabel(flightPrefs().bindings.engage[0] ?? 'KeyE').toUpperCase();
 }
 
+/** The helm's descend key — on the ground it is the skimmer's key. */
+function deployKey(): string {
+  return keyLabel(flightPrefs().bindings.down[0] ?? 'KeyC').toUpperCase();
+}
+
 /** The Guide, on the subject of standing on things. */
 const ENTRY_LINES: Record<string, string> = {
   terrestrial: 'The Guide notes that most air is breathable right up until it is not.',
@@ -50,6 +56,7 @@ const ENTRY_LINES: Record<string, string> = {
 };
 
 const WALK_HINT = 'move · run · jump — the helm keys, repurposed for legs';
+const SKIM_HINT = 'move · fast cruise — the helm keys, repurposed for a sled';
 
 const VERB_LABELS: Record<MiningVerb, string> = {
   break: 'quick break',
@@ -64,7 +71,7 @@ interface CompassMark {
   /** World bearing, degrees, 0 = north. */
   deg: number;
   distM: number;
-  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal';
+  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal' | 'skimmer';
 }
 
 /** Bearing (deg, 0=N, 90=E) from the walker to a ground point. */
@@ -87,11 +94,19 @@ function distTo(x: number, z: number): number {
 function compassMarks(): CompassMark[] {
   const live = surfaceLive;
 
-  if (live.weather.markersCut) {
+  // A rank-two skimmer's mast holds the rail through the whiteout — that is
+  // the entire meaning of the rank, and it only holds while you are ON it.
+  if (live.weather.markersCut && !live.stabilised) {
     const out: CompassMark[] = [];
     const shipD = distTo(SHIP_PARK.x, SHIP_PARK.z);
     if (shipD <= THERMAL_SHIP_RANGE_M) {
       out.push({ key: 'ship', deg: bearingTo(SHIP_PARK.x, SHIP_PARK.z), distM: shipD, kind: 'thermal' });
+    }
+    if (live.skimmerAt) {
+      const sd = distTo(live.skimmerAt.x, live.skimmerAt.z);
+      if (sd <= THERMAL_SKIMMER_RANGE_M) {
+        out.push({ key: 'skimmer', deg: bearingTo(live.skimmerAt.x, live.skimmerAt.z), distM: sd, kind: 'thermal' });
+      }
     }
     for (const d of surfaceSeamCensus()) {
       if (live.mined.has(d.id) || (d.buried && !live.buriedRevealed)) continue;
@@ -111,6 +126,14 @@ function compassMarks(): CompassMark[] {
       kind: 'ship',
     },
   ];
+  if (live.skimmerAt) {
+    out.push({
+      key: 'skimmer',
+      deg: bearingTo(live.skimmerAt.x, live.skimmerAt.z),
+      distM: distTo(live.skimmerAt.x, live.skimmerAt.z),
+      kind: 'skimmer',
+    });
+  }
   for (const d of surfaceDeposits()) {
     if (!live.scanned.has(d.id) || live.mined.has(d.id)) continue;
     out.push({ key: d.id, deg: bearingTo(d.x, d.z), distM: distTo(d.x, d.z), kind: 'site' });
@@ -152,7 +175,9 @@ function weatherLine(): string | null {
   const grade = w.intensity < 0.35 ? 'light' : w.intensity < 0.7 ? 'steady' : 'heavy';
   let line = `${WEATHER_LABEL[w.kind]} · ${grade}`;
   if (o) line += o.kind === 'clear' ? ` · clearing in ${mins(o.inMs)}` : ` · ${WEATHER_LABEL[o.kind]} in ${mins(o.inMs)}`;
-  if (w.markersCut) line += ' · markers lost, thermal trace only';
+  if (surfaceLive.stabilised && (w.markersCut || w.scanRangeMult < 0.95)) {
+    line += ' · the mast holds';
+  } else if (w.markersCut) line += ' · markers lost, thermal trace only';
   else if (w.buriedRevealed) line += ' · the sand has moved';
   else if (w.scanRangeMult > 1.1) line += ' · the pulse carries further';
   return line;
@@ -214,7 +239,8 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
     );
   }
 
-  // ————— On foot —————
+  // ————— On foot, or on the sled —————
+  const skimming = live.phase === 'skim';
   const heading = ((-live.yaw * 180) / Math.PI % 360 + 360) % 360;
   const prompt = live.prompt;
   const mining = prompt?.verb === 'mine' && live.mineProgress > 0;
@@ -242,10 +268,20 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
       {(wx || lm) && (
         <div className="sh-conditions">
           {wx && <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>}
-          {lm && !live.weather.markersCut && (
+          {lm && (!live.weather.markersCut || live.stabilised) && (
             <span className="sh-landmark">
               ⌖ {lm.name} · {lm.distM >= 950 ? `${(lm.distM / 1000).toFixed(1)} km` : `${Math.round(lm.distM)} m`}
             </span>
+          )}
+        </div>
+      )}
+
+      {skimming && (
+        <div className="sh-skim" aria-label={`ground speed ${Math.round(live.skimSpeed)} metres per second`}>
+          <b>{Math.round(live.skimSpeed)}</b> m/s
+          {/* The badge earns its place only when there is weather to hold off. */}
+          {live.stabilised && (live.weather.markersCut || live.weather.scanRangeMult < 0.95) && (
+            <em>mast stabilised</em>
           )}
         </div>
       )}
@@ -279,7 +315,7 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
             ? 'ground survey on file'
             : `survey: ${surveyProgress}/${surveyNeed} credit to file`}
         </em>
-        <em className="sh-world">{session.name} · on foot</em>
+        <em className="sh-world">{session.name} · {skimming ? 'skimming' : 'on foot'}</em>
       </div>
 
       {targetScanned && targetKind && (
@@ -304,19 +340,30 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
       )}
       {!prompt && live.wadeRefused && (
         <div className="sh-prompt blocked">
-          the suit declines to swim — a skimmer remains, for now, a rumour
+          {skimming
+            ? live.skimRank >= 3
+              ? 'the lava declines the hull, the hull declines the lava'
+              : 'the cushion declines open water — an amphibious hull remains a rumour'
+            : live.skimRank >= 1
+              ? 'the suit declines to swim — the skimmer has fewer objections'
+              : 'the suit declines to swim — a skimmer remains, for now, a rumour'}
         </div>
       )}
       {!prompt && !live.wadeRefused && !locked && <div className="sh-prompt dim">click to look around</div>}
       {!prompt && !live.wadeRefused && locked && !scanning && (
         <div className="sh-prompt dim">
           hold {engageKey()} — field scan · {Math.round(live.scanRangeNow)} m
-          {live.scanRangeNow < live.scanRange * 0.9 ? ' (the dust is eating it)' : ''}
+          {live.scanRangeNow < live.scanRange * 0.9 && !live.stabilised ? ' (the dust is eating it)' : ''}
         </div>
       )}
       {scanning && !prompt && <div className="sh-prompt">field scan charging…</div>}
+      {live.skimPrompt && (
+        <div className={`sh-prompt${live.t < live.skimNoteUntil ? ' blocked' : ' dim'} sh-skimline`}>
+          {live.t < live.skimNoteUntil ? live.skimPrompt : `tap ${deployKey()} — ${live.skimPrompt}`}
+        </div>
+      )}
 
-      <div className="sh-hint">{WALK_HINT}</div>
+      <div className="sh-hint">{skimming ? SKIM_HINT : WALK_HINT}</div>
     </div>
   );
 }
@@ -335,6 +382,7 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
   prospect: '▮',
   landmark: '⌖',
   thermal: '◉',
+  skimmer: '▽',
 };
 
 /**

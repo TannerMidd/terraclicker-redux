@@ -214,6 +214,11 @@ export function surfaceScanRange(expedition: ExpeditionState): number {
   return SURFACE_SCAN_RANGE[rankOf(expedition, 'fieldKit')] ?? SURFACE_SCAN_RANGE[0];
 }
 
+/** Survey Skimmer rank: 0 none, 1 deploys, 2 stabilised mast, 3 amphibious. */
+export function skimmerRank(expedition: ExpeditionState): number {
+  return rankOf(expedition, 'skimmer');
+}
+
 /** Speed-cap multiplier applied on top of the range-based cap. */
 export function thrustMult(expedition: ExpeditionState): number {
   return THRUST_MULT[rankOf(expedition, 'thrusters')] ?? 1;

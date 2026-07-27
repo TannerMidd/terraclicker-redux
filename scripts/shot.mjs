@@ -15,6 +15,7 @@
  * Groundfall: gfland (park over the hero world and press engage for real) |
  * gfskip (finish the bake, stand at the airlock) | gfstate (log the walker) |
  * gflook:yaw,pitch | gfteleport:x,z[,yaw] | gfmine[:ms] (work nearest seam) |
+ * gfskimmer:rank (grant the skimmer refit) | gfskim:on|off (mount / park) |
  * gfscanall (identify every site — the field pulse, without the dwell) |
  * gfverb:i (choose the pick's meaning: 0 break · 1 core · 2 prospect · 3 preserve) |
  * gfweather:kind (pin the sky: rain fog storm dust whiteout ash tremor meteors clear) |
@@ -365,6 +366,15 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.evaluate((i) => window.__tcSurface.setVerb(i), Number(arg));
   } else if (kind === 'gfboard') {
     await page.evaluate(() => window.__tcSurface.board());
+  } else if (kind === 'gfskimmer') {
+    // gfskimmer:rank — DEV-grant the Survey Skimmer at a rank (0–3).
+    const rank = await page.evaluate((n) => window.__tcSurface.grantSkimmer(n), Number(arg || 1));
+    console.log('gfskimmer: rank', rank);
+  } else if (kind === 'gfskim') {
+    // gfskim:on|off — mount the sled where the walker stands / park it.
+    const phase = await page.evaluate((v) => window.__tcSurface.skim(v === 'on'), arg);
+    console.log('gfskim:', phase);
+    await page.waitForTimeout(250);
   }
 }
 if (actionsRaw) await page.waitForTimeout(600);

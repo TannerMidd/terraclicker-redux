@@ -141,6 +141,15 @@ export interface HeightTier {
   data: Float32Array;
   /** RGBA8 world-space normals (xyz → rgb), built by buildNormalMap. */
   normals: Uint8Array | null;
+  /**
+   * Where the tier is centred, landing-frame metres. Zero at touchdown; the
+   * rolling re-bake (TierStream) moves it under a travelling skimmer. Always
+   * a multiple of the texel step, so a re-centred tier samples the analytic
+   * field at EXACTLY the world points it already held where the two covers
+   * overlap — the swap is invisible by arithmetic, not by blending.
+   */
+  cx: number;
+  cz: number;
 }
 
 export interface SurfaceTiers {
@@ -463,9 +472,9 @@ export function bakeTierRows(
   const step = extent / (texels - 1);
   const half = extent / 2;
   for (let j = row0; j < Math.min(texels, row0 + rows); j++) {
-    const z = -half + j * step;
+    const z = tier.cz - half + j * step;
     for (let i = 0; i < texels; i++) {
-      data[j * texels + i] = analyticHeight(p, -half + i * step, z);
+      data[j * texels + i] = analyticHeight(p, tier.cx - half + i * step, z);
     }
   }
 }
@@ -479,10 +488,20 @@ export function bakeTierRows(
  * read the same array; that shared read is the module's whole covenant.
  */
 export function smoothTier(tier: HeightTier): void {
+  smoothTierRows(tier, 0, tier.texels);
+  smoothTierCols(tier, 0, tier.texels);
+}
+
+const SMOOTH_W = [0.27, 0.46, 0.27] as const;
+let smoothScratch = new Float32Array(0);
+
+/** The horizontal half of smoothTier, over a row range — chunkable. */
+export function smoothTierRows(tier: HeightTier, row0: number, rows: number): void {
   const { texels, data } = tier;
-  const w = [0.27, 0.46, 0.27] as const;
-  const row = new Float32Array(texels);
-  for (let j = 0; j < texels; j++) {
+  const w = SMOOTH_W;
+  if (smoothScratch.length < texels) smoothScratch = new Float32Array(texels);
+  const row = smoothScratch;
+  for (let j = row0; j < Math.min(texels, row0 + rows); j++) {
     const base = j * texels;
     for (let i = 0; i < texels; i++) {
       const a = data[base + Math.max(0, i - 1)]!;
@@ -490,10 +509,17 @@ export function smoothTier(tier: HeightTier): void {
       const c = data[base + Math.min(texels - 1, i + 1)]!;
       row[i] = a * w[0] + b * w[1] + c * w[2];
     }
-    data.set(row, base);
+    for (let i = 0; i < texels; i++) data[base + i] = row[i]!;
   }
-  const col = new Float32Array(texels);
-  for (let i = 0; i < texels; i++) {
+}
+
+/** The vertical half — run only after every row pass is done. */
+export function smoothTierCols(tier: HeightTier, col0: number, cols: number): void {
+  const { texels, data } = tier;
+  const w = SMOOTH_W;
+  if (smoothScratch.length < texels) smoothScratch = new Float32Array(texels);
+  const col = smoothScratch;
+  for (let i = col0; i < Math.min(texels, col0 + cols); i++) {
     for (let j = 0; j < texels; j++) {
       const a = data[Math.max(0, j - 1) * texels + i]!;
       const b = data[j * texels + i]!;
@@ -506,10 +532,19 @@ export function smoothTier(tier: HeightTier): void {
 
 /** World-space normals for a baked tier (RGBA8, xyz→rgb, a=255). */
 export function buildNormalMap(tier: HeightTier): Uint8Array {
+  if (!tier.normals || tier.normals.length !== tier.texels * tier.texels * 4) {
+    tier.normals = new Uint8Array(tier.texels * tier.texels * 4);
+  }
+  buildNormalMapRows(tier, 0, tier.texels);
+  return tier.normals;
+}
+
+/** Normal rows for a range — chunkable; smoothing must be complete first. */
+export function buildNormalMapRows(tier: HeightTier, row0: number, rows: number): void {
   const { texels, extent, data } = tier;
   const step = extent / (texels - 1);
-  const out = new Uint8Array(texels * texels * 4);
-  for (let j = 0; j < texels; j++) {
+  const out = tier.normals!;
+  for (let j = row0; j < Math.min(texels, row0 + rows); j++) {
     for (let i = 0; i < texels; i++) {
       const iw = Math.max(0, i - 1);
       const ie = Math.min(texels - 1, i + 1);
@@ -525,8 +560,6 @@ export function buildNormalMap(tier: HeightTier): Uint8Array {
       out[k + 3] = 255;
     }
   }
-  tier.normals = out;
-  return out;
 }
 
 /**
@@ -537,8 +570,8 @@ function sampleTier(tier: HeightTier, x: number, z: number): number {
   const { texels, extent, data } = tier;
   const half = extent / 2;
   const step = extent / (texels - 1);
-  const u = (x + half) / step;
-  const v = (z + half) / step;
+  const u = (x - tier.cx + half) / step;
+  const v = (z - tier.cz + half) / step;
   const i0 = Math.min(texels - 2, Math.max(0, Math.floor(u)));
   const j0 = Math.min(texels - 2, Math.max(0, Math.floor(v)));
   const fu = Math.min(1, Math.max(0, u - i0));
@@ -567,7 +600,7 @@ export function heightAt(p: SurfaceParams, tiers: SurfaceTiers, x: number, z: nu
   const far = sampleTier(tiers.far, x, z);
   const near = sampleTier(tiers.near, x, z);
   const halfNear = tiers.near.extent / 2;
-  const edge = Math.max(Math.abs(x), Math.abs(z)) / halfNear;
+  const edge = Math.max(Math.abs(x - tiers.near.cx), Math.abs(z - tiers.near.cz)) / halfNear;
   const nearness = smooth01((1 - edge) / (1 - TIER_BLEND_START));
   return far + (near - far) * nearness - curvatureDrop(p, x, z);
 }
@@ -639,5 +672,164 @@ export function scatterSites(
 
 /** Allocate an empty tier (bake fills it in chunks). */
 export function makeTier(t: { texels: number; extent: number }): HeightTier {
-  return { texels: t.texels, extent: t.extent, data: new Float32Array(t.texels * t.texels), normals: null };
+  return {
+    texels: t.texels,
+    extent: t.extent,
+    data: new Float32Array(t.texels * t.texels),
+    normals: null,
+    cx: 0,
+    cz: 0,
+  };
+}
+
+// ————— The rolling re-bake: ground that extends to meet the skimmer —————
+
+/**
+ * A tier plus the machinery to move it. The bake used to be a landing event;
+ * at skimmer speed it is a continuous obligation. The stream keeps a back
+ * buffer, bakes it toward a new centre a few milliseconds a frame — rows,
+ * then the two smoothing passes, then normals — and commits with one copy,
+ * so the live tier is never half-written and the walker's ground never lies.
+ *
+ * Centres snap to the texel grid. Where old and new cover overlap, a snapped
+ * re-bake evaluates the analytic field at the very world points the old tier
+ * held, so the commit changes nothing the eye was looking at except the far
+ * edge where new ground appears (and the near/far blend band, which is the
+ * blend's job to hide).
+ */
+export interface TierStream {
+  /** The live tier everyone reads. The stream only ever copies INTO it. */
+  tier: HeightTier;
+  /** The back buffer being baked toward its own cx/cz. */
+  back: HeightTier;
+  /** True while a re-bake is in flight. */
+  active: boolean;
+  /** Pipeline cursors, in rows/cols of the back buffer. */
+  row: number;
+  smoothRow: number;
+  smoothCol: number;
+  normalRow: number;
+}
+
+export function makeTierStream(tier: HeightTier): TierStream {
+  const back = makeTier({ texels: tier.texels, extent: tier.extent });
+  back.normals = new Uint8Array(tier.texels * tier.texels * 4);
+  return { tier, back, active: false, row: 0, smoothRow: 0, smoothCol: 0, normalRow: 0 };
+}
+
+/** Snap a proposed centre onto the tier's texel grid. */
+export function snapTierCenter(
+  tier: HeightTier,
+  cx: number,
+  cz: number,
+): { cx: number; cz: number } {
+  const step = tier.extent / (tier.texels - 1);
+  return { cx: Math.round(cx / step) * step, cz: Math.round(cz / step) * step };
+}
+
+/** Arm a re-bake toward (cx, cz). Restarts cleanly if one was in flight. */
+export function streamBegin(stream: TierStream, cx: number, cz: number): void {
+  const snapped = snapTierCenter(stream.tier, cx, cz);
+  stream.back.cx = snapped.cx;
+  stream.back.cz = snapped.cz;
+  stream.active = true;
+  stream.row = 0;
+  stream.smoothRow = 0;
+  stream.smoothCol = 0;
+  stream.normalRow = 0;
+}
+
+/**
+ * Advance the in-flight re-bake within a millisecond budget. Returns true
+ * when the back buffer is complete and waiting on streamCommit.
+ */
+export function streamStep(stream: TierStream, p: SurfaceParams, msBudget: number): boolean {
+  if (!stream.active) return false;
+  const { back } = stream;
+  const n = back.texels;
+  const t0 = performance.now();
+  while (performance.now() - t0 < msBudget) {
+    if (stream.row < n) {
+      bakeTierRows(p, back, stream.row, 8);
+      stream.row += 8;
+    } else if (stream.smoothRow < n) {
+      smoothTierRows(back, stream.smoothRow, 64);
+      stream.smoothRow += 64;
+    } else if (stream.smoothCol < n) {
+      smoothTierCols(back, stream.smoothCol, 64);
+      stream.smoothCol += 64;
+    } else if (stream.normalRow < n) {
+      buildNormalMapRows(back, stream.normalRow, 32);
+      stream.normalRow += 32;
+    } else {
+      return true;
+    }
+  }
+  return stream.normalRow >= n && stream.smoothCol >= n && stream.smoothRow >= n && stream.row >= n;
+}
+
+/**
+ * Publish the finished back buffer into the live tier. A copy, not a swap:
+ * the renderer's DataTextures wrap the live arrays, and those references
+ * must outlive every re-centre. ~8 MB of memcpy — one frame pays it, once
+ * per several hundred metres of travel.
+ */
+export function streamCommit(stream: TierStream): void {
+  if (!stream.active) return;
+  stream.tier.data.set(stream.back.data);
+  if (stream.tier.normals && stream.back.normals) stream.tier.normals.set(stream.back.normals);
+  stream.tier.cx = stream.back.cx;
+  stream.tier.cz = stream.back.cz;
+  stream.active = false;
+}
+
+// ————— Chunked scatter: props that stream with the traveller —————
+
+/**
+ * Instanced-prop placement for one world-fixed chunk of ground, same five
+ * floats per seat as scatterSites. Deterministic in everything but height:
+ * position, scale and yaw are pure hashes of (seed, stream, chunk), so the
+ * valley regrows the same rocks every time you drive back through it; y is
+ * re-read from the live tiers, which is why a tier re-centre re-seats chunks
+ * instead of letting the rocks float on ground that has since learned better.
+ */
+export function scatterChunk(
+  p: SurfaceParams,
+  tiers: SurfaceTiers,
+  stream: number,
+  chunkM: number,
+  ix: number,
+  iz: number,
+  opt: { tries: number; maxSlopeY: number; shore: number; scale: [number, number]; clearR?: number },
+): Float32Array {
+  const h =
+    (p.seed ^
+      Math.imul(stream + 1, 0x9e3779b9) ^
+      Math.imul(ix | 0, 0x85ebca6b) ^
+      Math.imul(iz | 0, 0xc2b2ae35)) >>>
+    0;
+  const r = mulberry(h);
+  const out = new Float32Array(opt.tries * 5);
+  const N = new Vector3();
+  const clear2 = (opt.clearR ?? 0) * (opt.clearR ?? 0);
+  let placed = 0;
+  for (let t = 0; t < opt.tries; t++) {
+    const x = (ix + r()) * chunkM;
+    const z = (iz + r()) * chunkM;
+    const s = opt.scale[0] + r() * (opt.scale[1] - opt.scale[0]);
+    const yaw = r() * Math.PI * 2;
+    if (clear2 > 0 && x * x + z * z < clear2) continue;
+    const y = heightAt(p, tiers, x, z);
+    if (y < p.seaLevelM + opt.shore) continue;
+    groundNormalAt(p, tiers, x, z, N);
+    if (N.y < opt.maxSlopeY) continue;
+    const k = placed * 5;
+    out[k] = x;
+    out[k + 1] = y;
+    out[k + 2] = z;
+    out[k + 3] = s;
+    out[k + 4] = yaw;
+    placed++;
+  }
+  return placed === opt.tries ? out : out.slice(0, placed * 5);
 }

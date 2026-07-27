@@ -31,6 +31,7 @@ import { paletteFor } from '../planetMaterial';
 import {
   applySurfaceCamera,
   attachSurfaceInput,
+  hitsNeeded,
   MINING_VERBS,
   stepSurface,
   surfaceDeposits,
@@ -55,9 +56,17 @@ import {
   createSkyMaterial,
   createTerrainMaterial,
   disposeTierTextures,
+  refreshTierTextures,
 } from './surfaceMaterial';
 import { terrainGeometry } from './terrainMesh';
-import { heightAt, groundNormalAt, scatterSites, PLANET_RADIUS_M } from './terrainField';
+import {
+  heightAt,
+  groundNormalAt,
+  scatterChunk,
+  PLANET_RADIUS_M,
+  type SurfaceParams,
+  type SurfaceTiers,
+} from './terrainField';
 import type { DepositSpec } from './surfaceSites';
 import { lightRig, releaseLightRig } from '../sceneLightRig';
 import { useLamp } from '../SceneLamps';
@@ -215,29 +224,11 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene, built]);
 
-  // Static prop placements, once the ground exists to stand them on.
-  const props = useMemo(() => {
-    if (!built) return null;
-    const { p, tiers } = built;
+  // Prop density knob shared by the chunked families (bio gates greenery).
+  const bioK = useMemo(() => {
     const a = session.aspects;
-    const bioK = a.bio * ({ terrestrial: 1, ocean: 0.8, desert: 0.42, ice: 0.25, volcanic: 0.2, gasgiant: 0 }[session.type] ?? 1);
-    return {
-      rocks: scatterSites(p, tiers, 0x11a, 460, { minR: 5, maxR: 950, maxSlopeY: 0.5, shore: 0.4, scale: [0.35, 2.4] }),
-      boulders: scatterSites(p, tiers, 0x22b, 150, { minR: 40, maxR: 2800, maxSlopeY: 0.55, shore: 0.6, scale: [2.2, 7.5] }),
-      flora: bioK > 0.04
-        ? scatterSites(p, tiers, 0x33c, Math.round(340 * Math.min(1, bioK + 0.12)), { minR: 9, maxR: 780, maxSlopeY: 0.74, shore: 2.2, scale: [0.8, 2.3] })
-        : new Float32Array(0),
-      shrubs: bioK > 0.04
-        ? scatterSites(p, tiers, 0x44d, Math.round(300 * Math.min(1, bioK + 0.2)), { minR: 6, maxR: 520, maxSlopeY: 0.7, shore: 1.4, scale: [0.5, 1.4] })
-        : new Float32Array(0),
-      shards: session.type === 'ice'
-        ? scatterSites(p, tiers, 0x55e, 180, { minR: 12, maxR: 800, maxSlopeY: 0.6, shore: 0.5, scale: [0.8, 3.2] })
-        : new Float32Array(0),
-      vents: session.type === 'volcanic'
-        ? scatterSites(p, tiers, 0x66f, 90, { minR: 20, maxR: 900, maxSlopeY: 0.65, shore: 3, scale: [0.7, 1.8] })
-        : new Float32Array(0),
-    };
-  }, [built, session]);
+    return a.bio * ({ terrestrial: 1, ocean: 0.8, desert: 0.42, ice: 0.25, volcanic: 0.2, gasgiant: 0 }[session.type] ?? 1);
+  }, [session]);
 
   // Site ids are planet-fixed strings; instances are numbered seats. The slot
   // map is the bridge, built once per landing from the CENSUS order — the
@@ -291,6 +282,9 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   const lastHitShown = useRef(surfaceLive.hitNonce);
   const hitFlash = useRef(0);
   const lastReveal = useRef(surfaceLive.revealNonce);
+  /** Terrain re-centre epoch mirrored into React for the memoised seats. */
+  const [epoch, setEpoch] = useState(0);
+  const epochShown = useRef(0);
   /** Smoothed weather visibility so a front arrives instead of switching on. */
   const visSmooth = useRef(1);
   /** Prospect stakes standing (prior landings + this stay). */
@@ -414,6 +408,27 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     );
     (built.crystalB.uniforms.night as { value: number }).value = 1 - day;
 
+    // The ground rolled under a traveller: a tier re-centre committed. Push
+    // the fresh arrays to the GPU, move the sampling centres, and re-seat
+    // everything that stands on baked height — the control layer already
+    // re-read seam and landmark y from the more honest ground.
+    if (live.terrainEpoch !== epochShown.current) {
+      epochShown.current = live.terrainEpoch;
+      refreshTierTextures(built.tex, built.tiers, live.terrainEpochTier);
+      const meshE = crystals.current;
+      if (meshE) {
+        seams.forEach((d, i) => {
+          if (live.mined.has(d.id)) return;
+          if (d.buried && !live.buriedRevealed) return;
+          const crack = Math.min(1, (live.hits.get(d.id) ?? 0) / hitsNeeded(d.richness));
+          writeSeamMatrices(meshE, d, i, crack);
+        });
+        meshE.instanceMatrix.needsUpdate = true;
+      }
+      stakesShown.current = -1; // stakes re-seat on their next pass
+      setEpoch(live.terrainEpoch); // landmarks + ship pose re-memoise
+    }
+
     // A dust front has moved the sand: seat the seams it uncovered.
     if (live.revealNonce !== lastReveal.current) {
       lastReveal.current = live.revealNonce;
@@ -441,7 +456,12 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     V3.set(0, 0, -1).applyQuaternion(camera.quaternion);
     V2.addScaledVector(V3, 2.2);
     V2.y += 0.4;
-    suitLamp.set(V2, LAMP_WARM, Math.max(0, 1 - day * 1.5) * 30 * (live.phase === 'walk' ? 1 : 0), 34);
+    suitLamp.set(
+      V2,
+      LAMP_WARM,
+      Math.max(0, 1 - day * 1.5) * 30 * (live.phase === 'walk' || live.phase === 'skim' ? 1 : 0),
+      34,
+    );
 
     // The nearest live seam glows on the lamp pool; a landing pick spikes it.
     hitFlash.current *= Math.exp(-dt * 9);
@@ -547,11 +567,12 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   // ————— Static composition —————
   const shipPose = useMemo(() => {
     if (!built) return null;
+    void epoch; // the ground under the pad can re-bake; the pose follows it
     const y = heightAt(built.p, built.tiers, SHIP_PARK.x, SHIP_PARK.z);
     groundNormalAt(built.p, built.tiers, SHIP_PARK.x, SHIP_PARK.z, V1);
     const q = new Quaternion().setFromUnitVectors(UP, V1.clone().lerp(UP, 0.6).normalize());
     return { y, q };
-  }, [built]);
+  }, [built, epoch]);
 
   return (
     <>
@@ -574,7 +595,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               <planeGeometry args={[64_000, 64_000, 1, 1]} />
             </mesh>
 
-            {props && <ScatterProps palette={palette} props={props} />}
+            <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} />
 
             <instancedMesh
               ref={crystals}
@@ -596,9 +617,11 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             </mesh>
 
             <Pickaxe />
+            <SkimmerDash />
+            <ParkedSkimmer p={built.p} tiers={built.tiers} />
             <ImpactShards gravity={built.p.gravity} />
             <SurfaceWeather session={session} palette={palette} />
-            <Landmarks p={built.p} tiers={built.tiers} palette={palette} />
+            <Landmarks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} />
 
             {shipPose && (
               <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>
@@ -626,21 +649,175 @@ const WEATHER_FOG: Record<string, Color | undefined> = {
   ash: new Color(0x33343a),
 };
 
-// ————— Props —————
+// ————— Props: chunked, streamed with the traveller —————
 
-function ScatterProps({
-  palette,
-  props,
+/** One prop family's streaming parameters. */
+interface PropFamilyDef {
+  /** Deterministic stream id (kept from the old scatter for continuity). */
+  stream: number;
+  /** Chunk edge, metres. */
+  chunkM: number;
+  /** Chunks live while their centre is inside this radius of the walker. */
+  reachM: number;
+  /** Placement attempts per chunk (rejections thin naturally). */
+  tries: number;
+  maxSlopeY: number;
+  shore: number;
+  scale: [number, number];
+  squash: number;
+  lift: number;
+}
+
+/** Chunks the reach disc can hold, with a ring of margin. */
+function chunkCapacity(def: PropFamilyDef): number {
+  const r = def.reachM / def.chunkM + 1.5;
+  return Math.ceil(Math.PI * r * r);
+}
+
+/**
+ * One instanced family fed by world-fixed chunks around the walker. Chunk
+ * slots own fixed instance ranges; a chunk streaming out zero-scales its
+ * range and returns the slot. A terrain epoch re-generates every resident
+ * chunk (same rocks — the hash owns position — standing on re-baked ground).
+ * A few chunks a frame keeps the work invisible at any legal speed.
+ */
+function PropChunks({
+  p,
+  tiers,
+  def,
+  material,
+  children,
 }: {
+  p: SurfaceParams;
+  tiers: SurfaceTiers;
+  def: PropFamilyDef;
+  material: MeshStandardNodeMaterial;
+  children: React.ReactNode;
+}) {
+  const mesh = useRef<InstancedMesh>(null);
+  const capChunks = useMemo(() => chunkCapacity(def), [def]);
+  const capSeats = capChunks * def.tries;
+
+  const st = useMemo(() => {
+    const free: number[] = [];
+    for (let i = capChunks - 1; i >= 0; i--) free.push(i);
+    return {
+      slots: new Map<string, number>(),
+      free,
+      lastCX: Number.POSITIVE_INFINITY,
+      lastCZ: Number.POSITIVE_INFINITY,
+      queue: [] as { ix: number; iz: number; key: string; d2: number }[],
+      epoch: -1,
+      cleared: false,
+    };
+  }, [capChunks, def]);
+
+  useFrame(() => {
+    const m = mesh.current;
+    if (!m) return;
+    const live = surfaceLive;
+
+    // Everything parks at zero scale until a chunk claims it — an instance
+    // buffer is born full of identity matrices, which render as a heap of
+    // unit props at the origin. Once, before anything else.
+    if (!st.cleared) {
+      st.cleared = true;
+      M1.makeScale(0, 0, 0);
+      for (let i = 0; i < capSeats; i++) m.setMatrixAt(i, M1);
+      m.count = capSeats;
+      m.instanceMatrix.needsUpdate = true;
+    }
+
+    const cx = Math.floor(live.pos.x / def.chunkM);
+    const cz = Math.floor(live.pos.z / def.chunkM);
+    const epochChanged = st.epoch !== live.terrainEpoch;
+    if (cx !== st.lastCX || cz !== st.lastCZ || epochChanged) {
+      st.lastCX = cx;
+      st.lastCZ = cz;
+      st.epoch = live.terrainEpoch;
+      const reach = Math.ceil(def.reachM / def.chunkM);
+      const wanted = new Set<string>();
+      st.queue.length = 0;
+      for (let iz = cz - reach; iz <= cz + reach; iz++) {
+        for (let ix = cx - reach; ix <= cx + reach; ix++) {
+          const wx = (ix + 0.5) * def.chunkM - live.pos.x;
+          const wz = (iz + 0.5) * def.chunkM - live.pos.z;
+          const d2 = wx * wx + wz * wz;
+          if (d2 > def.reachM * def.reachM) continue;
+          const key = `${ix}:${iz}`;
+          wanted.add(key);
+          if (!st.slots.has(key) || epochChanged) st.queue.push({ ix, iz, key, d2 });
+        }
+      }
+      st.queue.sort((a, b) => a.d2 - b.d2);
+      for (const [key, slot] of st.slots) {
+        if (wanted.has(key)) continue;
+        st.slots.delete(key);
+        st.free.push(slot);
+        M1.makeScale(0, 0, 0);
+        for (let i = 0; i < def.tries; i++) m.setMatrixAt(slot * def.tries + i, M1);
+        m.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    let budget = 3;
+    while (st.queue.length > 0 && budget-- > 0) {
+      const c = st.queue.shift()!;
+      let slot = st.slots.get(c.key);
+      if (slot === undefined) {
+        slot = st.free.pop();
+        if (slot === undefined) break; // pool momentarily full; next frame
+        st.slots.set(c.key, slot);
+      }
+      const seats = scatterChunk(p, tiers, def.stream, def.chunkM, c.ix, c.iz, {
+        tries: def.tries,
+        maxSlopeY: def.maxSlopeY,
+        shore: def.shore,
+        scale: def.scale,
+        clearR: 26,
+      });
+      const n = seats.length / 5;
+      for (let i = 0; i < def.tries; i++) {
+        if (i < n) {
+          const k = i * 5;
+          const s = seats[k + 3]!;
+          SEAT.position.set(
+            seats[k]!,
+            seats[k + 1]! + def.lift * s * def.squash * 0.5 - 0.12,
+            seats[k + 2]!,
+          );
+          SEAT.quaternion.setFromAxisAngle(UP, seats[k + 4]!);
+          SEAT.scale.set(s, s * def.squash, s);
+          SEAT.updateMatrix();
+          m.setMatrixAt(slot * def.tries + i, SEAT.matrix);
+        } else {
+          M1.makeScale(0, 0, 0);
+          m.setMatrixAt(slot * def.tries + i, M1);
+        }
+      }
+      m.instanceMatrix.needsUpdate = true;
+    }
+  });
+
+  return (
+    <instancedMesh ref={mesh} args={[undefined, undefined, capSeats]} material={material} frustumCulled={false}>
+      {children}
+    </instancedMesh>
+  );
+}
+
+function ChunkedProps({
+  p,
+  tiers,
+  palette,
+  type,
+  bioK,
+}: {
+  p: SurfaceParams;
+  tiers: SurfaceTiers;
   palette: ReturnType<typeof paletteFor>;
-  props: {
-    rocks: Float32Array;
-    boulders: Float32Array;
-    flora: Float32Array;
-    shrubs: Float32Array;
-    shards: Float32Array;
-    vents: Float32Array;
-  };
+  type: string;
+  bioK: number;
 }) {
   const rockMat = useMemo(() => {
     const m = new MeshStandardNodeMaterial();
@@ -680,67 +857,50 @@ function ScatterProps({
     return m;
   }, [palette]);
 
+  // Densities carry the old scatter's counts per area; reach is what grew.
+  // (rocks: 460 over r950 ≈ 11 a chunk; flora: 340 over r780 ≈ 12; and so on.)
+  const defs = useMemo(() => {
+    const floraTries = bioK > 0.04 ? Math.max(1, Math.round(12 * Math.min(1, bioK + 0.12))) : 0;
+    const shrubTries = bioK > 0.04 ? Math.max(1, Math.round(10 * Math.min(1, bioK + 0.2))) : 0;
+    return {
+      rocks: { stream: 0x11a, chunkM: 256, reachM: 1200, tries: 11, maxSlopeY: 0.5, shore: 0.4, scale: [0.35, 2.4], squash: 0.62, lift: 0 } as PropFamilyDef,
+      boulders: { stream: 0x22b, chunkM: 512, reachM: 3100, tries: 2, maxSlopeY: 0.55, shore: 0.6, scale: [2.2, 7.5], squash: 0.7, lift: 0 } as PropFamilyDef,
+      flora: { stream: 0x33c, chunkM: 256, reachM: 1150, tries: floraTries, maxSlopeY: 0.74, shore: 2.2, scale: [0.8, 2.3], squash: 3.4, lift: 1 } as PropFamilyDef,
+      shrubs: { stream: 0x44d, chunkM: 256, reachM: 900, tries: shrubTries, maxSlopeY: 0.7, shore: 1.4, scale: [0.5, 1.4], squash: 0.75, lift: 0.5 } as PropFamilyDef,
+      shards: { stream: 0x55e, chunkM: 256, reachM: 1150, tries: 6, maxSlopeY: 0.6, shore: 0.5, scale: [0.8, 3.2], squash: 2.6, lift: 0.55 } as PropFamilyDef,
+      vents: { stream: 0x66f, chunkM: 256, reachM: 1150, tries: 3, maxSlopeY: 0.65, shore: 3, scale: [0.7, 1.8], squash: 0.9, lift: 0.85 } as PropFamilyDef,
+    };
+  }, [bioK]);
+
   return (
     <>
-      <PropCloud seats={props.rocks} material={rockMat} squash={0.62}>
+      <PropChunks p={p} tiers={tiers} def={defs.rocks} material={rockMat}>
         <icosahedronGeometry args={[1, 1]} />
-      </PropCloud>
-      <PropCloud seats={props.boulders} material={rockMat} squash={0.7}>
+      </PropChunks>
+      <PropChunks p={p} tiers={tiers} def={defs.boulders} material={rockMat}>
         <icosahedronGeometry args={[1, 1]} />
-      </PropCloud>
-      <PropCloud seats={props.flora} material={floraMat} squash={3.4} lift={1}>
-        <coneGeometry args={[0.5, 1, 6]} />
-      </PropCloud>
-      <PropCloud seats={props.shrubs} material={shrubMat} squash={0.75} lift={0.5}>
-        <icosahedronGeometry args={[0.7, 0]} />
-      </PropCloud>
-      <PropCloud seats={props.shards} material={shardMat} squash={2.6} lift={0.55}>
-        <octahedronGeometry args={[0.6, 0]} />
-      </PropCloud>
-      <PropCloud seats={props.vents} material={ventMat} squash={0.9} lift={0.85}>
-        <coneGeometry args={[1, 1.4, 7]} />
-      </PropCloud>
+      </PropChunks>
+      {defs.flora.tries > 0 && (
+        <PropChunks p={p} tiers={tiers} def={defs.flora} material={floraMat}>
+          <coneGeometry args={[0.5, 1, 6]} />
+        </PropChunks>
+      )}
+      {defs.shrubs.tries > 0 && (
+        <PropChunks p={p} tiers={tiers} def={defs.shrubs} material={shrubMat}>
+          <icosahedronGeometry args={[0.7, 0]} />
+        </PropChunks>
+      )}
+      {type === 'ice' && (
+        <PropChunks p={p} tiers={tiers} def={defs.shards} material={shardMat}>
+          <octahedronGeometry args={[0.6, 0]} />
+        </PropChunks>
+      )}
+      {type === 'volcanic' && (
+        <PropChunks p={p} tiers={tiers} def={defs.vents} material={ventMat}>
+          <coneGeometry args={[1, 1.4, 7]} />
+        </PropChunks>
+      )}
     </>
-  );
-}
-
-/** One instanced prop family placed on its precomputed seats. */
-function PropCloud({
-  seats,
-  material,
-  squash,
-  lift = 0,
-  children,
-}: {
-  seats: Float32Array;
-  material: MeshStandardNodeMaterial;
-  squash: number;
-  lift?: number;
-  children: React.ReactNode;
-}) {
-  const mesh = useRef<InstancedMesh>(null);
-  const count = seats.length / 5;
-  useEffect(() => {
-    const m = mesh.current;
-    if (!m) return;
-    for (let i = 0; i < count; i++) {
-      const k = i * 5;
-      const s = seats[k + 3]!;
-      // lift=1 stands a unit-height prop's base on the ground; 0 half-buries.
-      SEAT.position.set(seats[k]!, seats[k + 1]! + lift * s * squash * 0.5 - 0.12, seats[k + 2]!);
-      SEAT.quaternion.setFromAxisAngle(UP, seats[k + 4]!);
-      SEAT.scale.set(s, s * squash, s);
-      SEAT.updateMatrix();
-      m.setMatrixAt(i, SEAT.matrix);
-    }
-    m.count = count;
-    m.instanceMatrix.needsUpdate = true;
-  }, [seats, squash, lift, count]);
-  if (count === 0) return null;
-  return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, count]} material={material} frustumCulled={false}>
-      {children}
-    </instancedMesh>
   );
 }
 
@@ -811,6 +971,168 @@ function LandedRunabout() {
           <meshBasicMaterial color={0xffe2b0} transparent opacity={0.16} depthWrite={false} />
         </mesh>
       ))}
+    </group>
+  );
+}
+
+// ————— The Survey Skimmer —————
+
+/**
+ * The sled itself, origin at deck centre, nose toward -Z — the same
+ * hand-placed-boxes school as the runabout, at running-board scale. Parked
+ * it is a world object; ridden it is not drawn at all (the dash viewmodel
+ * carries the cockpit), which neatly spends zero polygons on your own hull.
+ */
+function SkimmerSled() {
+  return (
+    <group>
+      {/* Deck and nose cowl. */}
+      <mesh position={[0, 0.42, 0.1]}>
+        <boxGeometry args={[1.4, 0.16, 2.7]} />
+        <meshStandardMaterial color={0x35435c} emissive={0x0b1524} emissiveIntensity={0.6} roughness={0.4} metalness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.5, -1.5]} rotation={[-Math.PI / 2.35, 0, 0]}>
+        <coneGeometry args={[0.5, 0.8, 4]} />
+        <meshStandardMaterial color={0x2b3850} emissive={0x0a121f} emissiveIntensity={0.6} roughness={0.42} metalness={0.7} flatShading />
+      </mesh>
+      {/* Side skids: the cushion's shoes. */}
+      {[-0.78, 0.78].map((x) => (
+        <mesh key={x} position={[x, 0.22, 0.1]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.15, 0.15, 2.3, 8]} />
+          <meshStandardMaterial color={0x27324a} emissive={0x0a1220} emissiveIntensity={0.7} roughness={0.35} metalness={0.8} flatShading />
+        </mesh>
+      ))}
+      {/* Saddle and the survey mast, scanner ball on top. */}
+      <mesh position={[0, 0.62, 0.55]}>
+        <boxGeometry args={[0.44, 0.24, 0.9]} />
+        <meshStandardMaterial color={0x3d3226} emissive={0x140f08} emissiveIntensity={0.5} roughness={0.85} metalness={0.1} />
+      </mesh>
+      <mesh position={[0, 1.3, 1.2]}>
+        <cylinderGeometry args={[0.03, 0.045, 1.5, 6]} />
+        <meshStandardMaterial color={0x596579} roughness={0.5} metalness={0.7} />
+      </mesh>
+      <mesh name="sk-scanner" position={[0, 2.1, 1.2]}>
+        <sphereGeometry args={[0.11, 10, 8]} />
+        <meshBasicMaterial color={0x6fe0ff} transparent opacity={0.85} toneMapped={false} />
+      </mesh>
+      {/* Handlebar arch over the bow. */}
+      <mesh position={[0, 0.78, -0.62]} rotation={[0.5, 0, 0]}>
+        <boxGeometry args={[0.9, 0.07, 0.09]} />
+        <meshStandardMaterial color={0x212c40} emissive={0x0a1220} emissiveIntensity={0.7} roughness={0.4} metalness={0.75} />
+      </mesh>
+      {/* Deck edge rails: parked at night it reads as a vehicle, not litter. */}
+      {[-0.68, 0.68].map((x) => (
+        <mesh key={x} position={[x, 0.51, 0.1]}>
+          <boxGeometry args={[0.05, 0.02, 2.6]} />
+          <meshBasicMaterial color={0xd98d2b} transparent opacity={0.6} toneMapped={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** The sled where you left it: standing on its skids, scanner breathing. */
+function ParkedSkimmer({ p, tiers }: { p: SurfaceParams; tiers: SurfaceTiers }) {
+  const root = useRef<Group>(null);
+
+  useFrame((state) => {
+    const g = root.current;
+    if (!g) return;
+    const live = surfaceLive;
+    const at = live.skimmerAt;
+    const visible = at != null && live.phase !== 'skim';
+    g.visible = visible;
+    if (!visible || !at) return;
+    g.position.set(at.x, heightAt(p, tiers, at.x, at.z), at.z);
+    g.rotation.set(0, at.yaw, 0);
+    const scanner = g.getObjectByName('sk-scanner') as Mesh | null;
+    const mat = scanner?.material as MeshBasicMaterial | undefined;
+    if (mat) mat.opacity = 0.5 + Math.sin(state.clock.elapsedTime * 2.1) * 0.35;
+  });
+
+  return (
+    <group ref={root} visible={false}>
+      <SkimmerSled />
+    </group>
+  );
+}
+
+/**
+ * The rider's share of the skimmer: a cowl, a handlebar, a console strip
+ * that burns brighter with speed. A viewmodel like the pick — welded to the
+ * lens with depth privileges, trailing the eyes by a beat, leaning into the
+ * turn just enough to say the machine noticed.
+ */
+function SkimmerDash() {
+  const camera = useThree((s) => s.camera);
+  const root = useRef<Group>(null);
+  const lag = useRef({ yaw: 0, x: 0 });
+  const consoleMat = useRef<MeshStandardNodeMaterial | null>(null);
+
+  const consoleMaterial = useMemo(() => {
+    const m = new MeshStandardNodeMaterial();
+    m.color = new Color(0x28344c);
+    m.emissive = new Color(0x2a8fa8);
+    m.emissiveIntensity = 0.7;
+    m.roughness = 0.4;
+    m.metalness = 0.6;
+    m.depthTest = false;
+    consoleMat.current = m;
+    return m;
+  }, []);
+
+  useFrame((state, dtRaw) => {
+    const g = root.current;
+    if (!g) return;
+    const live = surfaceLive;
+    const visible = live.phase === 'skim';
+    g.visible = visible;
+    if (!visible) return;
+    const dt = Math.min(dtRaw, 0.1);
+
+    const l = lag.current;
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const dy = wrap(live.yaw - l.yaw);
+    l.yaw = live.yaw;
+    const k = 1 - Math.exp(-dt * 8);
+    l.x += (-dy * 0.5 - l.x) * k;
+
+    g.position.copy(camera.position);
+    g.quaternion.copy(camera.quaternion);
+    g.translateX(l.x * 0.3);
+    g.translateY(-0.42 + Math.sin(state.clock.elapsedTime * 9.2) * 0.004);
+    g.translateZ(-0.62);
+    g.rotation.z -= l.x * 0.6;
+
+    if (consoleMat.current) {
+      consoleMat.current.emissiveIntensity =
+        0.25 + Math.min(1, live.skimSpeed / 29) * 0.8;
+    }
+  });
+
+  const metal = { color: 0x2b3750, emissive: 0x0d1526, emissiveIntensity: 0.8, roughness: 0.38, metalness: 0.8, depthTest: false } as const;
+  return (
+    <group ref={root} visible={false}>
+      {/* Cowl: a shallow V of panels under the sightline. */}
+      <mesh position={[-0.24, -0.02, 0]} rotation={[0.34, 0, 0.18]} renderOrder={520}>
+        <boxGeometry args={[0.42, 0.05, 0.3]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+      <mesh position={[0.24, -0.02, 0]} rotation={[0.34, 0, -0.18]} renderOrder={520}>
+        <boxGeometry args={[0.42, 0.05, 0.3]} />
+        <meshStandardMaterial {...metal} />
+      </mesh>
+      {/* Grips, rising toward the rider's hands. */}
+      {[-0.34, 0.34].map((x) => (
+        <mesh key={x} position={[x, 0.04, 0.1]} rotation={[0.9, 0, x < 0 ? 0.3 : -0.3]} renderOrder={521}>
+          <cylinderGeometry args={[0.02, 0.024, 0.16, 6]} />
+          <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
+        </mesh>
+      ))}
+      {/* The console: speed burns on it (material driven by the frame loop). */}
+      <mesh position={[0, -0.015, 0.02]} rotation={[0.5, 0, 0]} renderOrder={521} material={consoleMaterial}>
+        <boxGeometry args={[0.13, 0.014, 0.07]} />
+      </mesh>
     </group>
   );
 }

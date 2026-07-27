@@ -112,15 +112,52 @@ ignores weather forever), and on instanced meshes the node system folds the
 instance matrix into `positionLocal`, so per-particle shape masks belong in
 UV space.
 
-## Phase 3 — the Survey Skimmer, and ground that extends to meet it
+## Phase 3 — the Survey Skimmer, and ground that extends to meet it (SHIPPED)
 
-A `skimmer` refit (ranks add capability: deploy → storm stabilisation →
-amphibious/tow), a new `skim` phase on the existing flight bindings, 20–30
-m/s over land and shallow water. The real cost is **chunked props and a
-rolling near-tier bake** — today's props stop at ~2.8 km and the near tier at
-4 km, under two minutes at skimmer speed. Budget the chunking as the majority
-of the phase. POIs come from the Phase 2 grammar, three to five visible per
-region, so the vehicle arrives alongside destinations worth driving to.
+- **The refit** (`skimmer`, salvage 12/24/48): rank 1 deploys a ground-effect
+  sled from the runabout; rank 2 is the **stabilised mast** — aboard, weather
+  may still feed the field pulse but can no longer choke it, and the marker
+  rail survives a whiteout (`scanRangeNow = base × max(1, mult)`, the HUD's
+  compass consults `stabilised`); rank 3 is the **amphibious hull** — open
+  water becomes scenery, ridden at the surface line. Ranks 1–2 tolerate 3 m
+  of water before the shove home (`SKIM_WATER_LIMIT_M`); lava refuses every
+  rank at the ankle, as it always has.
+- **The skim phase** rides the existing bindings: thrust/strafe drive, boost
+  is fast cruise (21 → 29 m/s, `SKIM_CRUISE_M_S`/`SKIM_BOOST_M_S`), and the
+  helm's *descend* key — jobless on foot — deploys at the runabout, mounts
+  within 6 m of the parked sled, and dismounts anywhere the suit could wade
+  ashore. Dismounting parks a real object: the sled stands where you left it,
+  on the compass (`▽`), warm enough to trace 240 m through a whiteout
+  (`THERMAL_SKIMMER_RANGE_M`). Boarding the runabout stows it in the same
+  motion, and takeoff never leaves it behind. Engage from the saddle is the
+  mast's field pulse; seams demand boots (`dismount to work the seam`).
+- **The rolling ground** (`TierStream`, the phase's real cost): both height
+  tiers now carry a centre, and a stream re-bakes a back buffer toward the
+  traveller a few milliseconds a frame — rows, smoothing passes, normals —
+  then commits in one copy. Centres **snap to the texel grid**, so where old
+  and new cover overlap the re-bake evaluates the analytic field at exactly
+  the world points it already held: the commit is invisible by arithmetic
+  (`terrain-stream` tests hold it to 1e-6). On commit, seams, landmarks,
+  stakes and the ship re-seat on the more honest ground (`terrainEpoch`), a
+  grounded walker is stepped, not dropped, and the near tier chases at 0.3 ×
+  half-extent with a 4 s velocity lead — the far tier the same at 0.22.
+  Measured on real Chrome/WebGPU: a 30 s boosted drive across a live commit,
+  p99 16.8 ms, zero frames over 33 ms.
+- **Chunked props**: the six scatter families stream in world-fixed chunks
+  around the walker (256 m cells; boulders 512 m to 3.1 km). Position, scale
+  and yaw are pure hashes of (seed, family, chunk) — the valley regrows the
+  same rocks — while height is re-read from the live tiers, which is why an
+  epoch re-seats resident chunks instead of letting rocks float.
+- **The census reaches skimmer range** for everyone (`SITE_FIELD_RADIUS_SKIM`
+  2600 m): the lattice always extended there, the census now looks. With
+  range comes a placement law: **accept/reject against the analytic field,
+  not tier samples** — the far tier at 2.5 km happily calls ground dry that
+  near detail later drowns, and a census must never promise ground the sea
+  already owns.
+
+Two more renderer-adjacent laws, recorded beside Phase 2's: tier centres
+snap to the texel grid or a re-centre pops; and anything placed beyond the
+near tier judges water analytically or the rolling bake will embarrass it.
 
 ## Phase 4 — record-driven settlements, installations, ecology
 
@@ -147,7 +184,7 @@ biographies, the Circular, and from orbit (Expansion law 2).
 
 ## Phase 6 — low-altitude runabout flight
 
-Last on purpose: it needs Phase 3's chunked generation. An Atmospheric
+Last on purpose: it needs Phase 3's chunked generation (now built). An Atmospheric
 Handling Package refit, arbitrary landing validation (generalised
 `findDrySite`), secondary landings without the full entry cinematic.
 
@@ -160,9 +197,10 @@ orbit. Prove the whole shape on one world before generalising.
 
 ## Verification conventions
 
-`npm test` (groundfall + ground-sites + weather + ground-landmarks suites
-hold the promises above), `npm run build`, `npm run balance` after economy
-changes. Visual verification is headless: `scripts/shot.mjs` with the
+`npm test` (groundfall + ground-sites + weather + ground-landmarks + skimmer
+suites hold the promises above), `npm run build`, `npm run balance` after
+economy changes. Visual verification is headless: `scripts/shot.mjs` with the
 `__tcSurface` hooks (`gfscanall`, `gfverb:i`, `gfmine`, `gfstate`,
-`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`) — the Browser
-pane cannot composite this scene. Extend the hook object as each phase lands.
+`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`, and Phase 3's
+`gfskimmer:rank` + `gfskim:on|off`) — the Browser pane cannot composite this
+scene. Extend the hook object as each phase lands.

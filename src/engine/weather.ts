@@ -98,6 +98,8 @@ export const WHITEOUT_CUT_MIN = 0.5;
 export const THERMAL_TRAIL_RANGE_M = 46;
 /** In a whiteout, the runabout's engines stay traceable this far (m). */
 export const THERMAL_SHIP_RANGE_M = 320;
+/** In a whiteout, a parked skimmer's cushion stays traceable this far (m). */
+export const THERMAL_SKIMMER_RANGE_M = 240;
 
 const CYCLE_MIN_MS = 9 * 60_000;
 const CYCLE_MAX_MS = 15 * 60_000;

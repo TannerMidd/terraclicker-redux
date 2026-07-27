@@ -3964,6 +3964,24 @@ button {
 }
 .sh-prompt.blocked { color: var(--ink-dim); border-style: dashed; }
 .sh-prompt.dim { color: var(--ink-faint); border-color: rgba(150, 182, 236, 0.1); }
+/* The skimmer's line rides below the main prompt so the two never fight. */
+.sh-prompt.sh-skimline { bottom: calc(17% - 44px); }
+
+/* — The sled's speed, worn like an instrument — */
+.sh-skim {
+  position: absolute;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: calc(max(22px, env(safe-area-inset-bottom)) + 34px);
+  padding: 8px 14px;
+  border: 1px solid rgba(150, 182, 236, 0.16);
+  border-radius: 10px;
+  background: rgba(13, 16, 32, 0.55);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  text-align: right;
+}
+.sh-skim b { font-size: 21px; margin-right: 5px; color: var(--improbable); font-variant-numeric: tabular-nums; }
+.sh-skim em { display: block; font-style: normal; color: var(--ink-dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
 
 .sh-hint {
   position: absolute;

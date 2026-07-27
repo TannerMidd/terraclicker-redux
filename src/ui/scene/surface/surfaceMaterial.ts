@@ -26,6 +26,7 @@ import {
   RedFormat,
   RGBAFormat,
   UnsignedByteType,
+  Vector2,
   Vector3,
 } from 'three/webgpu';
 import {
@@ -71,6 +72,14 @@ export interface TierTextures {
   farHeight: DataTexture;
   nearNormal: DataTexture;
   farNormal: DataTexture;
+  /**
+   * Tier centres as uniforms, shared by the terrain and liquid materials.
+   * The rolling re-bake moves a tier; these move the sampling with it, so a
+   * re-centre is one uniform write and two needsUpdate flags — no recompile,
+   * per the sharing law.
+   */
+  nearCenter: ReturnType<typeof uniform>;
+  farCenter: ReturnType<typeof uniform>;
 }
 
 function heightTexture(tier: HeightTier): DataTexture {
@@ -100,7 +109,26 @@ export function buildTierTextures(tiers: SurfaceTiers): TierTextures {
     farHeight: heightTexture(tiers.far),
     nearNormal: normalTexture(tiers.near),
     farNormal: normalTexture(tiers.far),
+    nearCenter: uniform(new Vector2(tiers.near.cx, tiers.near.cz)),
+    farCenter: uniform(new Vector2(tiers.far.cx, tiers.far.cz)),
   };
+}
+
+/** One tier re-centred: re-upload its arrays and move the sampling with it. */
+export function refreshTierTextures(
+  tex: TierTextures,
+  tiers: SurfaceTiers,
+  which: 'near' | 'far',
+): void {
+  if (which === 'near') {
+    tex.nearHeight.needsUpdate = true;
+    tex.nearNormal.needsUpdate = true;
+    (tex.nearCenter.value as Vector2).set(tiers.near.cx, tiers.near.cz);
+  } else {
+    tex.farHeight.needsUpdate = true;
+    tex.farNormal.needsUpdate = true;
+    (tex.farCenter.value as Vector2).set(tiers.far.cx, tiers.far.cz);
+  }
 }
 
 export function disposeTierTextures(t: TierTextures): void {
@@ -110,12 +138,13 @@ export function disposeTierTextures(t: TierTextures): void {
   t.farNormal.dispose();
 }
 
-/** Manual bilinear height fetch — the shader half of terrainField.sampleTier. */
-function bilinearHeight(map: DataTexture, texels: number, extent: number, xz: N): N {
+/** Manual bilinear height fetch — the shader half of terrainField.sampleTier.
+ * `center` is the tier's rolling centre uniform; sampling is centre-relative. */
+function bilinearHeight(map: DataTexture, texels: number, extent: number, xz: N, center: N): N {
   const step = extent / (texels - 1);
   const half = extent / 2;
-  const u = xz.x.add(half).div(step);
-  const v = xz.y.add(half).div(step);
+  const u = xz.x.sub(center.x).add(half).div(step);
+  const v = xz.y.sub(center.y).add(half).div(step);
   const i0 = clamp(floor(u), 0, texels - 2);
   const j0 = clamp(floor(v), 0, texels - 2);
   const fu = clamp(u.sub(i0), 0, 1);
@@ -132,9 +161,9 @@ function bilinearHeight(map: DataTexture, texels: number, extent: number, xz: N)
 }
 
 /** Near/far tier blend factor at a ground position (1 = fully near tier). */
-function nearness(xz: N, nearExtent: number): N {
+function nearness(xz: N, nearExtent: number, center: N): N {
   const halfNear = nearExtent / 2;
-  const edge = max(abs(xz.x), abs(xz.y)).div(halfNear);
+  const edge = max(abs(xz.x.sub(center.x)), abs(xz.y.sub(center.y))).div(halfNear);
   return smoothstep(1.0, TIER_BLEND_START, edge);
 }
 
@@ -181,9 +210,9 @@ export function createTerrainMaterial(pal: PlanetPalette, tiers: SurfaceTiers, t
   // computing that output is a cycle.
   const wpos = modelWorldMatrix.mul(vec4(positionLocal, 1));
   const worldXZ = vec2(wpos.x, wpos.z);
-  const hNear = bilinearHeight(tex.nearHeight, tiers.near.texels, tiers.near.extent, worldXZ);
-  const hFar = bilinearHeight(tex.farHeight, tiers.far.texels, tiers.far.extent, worldXZ);
-  const k = nearness(worldXZ, tiers.near.extent);
+  const hNear = bilinearHeight(tex.nearHeight, tiers.near.texels, tiers.near.extent, worldXZ, tex.nearCenter);
+  const hFar = bilinearHeight(tex.farHeight, tiers.far.texels, tiers.far.extent, worldXZ, tex.farCenter);
+  const k = nearness(worldXZ, tiers.near.extent, tex.nearCenter);
   const curvature = worldXZ.x.mul(worldXZ.x).add(worldXZ.y.mul(worldXZ.y)).mul(curvR2);
   const h = mix(hFar, hNear, k).sub(curvature);
   mat.positionNode = vec3(positionLocal.x, h, positionLocal.z);
@@ -191,14 +220,14 @@ export function createTerrainMaterial(pal: PlanetPalette, tiers: SurfaceTiers, t
   // — Fragment: normals from the baked maps, plus micro relief. —
   // Displacement is vertical, so the varying's XZ is safe on this side.
   const fragXZ = vec2(positionWorld.x, positionWorld.z);
-  const kFrag = nearness(fragXZ, tiers.near.extent);
+  const kFrag = nearness(fragXZ, tiers.near.extent, tex.nearCenter);
   const uvNear = vec2(
-    fragXZ.x.add(tiers.near.extent / 2).div(tiers.near.extent),
-    fragXZ.y.add(tiers.near.extent / 2).div(tiers.near.extent),
+    fragXZ.x.sub(tex.nearCenter.x).add(tiers.near.extent / 2).div(tiers.near.extent),
+    fragXZ.y.sub(tex.nearCenter.y).add(tiers.near.extent / 2).div(tiers.near.extent),
   );
   const uvFar = vec2(
-    fragXZ.x.add(tiers.far.extent / 2).div(tiers.far.extent),
-    fragXZ.y.add(tiers.far.extent / 2).div(tiers.far.extent),
+    fragXZ.x.sub(tex.farCenter.x).add(tiers.far.extent / 2).div(tiers.far.extent),
+    fragXZ.y.sub(tex.farCenter.y).add(tiers.far.extent / 2).div(tiers.far.extent),
   );
   const nNear = texture(tex.nearNormal, uvNear).xyz.mul(2).sub(1);
   const nFar = texture(tex.farNormal, uvFar).xyz.mul(2).sub(1);
@@ -300,9 +329,9 @@ export function createLiquidMaterial(pal: PlanetPalette, tiers: SurfaceTiers, te
 
   // Depth against the same baked ground the walker reads (fragment side).
   const worldXZ = vec2(positionWorld.x, positionWorld.z);
-  const hNear = bilinearHeight(tex.nearHeight, tiers.near.texels, tiers.near.extent, worldXZ);
-  const hFar = bilinearHeight(tex.farHeight, tiers.far.texels, tiers.far.extent, worldXZ);
-  const ground = mix(hFar, hNear, nearness(worldXZ, tiers.near.extent));
+  const hNear = bilinearHeight(tex.nearHeight, tiers.near.texels, tiers.near.extent, worldXZ, tex.nearCenter);
+  const hFar = bilinearHeight(tex.farHeight, tiers.far.texels, tiers.far.extent, worldXZ, tex.farCenter);
+  const ground = mix(hFar, hNear, nearness(worldXZ, tiers.near.extent, tex.nearCenter));
   const depth = clamp(seaLevel.sub(ground).div(60), 0, 1);
 
   const waterCol = mix(uShallow, uDeep, smoothstep(0, 0.6, depth));

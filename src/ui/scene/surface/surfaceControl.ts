@@ -25,16 +25,28 @@ import {
   heightAt,
   groundNormalAt,
   makeTier,
+  makeTierStream,
   smoothTier,
+  streamBegin,
+  streamCommit,
+  streamStep,
   TIER_FAR,
   TIER_NEAR,
+  type HeightTier,
   type SurfaceParams,
   type SurfaceTiers,
+  type TierStream,
 } from './terrainField';
-import { depositSites, type DepositSpec } from './surfaceSites';
+import { depositSites, SITE_FIELD_RADIUS_SKIM, type DepositSpec } from './surfaceSites';
 import { landmarkSites, type LandmarkSpec } from './surfaceLandmarks';
 import { SAMPLE_BY_ID } from '../../../content/groundSamples';
-import { surfaceScanRange } from '../../../engine/deepField';
+import { skimmerRank, surfaceScanRange } from '../../../engine/deepField';
+import {
+  SKIM_BOOST_M_S,
+  SKIM_CRUISE_M_S,
+  SKIM_STABILISED_RANK,
+  SKIM_WATER_LIMIT_M,
+} from '../../../content/refit';
 import { siteMinable } from '../../../engine/groundSites';
 import {
   stormFlash,
@@ -51,7 +63,7 @@ import * as audio from '../../audio/audio';
 export type { GroundfallSession };
 export type { DepositSpec };
 
-export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'takeoff';
+export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'skim' | 'takeoff';
 
 /**
  * What the pick can mean, once a seam has been scanned. `break` is the old
@@ -128,6 +140,24 @@ export const SHIP_PARK: { x: number; z: number } = { x: 11, z: -7 };
  */
 export const WADE_MAX_M = 1.2;
 const LAVA_WADE_M = 0.12;
+
+// ————— The Survey Skimmer (Phase 3) —————
+
+/** Velocity approach rate, 1/s — a sled leans into speed, it does not snap. */
+const SKIM_ACCEL = 1.5;
+/** Deck clearance above the surface line (ground, or water it can cross). */
+const SKIM_HOVER_M = 1.15;
+/** Eyes above the deck; standing tall on a running board. */
+export const SKIM_EYE = 1.35;
+/** Walk-up remount reach around a parked skimmer, metres. */
+export const SKIM_MOUNT_RANGE = 6;
+/** Deploy reach around the parked runabout, metres. */
+export const SKIM_DEPLOY_RANGE = 10;
+/** Vertical rates the cushion permits, m/s: it climbs hills, it is not a lift. */
+const SKIM_CLIMB_MAX = 26;
+const SKIM_FALL_MAX = 13;
+/** Ground-normal Y below which the cushion sheds you down the fall line. */
+const SKIM_SLOPE_STAND = 0.5;
 
 export const surfaceLive = {
   phase: 'entry' as GroundfallPhase,
@@ -227,6 +257,26 @@ export const surfaceLive = {
   wade: 0,
   /** The suit is actively declining to swim this frame. */
   wadeRefused: false,
+
+  // — the skimmer —
+  /** Skimmer refit rank, frozen at landing like the scan range. */
+  skimRank: 0,
+  /** Where the sled stands parked, or null (stowed aboard, or under you). */
+  skimmerAt: null as { x: number; z: number; yaw: number } | null,
+  /** Ground speed while skimming, m/s — the HUD's readout. */
+  skimSpeed: 0,
+  /** Rank ≥2 aboard: the mast holds the scanner and rail through weather. */
+  stabilised: false,
+  /** The second, dimmer prompt line: deploy/mount/dismount, or a refusal. */
+  skimPrompt: null as string | null,
+  /** Until this live.t, skimPrompt is a refusal note and must not be recomputed. */
+  skimNoteUntil: 0,
+
+  // — the rolling ground —
+  /** Bumped when a tier re-centre commits; the scene re-seats and re-uploads. */
+  terrainEpoch: 0,
+  /** Which tier the latest epoch moved. */
+  terrainEpochTier: 'near' as 'near' | 'far',
 };
 
 export const surfaceInput = {
@@ -235,6 +285,8 @@ export const surfaceInput = {
   run: false,
   jump: false, // edge, consumed
   engage: false,
+  /** Tap of the helm's descend key: deploy, mount or dismount. Edge, consumed. */
+  deploy: false,
 };
 
 let session: GroundfallSession | null = null;
@@ -267,6 +319,9 @@ export function configureTierSpecsForTests(
 let bakeCursor = { near: 0, far: 0, normals: false };
 /** The hero commission this stay belongs to; if it changes, the ground goes. */
 let heroLifetimeIndex = -1;
+/** Rolling re-bake streams, lazily bound to the live tiers (walk + skim). */
+let nearStream: TierStream | null = null;
+let farStream: TierStream | null = null;
 
 export function groundfallSession(): GroundfallSession | null {
   return session;
@@ -383,12 +438,22 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.revealNonce = 0;
   live.wade = 0;
   live.wadeRefused = false;
+  live.skimRank = skimmerRank(st.expedition);
+  live.skimmerAt = null;
+  live.skimSpeed = 0;
+  live.stabilised = false;
+  live.skimPrompt = null;
+  live.skimNoteUntil = 0;
+  live.terrainEpoch = 0;
+  nearStream = null;
+  farStream = null;
   outlookAt = -100;
   surfaceInput.fwd = 0;
   surfaceInput.strafe = 0;
   surfaceInput.run = false;
   surfaceInput.jump = false;
   surfaceInput.engage = false;
+  surfaceInput.deploy = false;
 
   useUiBus.getState().setGroundfall(s);
   audio.entryRoarStart();
@@ -396,8 +461,11 @@ export function beginGroundfall(s: GroundfallSession): void {
 
 /** The walker boarded (or the world was delivered out from under them). */
 export function beginTakeoff(): void {
-  if (surfaceLive.phase !== 'walk') return;
+  if (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim') return;
   bankSamples();
+  // The skimmer stows itself, wherever it stood. It has strong feelings
+  // about being left behind and expresses them by not allowing it.
+  surfaceLive.skimmerAt = null;
   surfaceLive.phase = 'takeoff';
   surfaceLive.t = 0;
   releasePointer();
@@ -432,6 +500,8 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   landmarks = [];
   priorStates = new Map();
   weatherOverride = null;
+  nearStream = null;
+  farStream = null;
   releasePointer();
   audio.entryRoarStop();
   audio.surfaceWindStop();
@@ -472,8 +542,9 @@ function stepGeneration(): number {
       // this world still has. Worked and prospected seams are spent — the
       // ground remembers, which is the entire point of the record. Buried
       // seams ride in the census from the start; joining the workable field
-      // is the dust front's job (rebuildWorkableField).
-      allSites = depositSites(params, tiers, session?.quirks ?? [], undefined, { buried: true });
+      // is the dust front's job (rebuildWorkableField). The census reaches
+      // skimmer range for everyone: the ground was always there.
+      allSites = depositSites(params, tiers, session?.quirks ?? [], SITE_FIELD_RADIUS_SKIM, { buried: true });
       priorStates = new Map();
       const record = session
         ? useGame.getState().s.expedition.groundWorlds[session.worldKey]
@@ -517,12 +588,16 @@ function bindingsHeld(keys: Set<string>) {
     run: held('boost'),
     jump: held('up'),
     engage: held('engage'),
+    // The helm's descend key has nothing to descend on foot; down here it
+    // means the skimmer — deploy, mount, dismount.
+    deploy: held('down'),
   };
 }
 
 export function attachSurfaceInput(canvas: HTMLElement): () => void {
   const keys = new Set<string>();
   let jumpHeld = false;
+  let deployHeld = false;
 
   const apply = () => {
     const h = bindingsHeld(keys);
@@ -532,6 +607,8 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     surfaceInput.engage = h.engage;
     if (h.jump && !jumpHeld) surfaceInput.jump = true;
     jumpHeld = h.jump;
+    if (h.deploy && !deployHeld) surfaceInput.deploy = true;
+    deployHeld = h.deploy;
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -550,7 +627,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     apply();
   };
   const onMouseMove = (e: MouseEvent) => {
-    if (!pointerLocked || surfaceLive.phase !== 'walk') return;
+    if (!pointerLocked || (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim')) return;
     const sens = 0.0021 * flightPrefs().sensitivity;
     surfaceLive.yaw -= e.movementX * sens;
     const invert = flightPrefs().invertPitch ? 1 : -1;
@@ -560,7 +637,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     );
   };
   const onPointerDown = (e: PointerEvent) => {
-    if (surfaceLive.phase !== 'walk') return;
+    if (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim') return;
     const el = e.target as HTMLElement | null;
     if (el?.closest?.('.sh-hud, .modal, .modal-veil, .toast-stack')) return;
     if (!pointerLocked) canvas.requestPointerLock?.();
@@ -644,7 +721,13 @@ function stepWeather(gameTimeMs: number): void {
   live.weather = weatherOverride
     ? syntheticWeather(weatherOverride)
     : weatherAt(wSpec, gameTimeMs);
-  live.scanRangeNow = live.scanRange * live.weather.scanRangeMult;
+  // Aboard a rank-2 skimmer the mast holds the instrument steady: weather
+  // may still FEED the pulse (storms), it may no longer choke it. The rail
+  // survives whiteouts the same way — see the HUD's compass.
+  live.stabilised = live.phase === 'skim' && live.skimRank >= SKIM_STABILISED_RANK;
+  live.scanRangeNow =
+    live.scanRange *
+    (live.stabilised ? Math.max(1, live.weather.scanRangeMult) : live.weather.scanRangeMult);
   live.groundShake =
     live.weather.kind === 'tremor'
       ? tremorPulse(s.seed, gameTimeMs, live.weather.intensity)
@@ -687,7 +770,11 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
   stepWeather(st.gameTimeMs);
   // The hero world completing while you stand on it: the world you were
   // standing on has been delivered. The runabout very sensibly leaves.
-  if (s.hero && st.planet.lifetimeIndex !== heroLifetimeIndex && live.phase === 'walk') {
+  if (
+    s.hero &&
+    st.planet.lifetimeIndex !== heroLifetimeIndex &&
+    (live.phase === 'walk' || live.phase === 'skim')
+  ) {
     useUiBus.getState().addToast({
       kind: 'info',
       kicker: 'GROUNDFALL',
@@ -740,6 +827,12 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
     }
     case 'walk': {
       stepWalk(dt);
+      stepTierStreams();
+      break;
+    }
+    case 'skim': {
+      stepSkim(dt);
+      stepTierStreams();
       break;
     }
     case 'takeoff': {
@@ -764,6 +857,26 @@ function stepWalk(dt: number): void {
   const live = surfaceLive;
   const p = params!;
   const tr = tiers!;
+
+  // The descend key, repurposed: deploy at the runabout, mount at the sled.
+  if (surfaceInput.deploy) {
+    surfaceInput.deploy = false;
+    if (live.skimRank >= 1) {
+      const shipD = Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z);
+      const sledD = live.skimmerAt
+        ? Math.hypot(live.pos.x - live.skimmerAt.x, live.pos.z - live.skimmerAt.z)
+        : Infinity;
+      if (live.skimmerAt && sledD < SKIM_MOUNT_RANGE) {
+        live.skimmerAt = null;
+        mountSkimmer();
+        return;
+      }
+      if (!live.skimmerAt && shipD < SKIM_DEPLOY_RANGE) {
+        mountSkimmer();
+        return;
+      }
+    }
+  }
 
   EUL.set(0, live.yaw, 0);
   Q.setFromEuler(EUL);
@@ -884,6 +997,289 @@ function stepWalk(dt: number): void {
   void ground;
 }
 
+// ————— The rolling ground —————
+
+/** Frame budget for the mid-stay re-bake, ms. The entry gets 7; play gets 3. */
+const STREAM_MS_BUDGET = 3;
+/** Fractions of a tier's half-extent at which it starts chasing the walker. */
+const NEAR_RECENTER_FRAC = 0.3;
+const FAR_RECENTER_FRAC = 0.22;
+/** Seconds of current velocity to lead the new centre by. */
+const STREAM_LEAD_S = 4;
+
+/**
+ * Keep the ground under a traveller. One stream bakes at a time — the near
+ * tier outranks the far one — inside a strict budget, and a finished bake
+ * commits in a single frame: tier arrays copied, seams and landmarks
+ * re-seated on the more honest ground, and terrainEpoch bumped so the scene
+ * re-uploads textures and re-seats everything it placed.
+ */
+function stepTierStreams(): void {
+  const live = surfaceLive;
+  const p = params;
+  const tr = tiers;
+  if (!p || !tr || !live.ready) return;
+  if (!nearStream || nearStream.tier !== tr.near) nearStream = makeTierStream(tr.near);
+  if (!farStream || farStream.tier !== tr.far) farStream = makeTierStream(tr.far);
+
+  const active = nearStream.active ? nearStream : farStream.active ? farStream : null;
+  if (active) {
+    if (streamStep(active, p, STREAM_MS_BUDGET)) {
+      streamCommit(active);
+      const which = active === nearStream ? 'near' : 'far';
+      for (const d of allSites) d.y = heightAt(p, tr, d.x, d.z);
+      for (const l of landmarks) l.y = heightAt(p, tr, l.x, l.z);
+      // A standing walker stays standing: where near detail arrives under
+      // your boots the floor can step, and a step is worn as a step — not
+      // as two seconds of surprised freefall (or a burial). Jumps keep
+      // their arc; the skim cushion re-tracks on its own spring.
+      if (live.phase === 'walk' && live.grounded && live.vel.y <= 0) {
+        live.pos.y = heightAt(p, tr, live.pos.x, live.pos.z) + EYE;
+      }
+      live.terrainEpochTier = which;
+      live.terrainEpoch++;
+    }
+    return;
+  }
+
+  const needs = (t: HeightTier, frac: number) =>
+    Math.max(Math.abs(live.pos.x - t.cx), Math.abs(live.pos.z - t.cz)) > (t.extent / 2) * frac;
+  const arm = (stream: TierStream) => {
+    const half = stream.tier.extent / 2;
+    const cap = half * 0.15;
+    const lx = Math.max(-cap, Math.min(cap, live.vel.x * STREAM_LEAD_S));
+    const lz = Math.max(-cap, Math.min(cap, live.vel.z * STREAM_LEAD_S));
+    streamBegin(stream, live.pos.x + lx, live.pos.z + lz);
+  };
+  if (needs(tr.near, NEAR_RECENTER_FRAC)) arm(nearStream);
+  else if (needs(tr.far, FAR_RECENTER_FRAC)) arm(farStream);
+}
+
+// ————— The skim —————
+
+/** The surface line the cushion rides: ground, or water it is allowed on. */
+function skimSurfaceY(p: SurfaceParams, ground: number): number {
+  const lava = p.relief.liquid === 'lava';
+  return !lava && p.seaLevelM > ground ? p.seaLevelM : ground;
+}
+
+/**
+ * Ground-effect sled on the height field. The same capsule contract as the
+ * walk — heightAt is the one truth — with speed for legs and a cushion for
+ * knees. Water follows the refit: ranks 1–2 tolerate three metres of it
+ * before the shove home, rank 3 stops asking. Lava never negotiates.
+ */
+function stepSkim(dt: number): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+
+  if (surfaceInput.deploy) {
+    surfaceInput.deploy = false;
+    tryDismount();
+    if ((live as { phase: GroundfallPhase }).phase !== 'skim') return;
+  }
+  surfaceInput.jump = false; // the cushion has no legs to jump with
+
+  EUL.set(0, live.yaw, 0);
+  Q.setFromEuler(EUL);
+  FWD.set(0, 0, -1).applyQuaternion(Q);
+  RIGHT.set(1, 0, 0).applyQuaternion(Q);
+
+  WISH.set(0, 0, 0)
+    .addScaledVector(FWD, surfaceInput.fwd)
+    .addScaledVector(RIGHT, surfaceInput.strafe);
+  if (WISH.lengthSq() > 1) WISH.normalize();
+  const cruise = surfaceInput.run ? SKIM_BOOST_M_S : SKIM_CRUISE_M_S;
+  WISH.multiplyScalar(cruise);
+
+  const k = 1 - Math.exp(-dt * SKIM_ACCEL);
+  live.vel.x += (WISH.x - live.vel.x) * k;
+  live.vel.z += (WISH.z - live.vel.z) * k;
+
+  const ground = heightAt(p, tr, live.pos.x, live.pos.z);
+  groundNormalAt(p, tr, live.pos.x, live.pos.z, NORMAL);
+  // Too steep to climb: the cushion sheds you along the fall line, harder
+  // than boots do, because momentum is now a quantity worth respecting.
+  if (NORMAL.y < SKIM_SLOPE_STAND && ground > skimSurfaceY(p, ground) - 0.01) {
+    live.vel.x += NORMAL.x * 30 * dt;
+    live.vel.z += NORMAL.z * 30 * dt;
+  }
+
+  // The water rule, by rank. Depth is over the GROUND — the cushion rides
+  // the surface, the refusal reads the seabed.
+  const lava = p.relief.liquid === 'lava';
+  const depth = Math.max(0, p.seaLevelM - ground);
+  const waterLimit = lava
+    ? LAVA_WADE_M
+    : SKIM_WATER_LIMIT_M[Math.max(1, Math.min(3, live.skimRank))]!;
+  live.wade = 0;
+  live.wadeRefused = false;
+  if (depth > waterLimit) {
+    live.wadeRefused = true;
+    const e = 4;
+    const gx = (heightAt(p, tr, live.pos.x + e, live.pos.z) - heightAt(p, tr, live.pos.x - e, live.pos.z)) / (2 * e);
+    const gz = (heightAt(p, tr, live.pos.x, live.pos.z + e) - heightAt(p, tr, live.pos.x, live.pos.z - e)) / (2 * e);
+    const g = Math.hypot(gx, gz);
+    const over = Math.min(1.5, (depth - waterLimit) * (lava ? 8 : 0.9));
+    if (g > 1e-5) {
+      live.vel.x += (gx / g) * (18 + over * 26) * dt;
+      live.vel.z += (gz / g) * (18 + over * 26) * dt;
+    } else {
+      TO_TARGET.set(-live.vel.x, 0, -live.vel.z).normalize();
+      live.vel.x += TO_TARGET.x * (18 + over * 26) * dt;
+      live.vel.z += TO_TARGET.z * (18 + over * 26) * dt;
+    }
+    const damp = Math.exp(-dt * (1.8 + over * 3));
+    live.vel.x *= damp;
+    live.vel.z *= damp;
+  }
+
+  live.pos.x += live.vel.x * dt;
+  live.pos.z += live.vel.z * dt;
+
+  // The cushion: chase the surface line with honest limits. It climbs what
+  // a sled climbs and it descends like something that would rather not fall.
+  const groundNow = heightAt(p, tr, live.pos.x, live.pos.z);
+  const targetY = skimSurfaceY(p, groundNow) + SKIM_HOVER_M + SKIM_EYE;
+  const dy = (targetY - live.pos.y) * (1 - Math.exp(-dt * 7));
+  live.pos.y += Math.max(-SKIM_FALL_MAX * dt, Math.min(SKIM_CLIMB_MAX * dt, dy));
+  live.vel.y = 0;
+  live.grounded = true;
+
+  live.skimSpeed = Math.hypot(live.vel.x, live.vel.z);
+  live.alt = live.pos.y - groundNow;
+  live.kick *= Math.exp(-dt * 7);
+  live.bob *= Math.exp(-dt * 8);
+  audio.surfaceWindSet(
+    Math.min(1, 0.4 + 0.55 * (live.skimSpeed / SKIM_BOOST_M_S)),
+    live.sunUp,
+  );
+
+  stepSkimWork(dt);
+}
+
+/** Swing aboard: the sled is under you and the horizon is now a plan. */
+function mountSkimmer(): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+  live.phase = 'skim';
+  const ground = heightAt(p, tr, live.pos.x, live.pos.z);
+  live.pos.y = skimSurfaceY(p, ground) + SKIM_HOVER_M + SKIM_EYE;
+  live.vel.set(0, 0, 0);
+  live.skimSpeed = 0;
+  live.skimPrompt = 'dismount';
+  live.skimNoteUntil = 0;
+  live.target = null;
+  live.mineProgress = 0;
+  live.swinging = false;
+  audio.touchdownThud();
+}
+
+/** Park the sled and put boots back on the ground — if the ground is there. */
+function tryDismount(): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+  const ground = heightAt(p, tr, live.pos.x, live.pos.z);
+  const depth = Math.max(0, p.seaLevelM - ground);
+  if (depth > WADE_MAX_M) {
+    live.skimPrompt = 'the suit declines to swim — find shallower water to dismount';
+    live.skimNoteUntil = live.t + 2.2;
+    return;
+  }
+  EUL.set(0, live.yaw, 0);
+  Q.setFromEuler(EUL);
+  RIGHT.set(1, 0, 0).applyQuaternion(Q);
+  live.skimmerAt = {
+    x: live.pos.x + RIGHT.x * 1.7,
+    z: live.pos.z + RIGHT.z * 1.7,
+    yaw: live.yaw,
+  };
+  live.phase = 'walk';
+  live.pos.y = ground + EYE;
+  live.vel.set(0, 0, 0);
+  live.skimSpeed = 0;
+  live.stabilised = false;
+  audio.footstep(true);
+  audio.surfaceWindSet(0.5, live.sunUp);
+}
+
+/** What the keys mean from the saddle: board, pulse, and a firm no to picks. */
+function stepSkimWork(dt: number): void {
+  const live = surfaceLive;
+  const engageTapped = surfaceInput.engage && !engageWasHeld;
+  engageWasHeld = surfaceInput.engage;
+  void engageTapped;
+
+  // Refusal notes hold the line for a couple of seconds; then normal hints.
+  if (live.t >= live.skimNoteUntil) {
+    live.skimPrompt = 'dismount';
+  }
+
+  // Boarding the runabout stows the sled in the same motion. Nobody has
+  // ever wanted the extra step, so there is not one.
+  const shipD = Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z);
+  if (shipD < BOARD_RANGE + 2) {
+    const cargo = live.samples > 0 ? ` · bank ${live.samples} samples` : '';
+    live.prompt = { verb: 'board', label: `stow the skimmer · board the runabout${cargo}` };
+    live.scanning = false;
+    if (surfaceInput.engage) beginTakeoff();
+    return;
+  }
+
+  // A seam under the bow is an invitation to stop, not to lean out with a
+  // pick at twenty-nine metres a second.
+  EUL.set(live.pitch, live.yaw, 0);
+  Q.setFromEuler(EUL);
+  FWD.set(0, 0, -1).applyQuaternion(Q);
+  let near: DepositSpec | null = null;
+  let nearD = MINE_RANGE + 2;
+  for (const d of deposits) {
+    if (live.mined.has(d.id)) continue;
+    const dd = Math.hypot(d.x - live.pos.x, d.z - live.pos.z);
+    if (dd < nearD) {
+      nearD = dd;
+      near = d;
+    }
+  }
+  live.target = null;
+  live.mineProgress = 0;
+  live.swinging = false;
+  live.swing = Math.max(0, live.swing - dt * 2.6);
+  if (near && live.skimSpeed < 6) {
+    live.prompt = {
+      verb: 'mine',
+      label: 'a seam under the bow',
+      blocked: 'dismount to work the seam',
+    };
+  } else {
+    live.prompt = null;
+  }
+
+  // The mast carries the field pulse; rank two keeps the weather off it.
+  if (surfaceInput.engage && !near) {
+    live.scanning = true;
+    live.scanCharge += dt / FIELD_SCAN_SECONDS;
+    if (live.scanCharge >= 1) {
+      live.scanCharge = 0;
+      const r2 = live.scanRangeNow * live.scanRangeNow;
+      for (const d of allSites) {
+        if (d.buried && !live.buriedRevealed) continue;
+        const dx = d.x - live.pos.x;
+        const dz = d.z - live.pos.z;
+        if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
+      }
+      live.scanNonce++;
+      audio.subEthaBlip(true);
+    }
+  } else {
+    live.scanning = false;
+    live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+  }
+}
+
 let footAcc = 0;
 function stepFootsteps(dt: number, planar: number): void {
   footAcc += dt * planar;
@@ -922,6 +1318,20 @@ function stepWork(dt: number): void {
   const live = surfaceLive;
   const engageTapped = surfaceInput.engage && !engageWasHeld;
   engageWasHeld = surfaceInput.engage;
+
+  // The dim second line: what the descend key would do from here.
+  live.skimPrompt = null;
+  if (live.skimRank >= 1 && live.t >= live.skimNoteUntil) {
+    if (live.skimmerAt) {
+      const sledD = Math.hypot(live.pos.x - live.skimmerAt.x, live.pos.z - live.skimmerAt.z);
+      if (sledD < SKIM_MOUNT_RANGE) live.skimPrompt = 'mount the skimmer';
+    } else if (
+      Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z) < SKIM_DEPLOY_RANGE
+    ) {
+      live.skimPrompt = 'deploy the survey skimmer';
+    }
+  }
+
   EUL.set(live.pitch, live.yaw, 0);
   Q.setFromEuler(EUL);
   FWD.set(0, 0, -1).applyQuaternion(Q);
@@ -1120,6 +1530,12 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
     camera.quaternion.setFromEuler(CAM_EUL);
     camera.position.copy(live.pos);
     camera.position.y += live.bob - live.kick * 0.045;
+    // The cushion's thrum: present, and just barely. Anything larger is a
+    // boat, and boats are where the motion sickness lives.
+    if (live.phase === 'skim') {
+      camera.position.y +=
+        Math.sin(t * 9.2) * 0.012 * Math.min(1, live.skimSpeed / SKIM_CRUISE_M_S);
+    }
     // Tremors are the one thing allowed to shake a standing camera, and
     // only a little: the ground is making a point, not a health bar.
     if (live.groundShake > 0.01) {
@@ -1135,9 +1551,12 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
   }
 
   if (typeof pcam.fov === 'number') {
-    const targetFov = live.phase === 'walk' && surfaceInput.run && surfaceInput.fwd > 0
-      ? SURFACE_FOV + 4
-      : SURFACE_FOV;
+    const targetFov =
+      live.phase === 'skim'
+        ? SURFACE_FOV + 6 * Math.min(1, live.skimSpeed / SKIM_BOOST_M_S)
+        : live.phase === 'walk' && surfaceInput.run && surfaceInput.fwd > 0
+          ? SURFACE_FOV + 4
+          : SURFACE_FOV;
     let dirty = false;
     if (Math.abs(pcam.fov - targetFov) > 0.02) {
       pcam.fov += (targetFov - pcam.fov) * 0.12;
@@ -1196,6 +1615,15 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       landmarks: landmarks.map((l) => ({
         id: l.id, kind: l.kind, name: l.name, x: l.x, y: l.y, z: l.z,
       })),
+      skimRank: surfaceLive.skimRank,
+      skimmerAt: surfaceLive.skimmerAt ? { ...surfaceLive.skimmerAt } : null,
+      skimSpeed: surfaceLive.skimSpeed,
+      skimPrompt: surfaceLive.skimPrompt,
+      stabilised: surfaceLive.stabilised,
+      terrainEpoch: surfaceLive.terrainEpoch,
+      tierCenters: tiers
+        ? { near: [tiers.near.cx, tiers.near.cz], far: [tiers.far.cx, tiers.far.cz] }
+        : null,
     }),
     /** Pin the sky to a kind ('clear' resets, null clears the pin). */
     setWeather: (kind: string | null) => {
@@ -1238,6 +1666,25 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
     heightAt: (x: number, z: number) =>
       params && tiers ? heightAt(params, tiers, x, z) : null,
     board: () => beginTakeoff(),
+    /** DEV: write a skimmer rank straight into the expedition (and the stay). */
+    grantSkimmer: (rank: number) => {
+      const st = useGame.getState().s;
+      st.expedition.refits['skimmer'] = Math.max(0, Math.min(3, rank | 0));
+      surfaceLive.skimRank = skimmerRank(st.expedition);
+      return surfaceLive.skimRank;
+    },
+    /** DEV: mount or park the sled wherever the walker stands. */
+    skim: (on: boolean) => {
+      if (!params || !tiers) return null;
+      if (on && surfaceLive.phase === 'walk') {
+        if (surfaceLive.skimRank < 1) return null;
+        surfaceLive.skimmerAt = null;
+        mountSkimmer();
+      } else if (!on && surfaceLive.phase === 'skim') {
+        tryDismount();
+      }
+      return surfaceLive.phase;
+    },
     detach: () => detachInput?.(),
   };
 }

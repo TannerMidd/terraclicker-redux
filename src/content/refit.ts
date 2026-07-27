@@ -26,6 +26,18 @@ export const SENSOR_RANGE = [70, 110, 165, 250] as const;
  * suit's own instrument: short-armed but included in the price of the suit.
  */
 export const SURFACE_SCAN_RANGE = [90, 150, 240, 380] as const;
+/** Survey Skimmer cruise and fast-cruise, metres/second over the ground. */
+export const SKIM_CRUISE_M_S = 21;
+export const SKIM_BOOST_M_S = 29;
+/**
+ * Water depth the cushion tolerates, metres, by skimmer rank. Ranks 1–2 are
+ * a ground-effect machine: shallows are ground with opinions, open water is
+ * not ground at all. Rank 3 is a hull, and the question stops applying.
+ * Lava is refused at every rank; the Guide is firm on this.
+ */
+export const SKIM_WATER_LIMIT_M = [0, 3, 3, Infinity] as const;
+/** Rank at which the mast holds the scanner and the rail through weather. */
+export const SKIM_STABILISED_RANK = 2;
 /** Scan rate multiplier by analysis rank (higher finishes sooner). */
 export const ANALYSIS_RATE = [1, 1.5, 2.25, 3.4] as const;
 /** Speed-cap multiplier by nacelle rank. */
@@ -110,6 +122,22 @@ export const REFITS: readonly RefitDef[] = [
     costs: [16, 34, 68],
     effect: (rank) =>
       rank > 0 ? `disperses a patrol ×${DETERRENT_POWER[rank]!.toFixed(1)} faster` : 'not fitted',
+  },
+  {
+    id: 'skimmer',
+    name: 'Survey Skimmer',
+    guide:
+      'A ground-effect sled that stows in the runabout and disagrees with the ground at up to twenty-nine metres a second. The Guide notes that the horizon is mostly marketing until you have one of these.',
+    maxRank: 3,
+    costs: [12, 24, 48],
+    effect: (rank) =>
+      rank >= 3
+        ? 'amphibious hull — open water is now scenery'
+        : rank >= 2
+          ? 'stabilised mast — the scanner and the rail hold in dust and whiteout'
+          : rank >= 1
+            ? `deploys from the runabout · ${SKIM_CRUISE_M_S}–${SKIM_BOOST_M_S} m/s`
+            : 'not fitted',
   },
   {
     id: 'fieldKit',

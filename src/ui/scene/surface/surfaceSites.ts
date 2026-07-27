@@ -25,6 +25,8 @@ import { Vector3 } from 'three/webgpu';
 import { mulberry } from '../../../engine/rng';
 import { sampleKindAt } from '../../../content/groundSamples';
 import {
+  analyticHeight,
+  curvatureDrop,
   dirToLocal,
   groundNormalAt,
   heightAt,
@@ -47,6 +49,13 @@ const DEPOSIT_P = 0.42;
 const BURIED_P = 0.12;
 /** How far from the touchdown the near-field site survey reaches, metres. */
 export const SITE_FIELD_RADIUS = 460;
+/**
+ * How far the census reaches now that a skimmer can plausibly get there —
+ * the lattice always extended this far (it extends everywhere; that is the
+ * point of a lattice), the census just never bothered to look. Ground the
+ * walker could always reach on foot, honestly indexed at last.
+ */
+export const SITE_FIELD_RADIUS_SKIM = 2600;
 
 export interface SiteSpec {
   /** Planet-fixed id: `g{face}:{iu}:{iv}`. Stable across landings by construction. */
@@ -212,6 +221,11 @@ export function depositSites(
 
       const y = heightAt(p, tiers, sx, sz);
       if (y < p.seaLevelM + 1.5) continue; // not in the sea (or the lava)
+      // Tiers thin with distance, and a seam the far tier called dry can
+      // drown when the rolling bake brings near detail out to it. The
+      // analytic field is what every tier converges to — ask it directly,
+      // so the census never promises ground the sea already owns.
+      if (analyticHeight(p, sx, sz) - curvatureDrop(p, sx, sz) < p.seaLevelM + 1.2) continue;
       groundNormalAt(p, tiers, sx, sz, NORMAL);
       if (NORMAL.y < 0.82) continue; // a seam you cannot stand beside is scenery
 

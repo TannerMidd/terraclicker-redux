@@ -29,14 +29,20 @@ export function Landmarks({
   p,
   tiers,
   palette,
+  epoch = 0,
 }: {
   p: SurfaceParams;
   tiers: SurfaceTiers;
   palette: PlanetPalette;
+  /** Terrain re-centre epoch: seats re-derive when the ground rolls. */
+  epoch?: number;
 }) {
   const seats = useMemo(
-    () => buildLandmarkSeats(p, tiers, surfaceLandmarkList()),
-    [p, tiers],
+    () => {
+      void epoch; // every foot re-samples the (possibly re-baked) ground
+      return buildLandmarkSeats(p, tiers, surfaceLandmarkList());
+    },
+    [p, tiers, epoch],
   );
 
   const stone = useMemo(() => {
