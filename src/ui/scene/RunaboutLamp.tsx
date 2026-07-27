@@ -36,6 +36,9 @@ const LAMP_DECAY = 1.4;
  */
 export function RunaboutLamp() {
   const flight = useUiBus((b) => b.flightMode);
+  // On the ground the runabout is a parked prop in another coordinate system;
+  // its flight-space lamp would hang in the landscape as a stray glow.
+  const grounded = useUiBus((b) => b.groundfall !== null);
   const lamp = useRef<PointLight>(null);
 
   useFrame((_, dt) => {
@@ -53,7 +56,7 @@ export function RunaboutLamp() {
     // derelicts have nothing else to light them.
     const surfaceFade = Math.max(0, Math.min(1, (flightLive.altitude - 0.2) / 1.3));
     // Boost brightens the lamp a touch — the drive spills light either way.
-    const target = flight
+    const target = flight && !grounded
       ? LAMP_INTENSITY * (1 + flightLive.boostBlend * 0.35) * surfaceFade
       : 0;
     l.intensity += (target - l.intensity) * Math.min(1, dt * 4);

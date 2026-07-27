@@ -338,3 +338,144 @@ export function vogonDrone(): void {
     o.stop(t + 2.8);
   }
 }
+
+// ————— Groundfall: the sound of standing on something —————
+
+let roarSrc: AudioBufferSourceNode | null = null;
+let roarFilter: BiquadFilterNode | null = null;
+let roarGain: GainNode | null = null;
+
+/** Atmospheric entry / takeoff: air arguing with a hull. Loops until stopped. */
+export function entryRoarStart(): void {
+  const c = ensure();
+  if (!c || !master || roarGain) return;
+  roarSrc = c.createBufferSource();
+  roarSrc.buffer = noiseBuffer(c);
+  roarSrc.loop = true;
+  roarFilter = c.createBiquadFilter();
+  roarFilter.type = 'lowpass';
+  roarFilter.frequency.value = 140;
+  roarFilter.Q.value = 0.8;
+  roarGain = c.createGain();
+  roarGain.gain.value = 0.0001;
+  roarSrc.connect(roarFilter).connect(roarGain).connect(master);
+  roarSrc.start();
+  const t = c.currentTime;
+  roarGain.gain.setTargetAtTime(0.085, t, 1.4);
+  roarFilter.frequency.setTargetAtTime(900, t, 2.6);
+}
+
+export function entryRoarStop(): void {
+  if (!ctx || !roarGain) return;
+  const t = ctx.currentTime;
+  roarGain.gain.setTargetAtTime(0.0001, t, 0.5);
+  roarSrc?.stop(t + 2.2);
+  roarSrc = null;
+  roarFilter = null;
+  roarGain = null;
+}
+
+let windSrc: AudioBufferSourceNode | null = null;
+let windFilter: BiquadFilterNode | null = null;
+let windGain: GainNode | null = null;
+
+/** The surface wind bed. Night air is thinner and higher than day air. */
+export function surfaceWindStart(): void {
+  const c = ensure();
+  if (!c || !master || windGain) return;
+  windSrc = c.createBufferSource();
+  windSrc.buffer = noiseBuffer(c);
+  windSrc.loop = true;
+  windFilter = c.createBiquadFilter();
+  windFilter.type = 'bandpass';
+  windFilter.frequency.value = 320;
+  windFilter.Q.value = 0.5;
+  windGain = c.createGain();
+  windGain.gain.value = 0.0001;
+  windSrc.connect(windFilter).connect(windGain).connect(master);
+  windSrc.start();
+  windGain.gain.setTargetAtTime(0.03, c.currentTime, 1.8);
+}
+
+/** Strength 0–1; sunUp −1…1 tunes the register (night reads colder). */
+export function surfaceWindSet(strength: number, sunUp: number): void {
+  if (!ctx || !windFilter || !windGain) return;
+  const t = ctx.currentTime;
+  const k = Math.max(0, Math.min(1, strength));
+  windGain.gain.setTargetAtTime(0.012 + k * 0.05, t, 0.8);
+  windFilter.frequency.setTargetAtTime(260 + k * 300 + Math.max(0, -sunUp) * 220, t, 1.2);
+}
+
+export function surfaceWindStop(): void {
+  if (!ctx || !windGain) return;
+  const t = ctx.currentTime;
+  windGain.gain.setTargetAtTime(0.0001, t, 0.4);
+  windSrc?.stop(t + 1.8);
+  windSrc = null;
+  windFilter = null;
+  windGain = null;
+}
+
+/** One boot on regolith. `heavy` for landings rather than strides. */
+export function footstep(heavy: boolean): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c);
+  const f = c.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = heavy ? 240 : 420 + Math.random() * 160;
+  const g = c.createGain();
+  g.gain.setValueAtTime(heavy ? 0.09 : 0.028 + Math.random() * 0.012, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (heavy ? 0.2 : 0.08));
+  src.connect(f).connect(g).connect(master);
+  src.start(t);
+  src.stop(t + 0.22);
+}
+
+/** Touchdown: the whole ship agreeing with the ground at once. */
+export function touchdownThud(): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  const o = c.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(88, t);
+  o.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.16, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  o.connect(g).connect(master);
+  o.start(t);
+  o.stop(t + 0.75);
+  footstep(true);
+}
+
+/** The extractor working: rationed so a held beam does not stack sources. */
+let mineLastAt = 0;
+export function mineHum(_dt: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  if (t - mineLastAt < 0.11) return;
+  mineLastAt = t;
+  const o = c.createOscillator();
+  o.type = 'square';
+  o.frequency.value = 620 + Math.random() * 140;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.012, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  const f = c.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.value = 900;
+  o.connect(f).connect(g).connect(master);
+  o.start(t);
+  o.stop(t + 0.14);
+}
+
+/** A core sample coming free: bright, brief, worth the walk. */
+export function sampleChime(): void {
+  blip(1318, 0.22, 'sine', 0.09);
+  blip(1975, 0.3, 'sine', 0.07, 0.09);
+}

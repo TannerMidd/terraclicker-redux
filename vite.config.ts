@@ -20,6 +20,12 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    watch: {
+      // The headless harness parks browser profiles under .runtime; Chrome
+      // holds their cookie stores locked, and a watcher that wanders in
+      // takes the whole dev server down with EBUSY.
+      ignored: ['**/.runtime/**', '**/shots/**'],
+    },
   },
   test: {
     include: ['test/**/*.test.ts'],

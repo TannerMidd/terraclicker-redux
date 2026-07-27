@@ -1,4 +1,32 @@
 import { create } from 'zustand';
+import type { PlanetType } from '../../engine/types';
+
+/**
+ * One shore leave, captured at the moment of commitment. The type lives here
+ * (not in surfaceControl) so the bus never imports the scene: everything the
+ * surface needs is frozen into this descriptor when the pilot commits, and
+ * the scene mounts on it.
+ */
+export interface GroundfallSession {
+  worldKey: string;
+  name: string;
+  seed: number;
+  type: PlanetType;
+  size: 'small' | 'medium' | 'large' | 'huge';
+  hero: boolean;
+  /** Gauge fractions 0–1 at landing (a delivered world is all ones). */
+  aspects: { thermal: number; atmo: number; hydro: number; bio: number };
+  /** Unit landing direction in flight space. */
+  dir: [number, number, number];
+  /** Sun in the landing ENU frame (x east, y up, z south). */
+  sunLocal: [number, number, number];
+  /** Star tint for the ground light. */
+  starHex: number;
+  /** Flight pose to restore after takeoff. */
+  returnPos: [number, number, number];
+  returnYaw: number;
+  returnPitch: number;
+}
 
 export interface Toast {
   id: number;
@@ -93,6 +121,12 @@ interface UiBus {
   flightNearGalaxy: number | null;
   /** The formed world close enough to receive hero-grade surface detail. */
   flightNearWorld: number | null;
+  /**
+   * The active shore leave, or null at the helm / desk. While set, the
+   * universe scene stands down and the surface scene owns the camera.
+   */
+  groundfall: GroundfallSession | null;
+  setGroundfall: (session: GroundfallSession | null) => void;
   addToast: (t: Omit<Toast, 'id'>) => void;
   addFloat: (x: number, y: number, text: string) => void;
   punch: () => void;
@@ -183,6 +217,11 @@ export const useUiBus = create<UiBus>((set) => ({
   flightNearSystem: null,
   flightNearGalaxy: null,
   flightNearWorld: null,
+  groundfall: null,
+  setGroundfall: (session) => {
+    if (typeof document !== 'undefined') document.body.style.cursor = '';
+    set({ groundfall: session, inspect: null });
+  },
   dockRequest: null,
   setDockTab: (tab) => set({ dockRequest: tab }),
   clearDockRequest: () => set({ dockRequest: null }),
@@ -205,6 +244,7 @@ export const useUiBus = create<UiBus>((set) => ({
           flightNearSystem: null,
           flightNearGalaxy: null,
           flightNearWorld: null,
+          groundfall: null,
           inspect: null,
         });
   },

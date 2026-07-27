@@ -279,6 +279,8 @@ export const actions = {
   setFlag: (id: string, value: number) => dispatch({ type: 'setFlag', id, value }),
   completeFirstSortie: () => dispatch({ type: 'completeFirstSortie' }),
   setStandingOrders: (orders: StandingOrders) => dispatch({ type: 'setStandingOrders', orders }),
+  bankGroundSamples: (worldKey: string, worldName: string, samples: number) =>
+    dispatch({ type: 'bankGroundSamples', worldKey, worldName, samples }),
   acceptDossier: (id: string) => dispatch({ type: 'acceptDossier', id }),
   declineDossier: () => dispatch({ type: 'declineDossier' }),
   signCharter: (systemIndex: number, id: string) => dispatch({ type: 'signCharter', systemIndex, id }),
@@ -299,6 +301,11 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
     saveNow: () => saveNow(),
     exportSave: () => exportToClipboard(),
     importSave: (t: string) => importFromText(t),
+    /** Headless verification: a universe whose landmarks sit still. */
+    newUniverse: (seed: number) => {
+      useGame.setState({ s: newGame(seed >>> 0, Date.now()) });
+      publish();
+    },
   };
 }
 

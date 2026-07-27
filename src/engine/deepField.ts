@@ -176,7 +176,7 @@ export function sitePositionAt(
 // ————— Fresh state —————
 
 export function createExpeditionState(): ExpeditionState {
-  return { discovered: {}, boarded: {}, salvage: 0, refits: {}, ...createFreightState() };
+  return { discovered: {}, boarded: {}, salvage: 0, refits: {}, ground: {}, ...createFreightState() };
 }
 
 // ————— Refit-derived ship capabilities —————

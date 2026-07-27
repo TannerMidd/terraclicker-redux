@@ -227,6 +227,11 @@ export interface ExpeditionState {
    * the discovery.
    */
   visited: Record<string, number>;
+  /**
+   * Ground-survey ledger: world key → gameTimeMs the first shore party came
+   * back with samples. One survey per world per career; see engine/groundfall.
+   */
+  ground: Record<string, number>;
 }
 
 /** One job as offered on the board. */
@@ -502,6 +507,8 @@ export type Input =
   | { type: 'setFlag'; id: string; value: number }
   /** File the induction and guarantee the first useful refit decision. */
   | { type: 'completeFirstSortie' }
+  /** A shore party boarded the runabout with samples in the suit. */
+  | { type: 'bankGroundSamples'; worldKey: string; worldName: string; samples: number }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
   /** Close the brief tray and run the neutral standard commission. */
@@ -555,6 +562,14 @@ export type SimEffect =
   | { t: 'seamProspected'; id: string }
   | { t: 'rigPlaced'; id: string }
   | { t: 'rigCollected'; id: string; salvage: number }
+  | {
+      t: 'groundReturn';
+      worldKey: string;
+      name: string;
+      samples: number;
+      salvage: number;
+      firstSurvey: boolean;
+    }
   | { t: 'megaprojectStarted'; id: string }
   | { t: 'megaprojectFinished'; id: string }
   | { t: 'interdicted'; outcome: 'outrun' | 'complied' | 'deterred' | 'decoyed' | 'eclipsed' | 'permitted' | 'wake' }

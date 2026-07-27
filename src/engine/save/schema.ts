@@ -233,6 +233,7 @@ export const saveSchema = z.object({
     infrastructure: z.record(z.string(), z.number().int().min(0)),
     pinned: z.string().nullable(),
     visited: z.record(z.string(), z.number().min(0)),
+    ground: z.record(z.string(), z.number().min(0)),
   }),
   megaprojects: z.record(
     z.string(),

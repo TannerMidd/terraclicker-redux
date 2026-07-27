@@ -25,10 +25,11 @@ import { useFrame } from '@react-three/fiber';
 import { Color, PointLight, Vector3 } from 'three/webgpu';
 
 /**
- * Three can be lit at once — the assembling star, a visited system's star,
- * and one ceremony (cinematics are queued, so never two) — plus one spare.
+ * Claimants: the assembling star, a visited system's star, one ceremony
+ * (cinematics are queued, so never two), the shore party's suit lamp and the
+ * nearest seam's glow while groundside — plus one spare.
  */
-const COUNT = 4;
+const COUNT = 6;
 
 interface Slot {
   claimed: boolean;

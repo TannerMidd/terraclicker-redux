@@ -65,6 +65,7 @@ import {
   pickUpManifest,
 } from './freight';
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
+import { bankGroundSamples } from './groundfall';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord } from './worldRecords';
 import { findWaypoint } from './waypoints';
@@ -411,6 +412,10 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     }
     case 'collectRig': {
       collectRig(state, effects, input.id);
+      break;
+    }
+    case 'bankGroundSamples': {
+      bankGroundSamples(state, effects, input.worldKey, input.worldName, input.samples);
       break;
     }
     case 'startMegaproject': {

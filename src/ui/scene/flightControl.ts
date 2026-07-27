@@ -82,6 +82,13 @@ import {
 import { C } from '../../content/constants';
 import { SORTIE_FLAG } from '../../content/firstSortie';
 import { attendable } from '../../engine/bridge';
+import type { PlanetType } from '../../engine/types';
+import type { WorldSize } from './universeLayout';
+import { starColor } from './universeLayout';
+import { SUN_DIR } from './Planet';
+import { isLandableType, landingRefusal } from '../../engine/groundfall';
+import { beginGroundfall, entryProgress, stepSurface, surfaceLive } from './surface/surfaceControl';
+import type { GroundfallSession } from '../fx/uiBus';
 
 // ————— Tuning —————
 
@@ -172,6 +179,20 @@ const SURFACE_CAP = 0.085;
  */
 const OMEGA_MAX = 0.16; // rad/s about the nearest body
 
+/** What the surface needs to know about a world you could stand on. */
+export interface LandableWorld {
+  key: string;
+  name: string;
+  seed: number;
+  type: PlanetType;
+  size: WorldSize;
+  hero: boolean;
+  /** Seed of the system's first world — the star's colour convention. */
+  starSeed: number;
+  /** The star this world orbits, or null for the hero (global sun). */
+  starSeat: Vector3 | null;
+}
+
 export interface FlightBody {
   label: string;
   /** Fixed seat, or the anchor an orbiting world circles. */
@@ -191,6 +212,8 @@ export interface FlightBody {
     phase: number;
     speed: number;
   } | null;
+  /** Set for worlds a shore party could visit; absent for moons and stars. */
+  land?: LandableWorld;
 }
 
 /** The tilted circle every settled world rides. */
@@ -206,6 +229,7 @@ function pushBody(
   p: Vector3,
   radius: number,
   orbit: FlightBody['orbit'] = null,
+  land?: LandableWorld,
 ): void {
   const slot = bodies[i];
   if (slot) {
@@ -213,8 +237,9 @@ function pushBody(
     slot.pos.copy(p);
     slot.radius = radius;
     slot.orbit = orbit;
+    slot.land = land;
   } else {
-    bodies[i] = { label, pos: p.clone(), radius, orbit };
+    bodies[i] = { label, pos: p.clone(), radius, orbit, land };
   }
 }
 
@@ -283,7 +308,7 @@ export interface FlightContact {
 }
 
 export interface FlightPrompt {
-  verb: 'scan' | 'board' | 'jump';
+  verb: 'scan' | 'board' | 'jump' | 'land';
   /** The verb shown after the real bound control. */
   label: string;
   /** Holding is meaningful for scans; boarding and jump are deliberate presses. */
@@ -1048,6 +1073,25 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     }
   }
 
+  // — Groundfall. A world filling the glass outranks any distant contact. —
+  //
+  // The envelope is generous on purpose: the approach governor has already
+  // made you slow here, and the offer should arrive while the surface is a
+  // landscape in the window, not a wall.
+  const landBody = nearBodyRef;
+  if (landBody?.land && f.altitude < landBody.radius * 0.55 + 0.3) {
+    const refusal = landingRefusal(landBody.land.type);
+    if (refusal) {
+      f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false, blocked: refusal };
+    } else {
+      f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false };
+      if (engagePressed && !f.paused) {
+        commitGroundfall(landBody);
+        return;
+      }
+    }
+  }
+
   // Jump has a dedicated binding, and contextual Engage performs the verb the
   // prompt advertises. Either path is edge-triggered.
   const wantsJump = flightInput.jump || (engagePressed && f.prompt?.verb === 'jump' && !f.prompt.blocked);
@@ -1056,6 +1100,155 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     const target = sites.find((site) => site.def.id === locked.id);
     if (target) jumpTo(target);
   }
+}
+
+// ————— Groundfall: the handoff between the helm and the ground —————
+
+/** Scene context of the active descent, kept out of the serializable session. */
+let entryBody: FlightBody | null = null;
+const ENTRY_DIR = new Vector3();
+const ENTRY_START = new Vector3();
+const ENTRY_CENTER = new Vector3();
+const ENTRY_TANGENT = new Vector3();
+let entryRadius = 1;
+
+/**
+ * The pilot committed. Freeze everything the surface needs into a session —
+ * the landing direction, the sky, the gauges as they stand — and hand the
+ * frame loop to the descent.
+ */
+function commitGroundfall(body: FlightBody): void {
+  const f = flightLive;
+  const st = useGame.getState().s;
+  const land = body.land!;
+  if (!isLandableType(land.type)) return;
+
+  bodyPosition(body, f.clock, ENTRY_CENTER);
+  ENTRY_DIR.copy(f.pos).sub(ENTRY_CENTER);
+  if (ENTRY_DIR.lengthSq() < 1e-9) ENTRY_DIR.set(0, 1, 0);
+  ENTRY_DIR.normalize();
+  ENTRY_START.copy(f.pos);
+  entryBody = body;
+  entryRadius = body.radius;
+
+  // The landing frame: east/up/north exactly as terrainField will derive it,
+  // so a sun expressed here rises where the ground expects it.
+  const up = ENTRY_DIR;
+  const east = TMP.set(0, 1, 0).cross(up);
+  if (east.lengthSq() < 1e-6) east.set(1, 0, 0).cross(up);
+  east.normalize();
+  const north = new Vector3().crossVectors(up, east).normalize();
+
+  const sunWorld = land.starSeat
+    ? new Vector3().copy(land.starSeat).sub(ENTRY_CENTER).normalize()
+    : new Vector3(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]).normalize();
+  const sunLocal: [number, number, number] = [
+    sunWorld.dot(east),
+    sunWorld.dot(up),
+    -sunWorld.dot(north),
+  ];
+
+  const aspects = land.hero
+    ? {
+        thermal: Math.min(1, st.planet.gauges.thermal.div(st.planet.targets.thermal).toNumber()),
+        atmo: Math.min(1, st.planet.gauges.atmo.div(st.planet.targets.atmo).toNumber()),
+        hydro: Math.min(1, st.planet.gauges.hydro.div(st.planet.targets.hydro).toNumber()),
+        bio: Math.min(1, st.planet.gauges.bio.div(st.planet.targets.bio).toNumber()),
+      }
+    : { thermal: 1, atmo: 1, hydro: 1, bio: 1 };
+
+  // Where the runabout reappears: parked in low orbit over the site, facing
+  // the horizon rather than the ground it just left.
+  ENTRY_TANGENT.copy(north);
+  const returnPos = new Vector3().copy(ENTRY_CENTER).addScaledVector(up, entryRadius + 0.55);
+  const returnYaw = Math.atan2(-ENTRY_TANGENT.x, -ENTRY_TANGENT.z);
+  const returnPitch = -0.08;
+
+  const session: GroundfallSession = {
+    worldKey: land.key,
+    name: land.name,
+    seed: land.seed,
+    type: land.type,
+    size: land.size,
+    hero: land.hero,
+    aspects,
+    dir: [up.x, up.y, up.z],
+    sunLocal,
+    starHex: land.starSeat ? starColor(land.starSeed).getHex() : 0xfff2dc,
+    returnPos: [returnPos.x, returnPos.y, returnPos.z],
+    returnYaw,
+    returnPitch,
+  };
+
+  // The dive is flown from the canopy; a chase boom through a fireball is
+  // nobody's idea of comfortable.
+  f.cameraMode = 'cockpit';
+  f.vel.set(0, 0, 0);
+  flightInput.cruise = 0;
+  beginGroundfall(session);
+}
+
+/**
+ * The scripted dive, flown against the live universe while the surface bakes
+ * behind the plasma. Advances the surface state machine, then poses the
+ * camera along an accelerating plunge toward the touchdown point.
+ */
+export function stepEntryDive(camera: Camera, dt: number, t: number): void {
+  stepSurface(dt, t);
+  const body = entryBody;
+  if (!body) return;
+  const k = entryProgress();
+  bodyPosition(body, t, ENTRY_CENTER);
+
+  // Accelerating plunge: hold height early (plasma building), dive late.
+  const ease = k * k * (0.35 + k * 0.65);
+  TMP.copy(ENTRY_CENTER).addScaledVector(ENTRY_DIR, entryRadius * 1.015);
+  CAMERA_DESIRED.copy(ENTRY_START).lerp(TMP, Math.min(1, ease * 1.04));
+  camera.position.copy(CAMERA_DESIRED);
+  flightLive.pos.copy(CAMERA_DESIRED);
+
+  // The view slides from "planet in the glass" to "horizon rushing up".
+  CAMERA_LOOK
+    .copy(ENTRY_CENTER)
+    .addScaledVector(ENTRY_DIR, entryRadius * (0.2 + k * 0.78))
+    .addScaledVector(ENTRY_TANGENT, entryRadius * 0.85 * k * k);
+  camera.up.copy(UP);
+  camera.lookAt(CAMERA_LOOK);
+  if (surfaceLive.shake > 0.001) {
+    camera.rotateZ(Math.sin(t * 23.7) * surfaceLive.shake * 0.02);
+    camera.position.x += Math.sin(t * 31.7) * surfaceLive.shake * 0.01;
+    camera.position.y += Math.sin(t * 27.3) * surfaceLive.shake * 0.008;
+  }
+
+  const pcam = camera as PerspectiveCamera;
+  if (typeof pcam.fov === 'number') {
+    const target = FLIGHT_FOV_BASE + k * 9;
+    if (Math.abs(pcam.fov - target) > 0.02) {
+      pcam.fov = target;
+      pcam.updateProjectionMatrix();
+    }
+  }
+}
+
+/**
+ * Takeoff finished: put the runabout back over the site — over where the
+ * world has ORBITED TO during the stay, not where it was — and resume flight.
+ */
+export function restoreFlightAfterGroundfall(
+  fallback: Vector3,
+  yaw: number,
+  pitch: number,
+  t?: number,
+): void {
+  const body = entryBody;
+  entryBody = null;
+  if (body) {
+    bodyPosition(body, t ?? flightLive.clock, ENTRY_CENTER);
+    TMP.copy(ENTRY_CENTER).addScaledVector(ENTRY_DIR, body.radius + 0.55);
+    beginFlightAt(TMP, yaw, pitch);
+    return;
+  }
+  beginFlightAt(fallback, yaw, pitch);
 }
 
 /**
@@ -1128,11 +1321,15 @@ function repel(centre: Vector3, prev: Vector3, hull: number, dt: number): number
   return d - hull;
 }
 
+/** The solid the hull is currently lowest over — the landing candidate. */
+let nearBodyRef: FlightBody | null = null;
+
 function cushion(sites: readonly DeepFieldSite[], dt: number): void {
   const f = flightLive;
   let lowest = Infinity;
   let lowestOf = '';
   let lowestRadius = 0;
+  let lowestBody: FlightBody | null = null;
 
   // Worlds and stars first — these are the ones whose scale you are meant to
   // feel, and the ones it is most absurd to pass through. Orbiting worlds
@@ -1145,8 +1342,10 @@ function cushion(sites: readonly DeepFieldSite[], dt: number): void {
       lowest = h;
       lowestOf = body.label;
       lowestRadius = body.radius;
+      lowestBody = body;
     }
   }
+  nearBodyRef = lowestBody;
 
   for (const site of sites) {
     if (site.def.unreachable || site.def.kind === 'phenomenon') continue;
@@ -1361,7 +1560,16 @@ function scanSurroundings(): void {
   // as ghosts you sailed straight through.
   let n = 0;
   const heroScale = heroWorldRadius(st.planet.size);
-  pushBody(n++, st.planet.name, TMP.set(0, 0, 0), heroWorldShell(st.planet.size));
+  pushBody(n++, st.planet.name, TMP.set(0, 0, 0), heroWorldShell(st.planet.size), null, {
+    key: `w${st.planet.lifetimeIndex}`,
+    name: st.planet.name,
+    seed: st.planet.seed,
+    type: st.planet.type,
+    size: st.planet.size,
+    hero: true,
+    starSeed: st.planet.seed,
+    starSeat: null,
+  });
 
   // The moon meshes inherit the hero world's scale; their physical orbits and
   // shells must inherit it too.
@@ -1388,6 +1596,16 @@ function scanSurroundings(): void {
       CURRENT_SYSTEM_ANCHOR,
       detailWorldShell(record.size),
       worldOrbit(o.radius, o.phase, o.speed),
+      {
+        key: `w${record.lifetimeIndex}`,
+        name: record.name,
+        seed: record.seed,
+        type: record.type,
+        size: record.size,
+        hero: false,
+        starSeed: inSystem[0]!.seed,
+        starSeat: CURRENT_SYSTEM_ANCHOR,
+      },
     );
   }
 
@@ -1422,6 +1640,16 @@ function scanSurroundings(): void {
         seat,
         detailWorldShell(record.size),
         worldOrbit(o.radius, o.phase, o.speed),
+        {
+          key: `w${record.lifetimeIndex}`,
+          name: record.name,
+          seed: record.seed,
+          type: record.type,
+          size: record.size,
+          hero: false,
+          starSeed: worlds[0]!.seed,
+          starSeat: seat,
+        },
       );
     }
   }

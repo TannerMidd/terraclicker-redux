@@ -349,7 +349,10 @@ function NavRibbon() {
 
 export function FlightHUD() {
   const flight = useUiBus((b) => b.flightMode);
-  if (!flight) return null;
+  // Groundside the surface HUD takes over — including the entry dive, which
+  // keeps the canopy but none of the sensor chrome (SurfaceHUD draws it).
+  const grounded = useUiBus((b) => b.groundfall !== null);
+  if (!flight || grounded) return null;
   return <FlightHUDInner />;
 }
 
@@ -362,7 +365,7 @@ const WINDOW_PATH =
   'M 74,44 C 312,-8 688,-8 926,44 C 968,182 968,388 926,528 C 688,584 312,584 74,528 C 32,388 32,182 74,44 Z';
 const OUTER_PATH = 'M -40,-40 H 1040 V 640 H -40 Z';
 
-function Canopy() {
+export function Canopy() {
   return (
     <svg
       className="fh-canopy"

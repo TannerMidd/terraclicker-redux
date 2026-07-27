@@ -3694,3 +3694,191 @@ button {
   }
   .fh-console .fh-panic { display: none; }
 }
+
+/* ————— Groundfall: the suit HUD ————— */
+
+.sh-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 30;
+  font-family: var(--font-ui, 'Inter Variable', sans-serif);
+  color: var(--ink);
+}
+
+.sh-entry {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  text-align: center;
+  max-width: min(560px, 86vw);
+  animation: shIn 700ms ease;
+}
+@keyframes shIn { from { opacity: 0; transform: translate(-50%, 10px); } }
+
+.sh-kicker {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  color: var(--improbable);
+}
+.sh-title {
+  margin-top: 4px;
+  font-family: var(--font-display, 'Bricolage Grotesque Variable', sans-serif);
+  font-size: clamp(22px, 3.4vw, 34px);
+  font-weight: 640;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+}
+.sh-line {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  font-style: italic;
+}
+.sh-alt {
+  margin-top: 8px;
+  font-size: clamp(26px, 4vw, 40px);
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  letter-spacing: 0.06em;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
+}
+.sh-progress {
+  margin: 12px auto 0;
+  width: min(300px, 60vw);
+  height: 2px;
+  background: rgba(150, 182, 236, 0.16);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sh-progress i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--thermal), var(--improbable));
+  transition: width 300ms ease;
+}
+.sh-sub {
+  margin-top: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* — Compass tape — */
+.sh-compass {
+  position: absolute;
+  top: max(18px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+}
+.sh-compass-window {
+  position: relative;
+  width: 340px;
+  height: 26px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+.sh-tick {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0;
+  display: flex;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--ink-faint);
+  letter-spacing: 0;
+}
+.sh-tick.cardinal { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.sh-lubber {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 7px;
+  background: var(--improbable);
+}
+.sh-compass-deg {
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+
+/* — Reticle + extraction ring — */
+.sh-reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+}
+.sh-ret-dot { fill: rgba(233, 238, 249, 0.85); }
+.sh-ret-ring {
+  fill: none;
+  stroke: var(--atmo);
+  stroke-width: 1.6;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: opacity 160ms ease;
+}
+.sh-reticle.working .sh-ret-ring { opacity: 0.9; }
+
+/* — Samples ledger — */
+.sh-samples {
+  position: absolute;
+  left: max(22px, env(safe-area-inset-left));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  padding: 10px 14px;
+  border: 1px solid rgba(150, 182, 236, 0.14);
+  border-radius: 10px;
+  background: rgba(13, 16, 32, 0.55);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.sh-samples b { font-size: 17px; margin-right: 5px; color: var(--improbable); }
+.sh-samples em { display: block; font-style: normal; color: var(--ink-dim); font-size: 11px; }
+.sh-samples .sh-world { color: var(--ink-faint); letter-spacing: 0.04em; }
+
+/* — The engage line — */
+.sh-prompt {
+  position: absolute;
+  left: 50%;
+  bottom: 17%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border: 1px solid rgba(150, 182, 236, 0.22);
+  border-radius: 999px;
+  background: rgba(13, 16, 32, 0.6);
+  backdrop-filter: blur(8px);
+  font-size: 12.5px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  animation: shIn 300ms ease;
+}
+.sh-prompt.blocked { color: var(--ink-dim); border-style: dashed; }
+.sh-prompt.dim { color: var(--ink-faint); border-color: rgba(150, 182, 236, 0.1); }
+
+.sh-hint {
+  position: absolute;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+@media (max-width: 900px) {
+  .sh-compass-window { width: 240px; }
+  .sh-hint { display: none; }
+}

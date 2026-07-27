@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 21,
+  SAVE_VERSION: 22,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -147,4 +147,12 @@ export const C = {
 
   // Buff caps
   MAX_BUBBLES: 3,
+
+  // Groundfall (surface expeditions — engine/groundfall.ts)
+  /** Salvage per core sample carried back to the runabout. */
+  GROUND_SAMPLE_SALVAGE: 2,
+  /** Samples a shore party must bank at once to file a ground survey. */
+  GROUND_SURVEY_SAMPLES: 5,
+  /** One-time bonus for the first ground survey of a world. */
+  GROUND_SURVEY_BONUS: 25,
 } as const;

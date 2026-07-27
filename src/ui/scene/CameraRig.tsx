@@ -29,8 +29,10 @@ import {
   flightZoom,
   restoreFov,
   setFlightMode,
+  stepEntryDive,
   stepFlight,
 } from './flightControl';
+import { surfaceLive } from './surface/surfaceControl';
 import { flightModeKeyIntent, flightPrefs, readPad } from './flightBindings';
 import * as audio from '../audio/audio';
 
@@ -120,6 +122,7 @@ export function CameraRig() {
   const size = useThree((s) => s.size);
   const punchNonce = useUiBus((b) => b.punchNonce);
   const flightMode = useUiBus((b) => b.flightMode);
+  const grounded = useUiBus((b) => b.groundfall !== null);
   const punch = useRef({ v: 0, vel: 0 });
   const zoomSmooth = useRef(0);
   const lastNonce = useRef(0);
@@ -158,11 +161,13 @@ export function CameraRig() {
     }
   }, [punchNonce]);
 
-  // Manual flight owns its own controls; they live only while it does.
+  // Manual flight owns its own controls; they live only while it does — and
+  // not while the pilot is standing on a planet, where the walk controller
+  // owns the very same keys.
   useEffect(() => {
-    if (!flightMode) return;
+    if (!flightMode || grounded) return;
     return attachFlightInput();
-  }, [flightMode]);
+  }, [flightMode, grounded]);
 
   // ————— Ladder helpers (wheel-through-the-scales) —————
 
@@ -528,6 +533,21 @@ export function CameraRig() {
     const p = punch.current;
     p.vel += (-p.v * 90 - p.vel * 12) * d;
     p.v += p.vel * d;
+
+    // ————— Groundfall: the surface (or the dive toward it) owns the lens —————
+    if (bus.groundfall) {
+      if (surfaceLive.phase === 'entry') {
+        // The dive is flown against the live universe; the surface scene is
+        // baking underneath the plasma and will take the camera at the swap.
+        stepEntryDive(camera, d, t);
+      }
+      // Every other phase is stepped and posed by SurfaceScene, which mounts
+      // after this rig so it reads a settled frame.
+      clockNow.current = t;
+      camera.updateMatrixWorld();
+      heroScreen.o = 0;
+      return;
+    }
 
     // ————— Manual flight: the player has the helm —————
     if (bus.flightMode) {

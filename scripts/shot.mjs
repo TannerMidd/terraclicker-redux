@@ -12,8 +12,13 @@
  * flykeys:w+shift,1200 (hold real flight keys for ms) | flystate (log pose) |
  * goto:id (park beside a Deep Field landmark) | sites (log landmark placement) |
  * refit:id (install the next rank of a runabout refit).
+ * Groundfall: gfland (park over the hero world and press engage for real) |
+ * gfskip (finish the bake, stand at the airlock) | gfstate (log the walker) |
+ * gflook:yaw,pitch | gfteleport:x,z[,yaw] | gfmine[:ms] (work nearest seam) |
+ * gfboard (board the runabout and take off).
  * Prints console errors and the active render backend.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 
@@ -22,6 +27,10 @@ const [out = 'shot.png', w = '1440', h = '860', waitMs = '6000', actionsRaw = ''
 
 const browser = await chromium.launch({
   args: ['--enable-unsafe-webgpu', '--enable-gpu', '--use-angle=d3d11'],
+  // SHOT_CHANNEL=chrome runs the installed Chrome, whose WebGPU device
+  // actually initializes headless — the bundled Chromium falls back to
+  // WebGL2 on this machine, which is the fallback path, not the main one.
+  channel: process.env.SHOT_CHANNEL || undefined,
 });
 const page = await browser.newPage({ viewport: { width: Number(w), height: Number(h) } });
 
@@ -188,6 +197,98 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
       if (s.planet.surveyOptions)
         window.__tc.dispatch({ type: 'chooseSurvey', id: s.planet.surveyOptions[0] });
     });
+  } else if (kind === 'newseed') {
+    await page.evaluate((n) => window.__tc.newUniverse(Number(n)), arg);
+    await page.waitForTimeout(700);
+  } else if (kind === 'gfland') {
+    // Park the runabout just off the hero world and press engage for real:
+    // the live frame loop sees the landing prompt and commits the groundfall.
+    await page.evaluate(() => {
+      const shell = window.__tcFlight.bodies()[0].radius;
+      window.__tcFlight.pose(0, shell + 0.22, 0, 0, -0.6);
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => { window.__tcFlight.input.engage = true; });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+  } else if (kind === 'gfwaitwalk') {
+    // Bake time varies by machine; wait for boots on the ground, not a clock.
+    const deadline = Date.now() + Number(arg || 40000);
+    let walking = false;
+    while (Date.now() < deadline) {
+      walking = await page.evaluate(() => window.__tcSurface?.state()?.phase === 'walk');
+      if (walking) break;
+      await page.waitForTimeout(400);
+    }
+    if (!walking) errors.push('gfwaitwalk: never reached the ground');
+    await page.waitForTimeout(300);
+  } else if (kind === 'gfskip') {
+    // Finish the bake synchronously and stand at the airlock.
+    const ok = await page.evaluate(() => window.__tcSurface?.skipToWalk() ?? false);
+    if (!ok) errors.push('gfskip: skipToWalk failed');
+    await page.waitForTimeout(600);
+  } else if (kind === 'gfstate') {
+    const st = await page.evaluate(() => window.__tcSurface?.state() ?? null);
+    console.log('gfstate:', JSON.stringify(st));
+  } else if (kind === 'gflook') {
+    const [yaw, pitch] = arg.split(',').map(Number);
+    await page.evaluate(([y, p]) => window.__tcSurface.look(y, p), [yaw, pitch]);
+    await page.waitForTimeout(200);
+  } else if (kind === 'gfteleport') {
+    const [x, z, yaw] = arg.split(',').map(Number);
+    await page.evaluate(([a, b, c]) => window.__tcSurface.teleport(a, b, c ?? 0), [x, z, yaw]);
+    await page.waitForTimeout(250);
+  } else if (kind === 'gfengage') {
+    await page.evaluate((v) => { window.__tcSurface.input.engage = v === 'on'; }, arg);
+  } else if (kind === 'gfmineaim') {
+    // Stand before the nearest unworked seam and aim, without pulling the
+    // trigger — for screenshots of the beam mid-extraction.
+    await page.evaluate(() => {
+      const st = window.__tcSurface.state();
+      const live = st.pos;
+      const seam = st.deposits
+        .filter((d) => !st.mined.includes(d.id))
+        .sort((a, b) =>
+          Math.hypot(a.x - live[0], a.z - live[2]) - Math.hypot(b.x - live[0], b.z - live[2]))[0];
+      if (!seam) return;
+      const back = 2.6;
+      const ang = Math.atan2(seam.x, seam.z);
+      const sx = seam.x - Math.sin(ang) * back;
+      const sz = seam.z - Math.cos(ang) * back;
+      window.__tcSurface.teleport(sx, sz);
+      const p = window.__tcSurface.state().pos;
+      const dx = seam.x - p[0];
+      const dz = seam.z - p[2];
+      const dy = seam.y + 0.9 - p[1];
+      window.__tcSurface.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
+    });
+    await page.waitForTimeout(250);
+  } else if (kind === 'gfmine') {
+    // Walk the reticle onto the nearest seam and hold engage until it yields.
+    await page.evaluate(() => {
+      const st = window.__tcSurface.state();
+      const live = st.pos;
+      const seam = st.deposits
+        .filter((d) => !st.mined.includes(d.id))
+        .sort((a, b) =>
+          Math.hypot(a.x - live[0], a.z - live[2]) - Math.hypot(b.x - live[0], b.z - live[2]))[0];
+      if (!seam) return;
+      const back = 2.4;
+      const ang = Math.atan2(seam.x, seam.z);
+      const sx = seam.x - Math.sin(ang) * back;
+      const sz = seam.z - Math.cos(ang) * back;
+      window.__tcSurface.teleport(sx, sz);
+      const p = window.__tcSurface.state().pos;
+      const dx = seam.x - p[0];
+      const dz = seam.z - p[2];
+      const dy = seam.y + 0.9 - p[1];
+      window.__tcSurface.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
+      window.__tcSurface.input.engage = true;
+    });
+    await page.waitForTimeout(Number(arg || 2400));
+    await page.evaluate(() => { window.__tcSurface.input.engage = false; });
+  } else if (kind === 'gfboard') {
+    await page.evaluate(() => window.__tcSurface.board());
   }
 }
 if (actionsRaw) await page.waitForTimeout(600);

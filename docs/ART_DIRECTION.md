@@ -249,3 +249,19 @@ Dynamic resolution scaling: if frame time exceeds budget for 2s, DPR steps down 
 ## 11. Content-style note (Adams without lawyers)
 
 The tone is homage: original copy written in the Guide's deadpan register. Concepts and proper nouns (Vogons, Magrathea, 42) are referenced as cultural allusion; **actual prose from the books is not reproduced** — no quoted passages, no lyric-length excerpts, no verbatim Guide entries. Where the game's text lands a famous beat, it lands it in our own words. (v1's README already flagged this: "distinct thematic assets required." This is that, enforced.)
+
+---
+
+## 12. Groundfall (the surface renderer)
+
+The scale fantasy, completed: fly at any world with a floor and the runabout offers **groundfall** — a scripted atmospheric entry (plasma sheath quad, white-out swap, cloud-deck punch-through) into a **1 unit = 1 metre** surface scene where the player disembarks, walks, and mines core samples.
+
+Non-negotiables, all enforced in code:
+
+- **The continent you saw from orbit is the continent you land on.** `surface/terrainField.ts` evaluates `planetGeometry`'s exact macro field (same mulberry seed, same octaves) at the landing direction; a test locks the two together. Latitude gives frost; the landing point's macro elevation gives the region.
+- **The gauges are ground truth.** Sea level rises with Hydrologic, the snow line with Thermal, vegetation density and the green splat with Biotic, and the sky/fog/star budget with Atmospheric — an airless world gets a black daytime sky and a knife-sharp horizon. Volcanic worlds get lava for a sea.
+- **The renderer and the walker read the same array.** Heights bake into two Float32 tiers (4 m and 64 m per texel) behind the plasma; the vertex shader and the CPU collision sample them with the same manual bilinear + smoothing + curvature drop. No GPU-only geometric displacement, ever.
+- **One terrain shader for every world** — palette, sea, snow line, lava switch and curvature are uniforms, honouring the planet renderer's hard-won sharing rule. Lights are borrowed from the permanent rig (`sceneLightRig`, `SceneLamps`), never mounted, so a landing recompiles nothing.
+- **Terrain mesh is a camera-following polar grid** (one draw, no clipmap seams); props, seams and the parked runabout are instanced/hand-placed at human scale. Planet curvature is applied analytically — the horizon is genuinely the planet's, by size class.
+
+Economy stays sealed: core samples become salvage on boarding (`engine/groundfall.ts`), plus a one-time ground-survey bonus per world, persisted in `expedition.ground` (save v22).

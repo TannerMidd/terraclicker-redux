@@ -51,6 +51,7 @@ function cloneExpedition(expedition: GameState['expedition']): GameState['expedi
     unscheduled: { ...expedition.unscheduled },
     role: expedition.role,
     infrastructure: { ...expedition.infrastructure },
+    ground: { ...expedition.ground },
   };
 }
 

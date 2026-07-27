@@ -138,12 +138,14 @@ describe('save migrations', () => {
     if (!result.ok) return;
     expect(result.state.version).toBe(C.SAVE_VERSION);
     // A logbook that has never been opened, plus the empty flight-economy
-    // state v9 adds — nothing was ever carried, prospected or commissioned.
+    // state v9 adds — nothing was ever carried, prospected or commissioned —
+    // plus the v22 ground-survey ledger nobody has stood on anything for.
     expect(result.state.expedition).toEqual({
       discovered: {},
       boarded: {},
       salvage: 0,
       refits: {},
+      ground: {},
       ...createFreightState(),
     });
     // Placement is a pure function of the master seed, so an old universe

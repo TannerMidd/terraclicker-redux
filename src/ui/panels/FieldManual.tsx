@@ -185,6 +185,32 @@ export function FieldManual() {
           </p>
         </Entry>
 
+        <Entry title="Groundfall: standing on the merchandise">
+          <p>
+            Fly close to any world with a floor — the current commission at any stage of
+            terraforming, or a delivered one — and the console offers to{' '}
+            <b>make groundfall</b>. Press <kbd>e</kbd> and the runabout flies the entry
+            itself: plasma, cloud deck, touchdown. Gas giants decline to provide a floor
+            and the Guide declines to argue with them.
+          </p>
+          <p>
+            On the ground you have legs (the helm keys, repurposed), a horizon that is
+            genuinely the planet&rsquo;s, and whatever the gauges have actually built:
+            the sea sits where Hydrologic put it, the frost line where Thermal left it,
+            and the vegetation exactly as far as Biotic has crept. Crystal seams grow
+            near the landing site — hold <kbd>e</kbd> to extract{' '}
+            <b>core samples</b>, worth {C.GROUND_SAMPLE_SALVAGE} salvage each once you
+            carry them back aboard. Bank {C.GROUND_SURVEY_SAMPLES} in one landing and
+            the world&rsquo;s <b>ground survey</b> is filed for a one-time{' '}
+            {C.GROUND_SURVEY_BONUS}-salvage bonus, because almost nobody ever bothers to
+            stand on anything.
+          </p>
+          <p>
+            Walk back to the runabout and press <kbd>e</kbd> to leave. The ship handles
+            the ascent; the universe is where you parked it.
+          </p>
+        </Entry>
+
         <Entry title="Customs, and how to leave">
           <p>
             Carrying a manifest makes you interesting to people who inspect manifests. A

@@ -6,6 +6,7 @@ import { SceneOverlays } from './mk2/SceneOverlays';
 import { ColdOpen, MorningCircular } from './mk2/Overlays';
 import { SurveyModal } from './hud/SurveyModal';
 import { FlightHUD } from './hud/FlightHUD';
+import { SurfaceHUD } from './hud/SurfaceHUD';
 import { useUiBus } from './fx/uiBus';
 import { EVENT_BY_ID } from '../content/events';
 import { SITUATION_BY_ID } from '../content/situations';
@@ -407,6 +408,19 @@ function useEffectWiring(): void {
             });
             audio.achievementSting();
             break;
+          case 'groundReturn':
+            bus.addToast({
+              kind: e.firstSurvey ? 'achievement' : 'info',
+              kicker: `SHORE PARTY ABOARD · +${e.salvage} SALVAGE`,
+              title: e.firstSurvey ? `${e.name}: ground survey filed` : `${e.name}: samples banked`,
+              body: e.firstSurvey
+                ? `First boots on ${e.name}. ${e.samples} core samples catalogued; the survey bonus reflects how few people ever bother to stand on anything.`
+                : `${e.samples} core samples transferred from the suit to the hold.`,
+              ttlMs: 6200,
+            });
+            if (e.firstSurvey) audio.achievementSting();
+            else audio.upgradeSting();
+            break;
           case 'interdicted': {
             const outcome = {
               outrun: 'Patrol lost in your wake',
@@ -526,6 +540,7 @@ export function App() {
         {!flightMode && <Mk2Shell />}
         <SceneOverlays />
         <FlightHUD />
+        <SurfaceHUD />
         <SurveyModal />
         <MorningCircular />
         {!flightMode && <ColdOpen />}

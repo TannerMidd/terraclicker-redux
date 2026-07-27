@@ -519,6 +519,17 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, lifetime: { ...lifetime, statutes: [] } };
     },
   },
+  {
+    // v21 → v22: the ground-survey ledger. Nobody has stood on anything yet.
+    from: 21,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      return { ...raw, expedition: { ...exp, ground: {} } };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

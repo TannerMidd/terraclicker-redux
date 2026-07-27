@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
-import { Canvas, extend } from '@react-three/fiber';
+import { useMemo, useRef, type ReactNode } from 'react';
+import { Canvas, extend, useFrame } from '@react-three/fiber';
 import * as THREE from 'three/webgpu';
-import { Planet, SUN_DIR } from './Planet';
+import { Planet } from './Planet';
 import { Stars } from './Stars';
 import { CameraRig } from './CameraRig';
 import { Bubbles } from './Bubbles';
@@ -11,10 +11,13 @@ import { Universe } from './Universe';
 import { Traffic } from './Traffic';
 import { RunaboutLamp } from './RunaboutLamp';
 import { SceneLamps } from './SceneLamps';
+import { GlobalLights } from './sceneLightRig';
 import { RunaboutHull } from './RunaboutHull';
 import { RunaboutExterior } from './RunaboutExterior';
 import { ShaderWarmup } from './ShaderWarmup';
 import { EventFX } from './EventFX';
+import { SurfaceScene } from './surface/SurfaceScene';
+import { surfaceLive } from './surface/surfaceControl';
 import { stepFocusOut } from './universe/shared';
 import { clickSuppressed, resetOrbit } from './navControl';
 import { useSettings } from '../settings';
@@ -54,6 +57,23 @@ function onMissed(): void {
   lastMissAt = now;
 }
 
+/**
+ * The universe, hideable as one unit. While a groundfall session owns the
+ * screen the whole cosmos stands down — except during the entry dive, which
+ * is flown against the live universe with the plasma building over it.
+ * Lights are NOT in here: hiding a light recompiles every shader in the game.
+ */
+function UniverseGroup({ children }: { children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const g = ref.current;
+    if (!g) return;
+    const grounded = useUiBus.getState().groundfall !== null;
+    g.visible = !grounded || surfaceLive.phase === 'entry';
+  });
+  return <group ref={ref}>{children}</group>;
+}
+
 export default function SceneRoot() {
   const quality = useSettings((s) => s.quality);
   const tier: Tier = useMemo(
@@ -90,29 +110,34 @@ export default function SceneRoot() {
       }}
     >
       <color attach="background" args={[0x05060a]} />
-      <ambientLight intensity={0.34} color={0x8aa4d4} />
-      <directionalLight position={SUN_DIR} intensity={3.1} color={0xfff2dc} />
-      {/* Cool fill so the night side reads as form, not absence. */}
-      <directionalLight position={[-4.5, -1, -3]} intensity={0.4} color={0x3a5a8e} />
+      {/* The permanent light rig: ambient + sun + fill, driven imperatively
+          so a groundfall can borrow the sky without a single recompile. */}
+      <GlobalLights />
       {/* At the helm the ship brings its own light; out there, nothing else does. */}
       <RunaboutLamp />
       {/* Every other point light in the game, permanent so the scene never
           recompiles because a star came into view. */}
       <SceneLamps />
-      <Stars count={cfg.stars} />
-      <Planet detail={cfg.detail} />
-      <Infrastructure />
-      <Universe />
-      <Traffic />
-      <EventFX />
-      <Bubbles />
-      <VogonFleet />
+      <UniverseGroup>
+        <Stars count={cfg.stars} />
+        <Planet detail={cfg.detail} />
+        <Infrastructure />
+        <Universe />
+        <Traffic />
+        <EventFX />
+        <Bubbles />
+        <VogonFleet />
+      </UniverseGroup>
       <CameraRig />
       {/* AFTER CameraRig, deliberately: R3F runs useFrame callbacks in mount
           order, so the hull has to be subscribed later than the rig or it
           poses itself against last frame's camera and visibly swims. */}
-      <RunaboutHull />
-      <RunaboutExterior />
+      <UniverseGroup>
+        <RunaboutHull />
+        <RunaboutExterior />
+      </UniverseGroup>
+      {/* The landed world: mounts with a session, steps after the rig. */}
+      <SurfaceScene />
       <ShaderWarmup />
     </Canvas>
   );
