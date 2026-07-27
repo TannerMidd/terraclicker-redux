@@ -415,7 +415,7 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       break;
     }
     case 'bankGroundSamples': {
-      bankGroundSamples(state, effects, input.worldKey, input.worldName, input.samples);
+      bankGroundSamples(state, effects, input.worldKey, input.worldName, input.haul, input.sites);
       break;
     }
     case 'startMegaproject': {

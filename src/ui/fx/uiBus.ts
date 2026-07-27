@@ -26,6 +26,29 @@ export interface GroundfallSession {
   returnPos: [number, number, number];
   returnYaw: number;
   returnPitch: number;
+
+  // — The world's civic facts, frozen at commitment. Widened once, here, so
+  //   every phase of the expedition system reads this struct and none of them
+  //   ever asks the flight scene a question after the plasma comes up. —
+
+  /** Key into worldRecords and groundWorlds; unique across every commission. */
+  lifetimeIndex: number;
+  /** A delivered world, not a commission in progress. */
+  completed: boolean;
+  /** Simulated clock at commitment — weather is a function of it. */
+  gameTimeMs: number;
+  /** 0–1; drives settlement liveliness on delivered worlds. */
+  standing: number;
+  /** worldTraits() output at commitment (delivered worlds only). */
+  traits: readonly string[];
+  /** Installation ids standing at delivery — surface facilities to come. */
+  installations: readonly string[];
+  /** The world's quirks: landmark grammar and sample identity read these. */
+  quirks: readonly string[];
+  /** Open situations/petitions naming this world, titles resolved. */
+  openRequests: readonly { uid: number; id: string; name: string }[];
+  /** Field Certification ranks at commitment. */
+  certs: Readonly<Record<string, number>>;
 }
 
 export interface Toast {

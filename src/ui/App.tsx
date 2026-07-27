@@ -408,19 +408,27 @@ function useEffectWiring(): void {
             });
             audio.achievementSting();
             break;
-          case 'groundReturn':
+          case 'groundReturn': {
+            const catalogued =
+              e.newKinds.length > 0
+                ? ` ${e.newKinds.length === 1 ? 'One substance' : `${e.newKinds.length} substances`} new to this world's catalogue.`
+                : '';
+            const capped = e.capped
+              ? ' The ledger notes this world has now paid out most of what its ground is worth.'
+              : '';
             bus.addToast({
               kind: e.firstSurvey ? 'achievement' : 'info',
               kicker: `SHORE PARTY ABOARD · +${e.salvage} SALVAGE`,
               title: e.firstSurvey ? `${e.name}: ground survey filed` : `${e.name}: samples banked`,
               body: e.firstSurvey
-                ? `First boots on ${e.name}. ${e.samples} core samples catalogued; the survey bonus reflects how few people ever bother to stand on anything.`
-                : `${e.samples} core samples transferred from the suit to the hold.`,
+                ? `First boots on ${e.name}. ${e.samples} samples banked; the survey bonus reflects how few people ever bother to stand on anything.${catalogued}${capped}`
+                : `${e.samples} samples transferred from the suit to the hold.${catalogued}${capped}`,
               ttlMs: 6200,
             });
             if (e.firstSurvey) audio.achievementSting();
             else audio.upgradeSting();
             break;
+          }
           case 'interdicted': {
             const outcome = {
               outrun: 'Patrol lost in your wake',

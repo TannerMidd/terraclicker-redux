@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { newGame, step } from '../src/engine/sim';
 import { serialize, deserialize, toSave } from '../src/engine/save/codec';
 import { C } from '../src/content/constants';
-import { createFreightState } from '../src/engine/freight';
 
 import { initRng } from '../src/engine/rng';
-import { deepFieldSites } from '../src/engine/deepField';
+import { createExpeditionState, deepFieldSites } from '../src/engine/deepField';
 const OPTS = { utcDay: 3 };
 
 describe('save migrations', () => {
@@ -139,15 +138,8 @@ describe('save migrations', () => {
     expect(result.state.version).toBe(C.SAVE_VERSION);
     // A logbook that has never been opened, plus the empty flight-economy
     // state v9 adds — nothing was ever carried, prospected or commissioned —
-    // plus the v22 ground-survey ledger nobody has stood on anything for.
-    expect(result.state.expedition).toEqual({
-      discovered: {},
-      boarded: {},
-      salvage: 0,
-      refits: {},
-      ground: {},
-      ...createFreightState(),
-    });
+    // plus the v23 expedition records nobody has stood on anything for.
+    expect(result.state.expedition).toEqual(createExpeditionState());
     // Placement is a pure function of the master seed, so an old universe
     // gains its landmarks exactly where they would always have been.
     expect(deepFieldSites(result.state.seed)).toEqual(deepFieldSites(63));
@@ -170,6 +162,40 @@ describe('save migrations', () => {
     expect(result.state.expedition.discovered['sofa']).toBe(1200);
     expect(result.state.expedition.salvage).toBe(3);
     expect(result.state.expedition.refits['sensors']).toBe(1);
+  });
+
+  it('v22 -> v23 folds the survey timestamp into a world expedition record', () => {
+    const current = newGame(87, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 22;
+    const exp = raw['expedition'] as Record<string, unknown>;
+    delete exp['groundWorlds'];
+    delete exp['certs'];
+    delete exp['certFirsts'];
+    // A v22 career that had filed two surveys.
+    exp['ground'] = { w3: 123456, w9: 987654 };
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.version).toBe(C.SAVE_VERSION);
+    // The timestamp survives as the record's survey date; the landing that
+    // produced it is remembered as one visit whose details were never kept.
+    expect(result.state.expedition.groundWorlds['w3']).toEqual({
+      surveyedAtMs: 123456,
+      visits: 1,
+      sites: {},
+      samples: {},
+      species: {},
+      marks: [],
+      salvagePaid: 0,
+    });
+    expect(result.state.expedition.groundWorlds['w9']?.surveyedAtMs).toBe(987654);
+    // A world never stood on has no record at all.
+    expect(result.state.expedition.groundWorlds['w1']).toBeUndefined();
+    // The certification ledgers arrive empty.
+    expect(result.state.expedition.certs).toEqual({});
+    expect(result.state.expedition.certFirsts).toEqual({});
   });
 
   it('v6 -> v7 opens the channel with its own stream and an empty log', () => {

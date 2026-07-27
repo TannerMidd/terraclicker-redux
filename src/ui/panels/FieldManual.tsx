@@ -200,17 +200,31 @@ export function FieldManual() {
             genuinely the planet&rsquo;s, and whatever the gauges have actually built:
             the sea sits where Hydrologic put it, the frost line where Thermal left it,
             and the vegetation exactly as far as Biotic has crept. Crystal seams grow
-            near the landing site — face one and hold <kbd>e</kbd> to swing the
-            company pick until the seam gives, which takes a few honest blows and
-            yields <b>core samples</b> worth {C.GROUND_SAMPLE_SALVAGE} salvage each
-            once you carry them back aboard. Bank {C.GROUND_SURVEY_SAMPLES} in one
+            where the planet grew them — hold <kbd>e</kbd> with nothing in reach and
+            the suit charges a <b>field scan</b> that sweeps every site in range onto
+            the compass; face a seam and hold <kbd>e</kbd> to scan it first, because
+            a seam is a decision before it is work.
+          </p>
+          <p>
+            Once scanned, the wheel chooses what the pick will mean. <b>Quick break</b>{' '}
+            takes everything the seam holds. <b>Precision core</b> is slower and takes
+            less, but counts double toward the survey. <b>Prospect</b> takes a taste
+            and leaves a stake standing — permanently; it is there next landing.{' '}
+            <b>Preserve</b> takes nothing and files the seam as attended. Samples are
+            named substances now — brine, basalt, drift, glass — each with its own
+            salvage price, and the first of each <b>kind</b> a world produces pays a
+            catalogue bonus. Bank {C.GROUND_SURVEY_SAMPLES} survey credit in one
             landing and the world&rsquo;s <b>ground survey</b> is filed for a one-time{' '}
             {C.GROUND_SURVEY_BONUS}-salvage bonus, because almost nobody ever bothers
             to stand on anything.
           </p>
           <p>
-            Walk back to the runabout and press <kbd>e</kbd> to leave. The ship handles
-            the ascent; the universe is where you parked it.
+            The ground remembers. A worked seam is gone from that world for good, a
+            prospected one stands marked for the rigs to come, and a world&rsquo;s
+            ground pays out at most {C.GROUND_WORLD_YIELD_CAP} salvage across a
+            career — the universe is large and the company recommends trying more of
+            it. Walk back to the runabout and press <kbd>e</kbd> to leave. The ship
+            handles the ascent; the universe is where you parked it.
           </p>
         </Entry>
 

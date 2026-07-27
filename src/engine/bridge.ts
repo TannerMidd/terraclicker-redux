@@ -44,6 +44,24 @@ export function attendable(state: GameState): { uid: number; world: number; name
   return out;
 }
 
+/**
+ * The open requests naming one particular world, with their titles resolved —
+ * what a shore party stepping onto that world ought to know about. Feeds the
+ * groundfall session so the surface can eventually answer them in person.
+ */
+export function openRequestsAt(
+  state: GameState,
+  lifetimeIndex: number,
+): { uid: number; id: string; name: string }[] {
+  const out: { uid: number; id: string; name: string }[] = [];
+  for (const inst of [...state.situations, ...state.run.petitions]) {
+    if (inst.world !== lifetimeIndex) continue;
+    const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
+    out.push({ uid: inst.uid, id: inst.id, name: def?.name ?? inst.id });
+  }
+  return out;
+}
+
 /** Is the helm currently pointed at the world this request came from? */
 export function pinnedAtRequest(state: GameState, uid: number): boolean {
   const match = attendable(state).find((a) => a.uid === uid);

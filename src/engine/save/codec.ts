@@ -51,7 +51,20 @@ function cloneExpedition(expedition: GameState['expedition']): GameState['expedi
     unscheduled: { ...expedition.unscheduled },
     role: expedition.role,
     infrastructure: { ...expedition.infrastructure },
-    ground: { ...expedition.ground },
+    groundWorlds: Object.fromEntries(
+      Object.entries(expedition.groundWorlds).map(([k, w]) => [
+        k,
+        {
+          ...w,
+          sites: Object.fromEntries(Object.entries(w.sites).map(([id, s]) => [id, { ...s }])),
+          samples: { ...w.samples },
+          species: { ...w.species },
+          marks: w.marks.map((m) => ({ ...m, dir: [...m.dir] as [number, number, number] })),
+        },
+      ]),
+    ),
+    certs: { ...expedition.certs },
+    certFirsts: { ...expedition.certFirsts },
   };
 }
 

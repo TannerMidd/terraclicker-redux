@@ -228,10 +228,72 @@ export interface ExpeditionState {
    */
   visited: Record<string, number>;
   /**
-   * Ground-survey ledger: world key → gameTimeMs the first shore party came
-   * back with samples. One survey per world per career; see engine/groundfall.
+   * What each world remembers about your boots: world key → the expedition
+   * record. Replaces the bare first-survey timestamp of v22, because a world
+   * that only remembers *whether* you came cannot be changed by your coming.
+   * See engine/groundSites.ts.
    */
-  ground: Record<string, number>;
+  groundWorlds: Record<string, GroundWorldRecord>;
+  /** Field Certification track id → rank. Ranks unlock verbs, never percentages. */
+  certs: Record<string, number>;
+  /**
+   * Certification credit already claimed: `${track}:${first}` → gameTimeMs.
+   * A first is a first; the ledger is what stops it paying twice.
+   */
+  certFirsts: Record<string, number>;
+}
+
+/**
+ * One world's expedition history. Keyed by `groundKey(lifetimeIndex)`, so it
+ * outlives the commission exactly as the world records do — a world you walked
+ * is a world you walked, whatever happens to the portfolio afterwards.
+ */
+export interface GroundWorldRecord {
+  /** gameTimeMs the first survey filed, or null if none ever has. */
+  surveyedAtMs: number | null;
+  /** Landings made here. */
+  visits: number;
+  /** Site id → what happened there. Survives landings; a seam never regrows. */
+  sites: Record<string, GroundSiteState>;
+  /** Sample kind id → gameTimeMs first collected here. Variety, not volume. */
+  samples: Record<string, number>;
+  /** Lifeform id → gameTimeMs catalogued. */
+  species: Record<string, number>;
+  /** What you left behind, in planet-space so any later landing can find it. */
+  marks: GroundMark[];
+  /** Lifetime salvage this world's ground has paid, against the yield cap. */
+  salvagePaid: number;
+}
+
+/**
+ * What became of a site. `worked` is terminal: the seam is gone and this world
+ * will not offer it again. Everything else is a record of attention paid.
+ */
+export type GroundSiteState =
+  | { s: 'worked'; atMs: number }
+  | { s: 'prospected'; atMs: number }
+  | { s: 'preserved'; atMs: number }
+  | { s: 'visited'; atMs: number };
+
+/** Something you left standing on a world. */
+export interface GroundMark {
+  kind: 'beacon' | 'station' | 'repair' | 'shelter';
+  /** Unit direction in the planet's own frame — a landing frame is not a
+   * coordinate system, and the mark must survive being approached differently. */
+  dir: [number, number, number];
+  atMs: number;
+}
+
+/** What became of a site during one stay, as reported at boarding. */
+export type GroundSiteOutcome = GroundSiteState['s'];
+
+/** Samples of one kind carried aboard, and how they left the ground. */
+export interface SampleHaul {
+  /** Sample kind id (content/groundSamples.ts). */
+  kind: string;
+  n: number;
+  /** A precision core counts double toward the survey; the pay is the same. */
+  method: 'quick' | 'core' | 'prospect';
 }
 
 /** One job as offered on the board. */
@@ -508,7 +570,14 @@ export type Input =
   /** File the induction and guarantee the first useful refit decision. */
   | { type: 'completeFirstSortie' }
   /** A shore party boarded the runabout with samples in the suit. */
-  | { type: 'bankGroundSamples'; worldKey: string; worldName: string; samples: number }
+  | {
+      type: 'bankGroundSamples';
+      worldKey: string;
+      worldName: string;
+      haul: SampleHaul[];
+      /** Site id → what happened there this stay. */
+      sites: Record<string, GroundSiteOutcome>;
+    }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
   /** Close the brief tray and run the neutral standard commission. */
@@ -569,6 +638,10 @@ export type SimEffect =
       samples: number;
       salvage: number;
       firstSurvey: boolean;
+      /** Sample kinds this world had never produced before this landing. */
+      newKinds: string[];
+      /** True when the world's lifetime yield cap trimmed the payout. */
+      capped: boolean;
     }
   | { t: 'megaprojectStarted'; id: string }
   | { t: 'megaprojectFinished'; id: string }

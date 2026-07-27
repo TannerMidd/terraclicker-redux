@@ -21,6 +21,11 @@ export interface RefitDef {
 
 /** Sensor contact range in world units, by sensor rank. */
 export const SENSOR_RANGE = [70, 110, 165, 250] as const;
+/**
+ * Field-scan pulse reach on foot, metres, by field-kit rank. Rank 0 is the
+ * suit's own instrument: short-armed but included in the price of the suit.
+ */
+export const SURFACE_SCAN_RANGE = [90, 150, 240, 380] as const;
 /** Scan rate multiplier by analysis rank (higher finishes sooner). */
 export const ANALYSIS_RATE = [1, 1.5, 2.25, 3.4] as const;
 /** Speed-cap multiplier by nacelle rank. */
@@ -105,6 +110,15 @@ export const REFITS: readonly RefitDef[] = [
     costs: [16, 34, 68],
     effect: (rank) =>
       rank > 0 ? `disperses a patrol ×${DETERRENT_POWER[rank]!.toFixed(1)} faster` : 'not fitted',
+  },
+  {
+    id: 'fieldKit',
+    name: 'Field Survey Kit',
+    guide:
+      'Extends the suit scanner, which ships knowing the composition of everything within arm’s reach and the location of nothing. The kit fixes the second problem at a rate proportional to expenditure.',
+    maxRank: 3,
+    costs: [7, 15, 28],
+    effect: (rank) => `field pulse reaches ${SURFACE_SCAN_RANGE[rank]} m`,
   },
 ];
 

@@ -47,8 +47,10 @@ export const GRAVITY_M_S2: Record<WorldSize, number> = {
   huge: 10.4,
 };
 
-/** How the planet-wide macro field (normalized 0–1) maps to metres. */
-const MACRO_RELIEF_M = 1400;
+/** How the planet-wide macro field (normalized 0–1) maps to metres.
+ * Exported for the site lattice: sample identity reads macro elevation,
+ * which is planet truth, where the local octaves are landing-relative. */
+export const MACRO_RELIEF_M = 1400;
 
 /** Heightmap tiers. Near covers footing; far covers the horizon. */
 export const TIER_NEAR = { texels: 1024, extent: 4096 } as const; // 4 m/texel
@@ -277,14 +279,42 @@ const TMP = new Vector3();
  * Ground x/z (metres east/south of the landing point) to a direction on the
  * planet sphere. +x walks east, +z walks south — the camera's -Z faces north
  * on arrival, which is as good a tradition as any.
+ *
+ * Exported for the site lattice (surfaceSites.ts), which needs to speak both
+ * languages: local metres for the walker, planet directions for identity.
  */
-function sphereDir(p: SurfaceParams, x: number, z: number, out: Vector3): Vector3 {
+export function localDir(p: SurfaceParams, x: number, z: number, out: Vector3): Vector3 {
   out
     .copy(p.up)
     .multiplyScalar(p.radiusM)
     .addScaledVector(p.east, x)
     .addScaledVector(p.north, -z);
   return out.normalize();
+}
+
+/**
+ * The inverse: a planet-space direction to local metres in this landing's
+ * frame. Exact inverse of `localDir` (gnomonic projection onto the landing
+ * tangent plane), valid over the hemisphere facing the site — far more ground
+ * than any tier can carry. Anything persistent — a worked seam, a mark left
+ * standing — is stored as a direction and recovered through this, because a
+ * landing frame is not a coordinate system.
+ */
+export function dirToLocal(
+  p: SurfaceParams,
+  dir: Vector3,
+  out: { x: number; z: number },
+): { x: number; z: number } {
+  const w = dir.dot(p.up);
+  // Behind the horizon of the tangent plane: no finite local coordinate.
+  if (w < 1e-6) {
+    out.x = Number.POSITIVE_INFINITY;
+    out.z = Number.POSITIVE_INFINITY;
+    return out;
+  }
+  out.x = (p.radiusM * dir.dot(p.east)) / w;
+  out.z = (-p.radiusM * dir.dot(p.north)) / w;
+  return out;
 }
 
 /** FBM helper over the site-local detail noise. */
@@ -320,7 +350,7 @@ function fbm(
  * geometric one — the walker's collision must not diverge from the bake.
  */
 export function analyticHeight(p: SurfaceParams, x: number, z: number): number {
-  sphereDir(p, x, z, DIR);
+  localDir(p, x, z, DIR);
   const macroN = (macroRaw(p.noise, p.noise2, p.type, DIR.x, DIR.y, DIR.z) - p.macroMin) / p.macroSpan;
   let h = (macroN - p.macro0) * MACRO_RELIEF_M;
 
@@ -538,50 +568,9 @@ export function groundNormalAt(
   return out.set(-dx, 1, -dz).normalize();
 }
 
-// ————— Placement: deposits and scatter —————
-
-export interface DepositSpec {
-  id: number;
-  x: number;
-  y: number;
-  z: number;
-  /** Core samples this seam holds. */
-  richness: number;
-  scale: number;
-  rot: number;
-}
-
-/**
- * Where the seams grew. Rejection-sampled onto agreeable ground — walkable
- * slope, dry land — in a ring around the landing site: close enough to find
- * on foot, far enough that finding them is the walk.
- */
-export function depositSites(p: SurfaceParams, tiers: SurfaceTiers, count: number): DepositSpec[] {
-  const r = mulberry((p.seed ^ 0x9e0d) >>> 0);
-  const out: DepositSpec[] = [];
-  const N = new Vector3();
-  let guard = 0;
-  while (out.length < count && guard++ < count * 40) {
-    const a = r() * Math.PI * 2;
-    const d = 60 + Math.sqrt(r()) * 380;
-    const x = Math.cos(a) * d;
-    const z = Math.sin(a) * d;
-    const y = heightAt(p, tiers, x, z);
-    if (y < p.seaLevelM + 1.5) continue; // not in the sea (or the lava)
-    groundNormalAt(p, tiers, x, z, N);
-    if (N.y < 0.82) continue; // a seam you cannot stand beside is scenery
-    out.push({
-      id: out.length,
-      x,
-      y,
-      z,
-      richness: 2 + Math.floor(r() * 4),
-      scale: 0.8 + r() * 1.1,
-      rot: r() * Math.PI * 2,
-    });
-  }
-  return out;
-}
+// ————— Placement: scatter —————
+// Deposit placement lives in surfaceSites.ts: seams are planet-fixed facts
+// with stable identities, not decorations of the current landing.
 
 export interface ScatterOptions {
   minR: number;

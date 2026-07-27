@@ -3,7 +3,7 @@
  * any change ships with a balance-harness run attached to the commit.
  */
 export const C = {
-  SAVE_VERSION: 22,
+  SAVE_VERSION: 23,
   LOGIC_TICK_MS: 250,
 
   // Clicks
@@ -149,10 +149,24 @@ export const C = {
   MAX_BUBBLES: 3,
 
   // Groundfall (surface expeditions — engine/groundfall.ts)
-  /** Salvage per core sample carried back to the runabout. */
+  /**
+   * Salvage per core sample when the kind has no price of its own — and the
+   * mean the named kinds in content/groundSamples.ts are balanced around.
+   */
   GROUND_SAMPLE_SALVAGE: 2,
-  /** Samples a shore party must bank at once to file a ground survey. */
+  /** Survey credit a shore party must bank at once to file a ground survey.
+   * Ordinary samples are worth one credit; precision cores two; a seam
+   * deliberately preserved, one. */
   GROUND_SURVEY_SAMPLES: 5,
   /** One-time bonus for the first ground survey of a world. */
   GROUND_SURVEY_BONUS: 25,
+  /** One-time bonus per sample KIND first catalogued on a world — variety
+   * pays; volume merely adds up. */
+  GROUND_CATALOGUE_BONUS: 6,
+  /**
+   * Lifetime salvage cap per world's ground. Seams deplete permanently, but a
+   * planet has a lot of ground; the cap is what makes "strip-mine the same
+   * world forever" a plan the ledger declines. Roughly three first-clears.
+   */
+  GROUND_WORLD_YIELD_CAP: 250,
 } as const;

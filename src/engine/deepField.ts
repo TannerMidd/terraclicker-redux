@@ -36,6 +36,7 @@ import {
   ANALYSIS_RATE,
   REFIT_BY_ID,
   SENSOR_RANGE,
+  SURFACE_SCAN_RANGE,
   THRUST_MULT,
 } from '../content/refit';
 import type { ExpeditionState } from './types';
@@ -176,7 +177,16 @@ export function sitePositionAt(
 // ————— Fresh state —————
 
 export function createExpeditionState(): ExpeditionState {
-  return { discovered: {}, boarded: {}, salvage: 0, refits: {}, ground: {}, ...createFreightState() };
+  return {
+    discovered: {},
+    boarded: {},
+    salvage: 0,
+    refits: {},
+    groundWorlds: {},
+    certs: {},
+    certFirsts: {},
+    ...createFreightState(),
+  };
 }
 
 // ————— Refit-derived ship capabilities —————
@@ -197,6 +207,11 @@ export function sensorRange(expedition: ExpeditionState): number {
 /** Scan rate multiplier — divides the catalogue's scanSeconds. */
 export function analysisRate(expedition: ExpeditionState): number {
   return ANALYSIS_RATE[rankOf(expedition, 'analysis')] ?? 1;
+}
+
+/** How far the suit's field pulse reaches on foot, metres. */
+export function surfaceScanRange(expedition: ExpeditionState): number {
+  return SURFACE_SCAN_RANGE[rankOf(expedition, 'fieldKit')] ?? SURFACE_SCAN_RANGE[0];
 }
 
 /** Speed-cap multiplier applied on top of the range-based cap. */

@@ -233,7 +233,32 @@ export const saveSchema = z.object({
     infrastructure: z.record(z.string(), z.number().int().min(0)),
     pinned: z.string().nullable(),
     visited: z.record(z.string(), z.number().min(0)),
-    ground: z.record(z.string(), z.number().min(0)),
+    groundWorlds: z.record(
+      z.string(),
+      z.object({
+        surveyedAtMs: z.number().min(0).nullable(),
+        visits: z.number().int().min(0),
+        sites: z.record(
+          z.string(),
+          z.object({
+            s: z.enum(['worked', 'prospected', 'preserved', 'visited']),
+            atMs: z.number().min(0),
+          }),
+        ),
+        samples: z.record(z.string(), z.number().min(0)),
+        species: z.record(z.string(), z.number().min(0)),
+        marks: z.array(
+          z.object({
+            kind: z.enum(['beacon', 'station', 'repair', 'shelter']),
+            dir: z.tuple([z.number(), z.number(), z.number()]),
+            atMs: z.number().min(0),
+          }),
+        ),
+        salvagePaid: z.number().min(0),
+      }),
+    ),
+    certs: z.record(z.string(), z.number().int().min(0)),
+    certFirsts: z.record(z.string(), z.number().min(0)),
   }),
   megaprojects: z.record(
     z.string(),

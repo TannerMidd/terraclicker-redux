@@ -264,4 +264,10 @@ Non-negotiables, all enforced in code:
 - **One terrain shader for every world** — palette, sea, snow line, lava switch and curvature are uniforms, honouring the planet renderer's hard-won sharing rule. Lights are borrowed from the permanent rig (`sceneLightRig`, `SceneLamps`), never mounted, so a landing recompiles nothing.
 - **Terrain mesh is a camera-following polar grid** (one draw, no clipmap seams); props, seams and the parked runabout are instanced/hand-placed at human scale. Planet curvature is applied analytically — the horizon is genuinely the planet's, by size class.
 
-Economy stays sealed: core samples become salvage on boarding (`engine/groundfall.ts`), plus a one-time ground-survey bonus per world, persisted in `expedition.ground` (save v22).
+Economy stays sealed: core samples become salvage on boarding (`engine/groundfall.ts`), plus a one-time ground-survey bonus per world, persisted in `expedition.groundWorlds` (save v23).
+
+Planetary Expeditions (see [EXPEDITIONS.md](EXPEDITIONS.md)) adds three more non-negotiables, enforced in code and test:
+
+- **Sites are properties of the place, not the landing.** Seams live on a planet-fixed cube-cell lattice (`surface/surfaceSites.ts`); a site id is its cell, so the same ground is the same seam from any approach. Sample identity reads planet truth only — macro elevation, latitude, type, gauges, quirks — never the landing frame's local height or clamped waterline.
+- **The ground remembers.** Worked seams never return; prospect stakes stand on every later landing; the world's expedition record (`engine/groundSites.ts`) survives prestige like the rest of the Deep Field.
+- **Scan, then choose.** A seam offers no verbs until scanned; the extraction choice (quick break / precision core / prospect / preserve) is the gameplay, and the instruments (field pulse, compass marker rail) are load-bearing, not decorative.

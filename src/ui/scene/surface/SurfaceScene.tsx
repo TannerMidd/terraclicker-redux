@@ -31,12 +31,14 @@ import { paletteFor } from '../planetMaterial';
 import {
   applySurfaceCamera,
   attachSurfaceInput,
-  hitsNeeded,
+  MINING_VERBS,
   stepSurface,
   surfaceDeposits,
   surfaceLive,
   surfaceParams,
+  surfaceProspects,
   surfaceTiers,
+  verbHits,
   SHIP_PARK,
   SWING_IMPACT,
 } from './surfaceControl';
@@ -52,7 +54,8 @@ import {
   disposeTierTextures,
 } from './surfaceMaterial';
 import { terrainGeometry } from './terrainMesh';
-import { heightAt, groundNormalAt, scatterSites, PLANET_RADIUS_M, type DepositSpec } from './terrainField';
+import { heightAt, groundNormalAt, scatterSites, PLANET_RADIUS_M } from './terrainField';
+import type { DepositSpec } from './surfaceSites';
 import { lightRig, releaseLightRig } from '../sceneLightRig';
 import { useLamp } from '../SceneLamps';
 import { restoreFlightAfterGroundfall } from '../flightControl';
@@ -69,6 +72,9 @@ const UP = new Vector3(0, 1, 0);
 function dayOf(sunY: number): number {
   return Math.max(0, Math.min(1, sunY * 1.6 + 0.12));
 }
+
+/** Prospect stakes the instance pool can seat. A region rarely grows ten. */
+const STAKE_MAX = 32;
 
 export function SurfaceScene() {
   const session = useUiBus((b) => b.groundfall);
@@ -214,9 +220,16 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     };
   }, [built, session]);
 
+  // Site ids are planet-fixed strings; instances are numbered seats. The slot
+  // map is the bridge, built once per landing from the deposit order.
+  const seamSlots = useMemo(() => {
+    if (!built) return new Map<string, number>();
+    return new Map(surfaceDeposits().map((d, i) => [d.id, i]));
+  }, [built]);
+
   // Crystal instance seats (4 shards per seam). `crack` 0–1 tilts and sinks
   // the shards as the pick works them — the seam visibly losing the argument.
-  const writeSeamMatrices = (mesh: InstancedMesh, d: DepositSpec, crack: number) => {
+  const writeSeamMatrices = (mesh: InstancedMesh, d: DepositSpec, slot: number, crack: number) => {
     for (let s = 0; s < 4; s++) {
       const a = d.rot + s * 1.7;
       const lean = 0.22 + ((s * 37) % 10) / 21 + crack * (0.28 + (s % 2) * 0.14);
@@ -229,7 +242,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       const shrink = 1 - crack * 0.16;
       SEAT.scale.set(0.28 * d.scale * shrink, (0.55 + (s % 3) * 0.35) * d.scale * shrink, 0.28 * d.scale * shrink);
       SEAT.updateMatrix();
-      mesh.setMatrixAt(d.id * 4 + s, SEAT.matrix);
+      mesh.setMatrixAt(slot * 4 + s, SEAT.matrix);
     }
   };
 
@@ -237,16 +250,19 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const mesh = crystals.current;
     if (!mesh || !built) return;
     const seams = surfaceDeposits();
-    for (const d of seams) writeSeamMatrices(mesh, d, 0);
+    seams.forEach((d, i) => writeSeamMatrices(mesh, d, i, 0));
     mesh.count = seams.length * 4;
     mesh.instanceMatrix.needsUpdate = true;
-    // The effect writes by deposit id, so the count must cover the last one.
+    // The effect writes by deposit slot, so the count must cover the last one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [built]);
 
-  const minedShown = useRef(new Set<number>());
+  const minedShown = useRef(new Set<string>());
   const lastHitShown = useRef(surfaceLive.hitNonce);
   const hitFlash = useRef(0);
+  /** Prospect stakes standing (prior landings + this stay). */
+  const stakes = useRef<InstancedMesh>(null);
+  const stakesShown = useRef(-1);
 
   // ————— The frame loop: step the state machine, drive every uniform —————
   useFrame((state, dtRaw) => {
@@ -359,30 +375,56 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       seamLamp.setIntensity(0);
     }
 
-    // Each landed hit cracks the seam a little further.
+    // Each landed hit cracks the seam a little further. The crack tracks the
+    // ACTIVE verb's swing count — a precision core cracks slowly on purpose.
     if (live.hitNonce !== lastHitShown.current) {
       lastHitShown.current = live.hitNonce;
       hitFlash.current = 26;
       const mesh2 = crystals.current;
       const worked = live.target;
-      if (mesh2 && worked && !live.mined.has(worked.id)) {
-        const crack = (live.hits.get(worked.id) ?? 0) / hitsNeeded(worked.richness);
-        writeSeamMatrices(mesh2, worked, Math.min(1, crack));
+      const slot = worked ? seamSlots.get(worked.id) : undefined;
+      if (mesh2 && worked && slot !== undefined && !live.mined.has(worked.id)) {
+        const verb = MINING_VERBS[live.verbIdx] ?? 'break';
+        const crack = (live.hits.get(worked.id) ?? 0) / verbHits(verb, worked.richness);
+        writeSeamMatrices(mesh2, worked, slot, Math.min(1, crack));
         mesh2.instanceMatrix.needsUpdate = true;
       }
     }
 
-    // Newly worked seams collapse out of the instance list.
+    // Newly spent seams collapse out of the instance list.
     const mesh = crystals.current;
     if (mesh && live.mined.size !== minedShown.current.size) {
       for (const id of live.mined) {
         if (minedShown.current.has(id)) continue;
         minedShown.current.add(id);
+        const slot = seamSlots.get(id);
+        if (slot === undefined) continue;
         for (let s = 0; s < 4; s++) {
           M1.makeScale(0, 0, 0);
-          mesh.setMatrixAt(id * 4 + s, M1);
+          mesh.setMatrixAt(slot * 4 + s, M1);
         }
         mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+
+    // Prospect stakes: what earlier landings marked, plus this stay's marks —
+    // the first persistent, visible change a walker leaves on a world.
+    const stakeMesh = stakes.current;
+    if (stakeMesh) {
+      const marks = surfaceProspects();
+      if (marks.length !== stakesShown.current) {
+        stakesShown.current = marks.length;
+        const shown = Math.min(marks.length, STAKE_MAX);
+        for (let i = 0; i < shown; i++) {
+          const d = marks[i]!;
+          SEAT.position.set(d.x, d.y + 0.62, d.z);
+          SEAT.quaternion.setFromAxisAngle(V1.set(Math.sin(d.rot), 0, Math.cos(d.rot)).normalize(), 0.08);
+          SEAT.scale.set(1, 1, 1);
+          SEAT.updateMatrix();
+          stakeMesh.setMatrixAt(i, SEAT.matrix);
+        }
+        stakeMesh.count = shown;
+        stakeMesh.instanceMatrix.needsUpdate = true;
       }
     }
 
@@ -454,6 +496,12 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               frustumCulled={false}
             >
               <octahedronGeometry args={[0.7, 0]} />
+            </instancedMesh>
+
+            {/* Prospect stakes: a thin marker pole per marked seam. */}
+            <instancedMesh ref={stakes} args={[undefined, undefined, STAKE_MAX]} frustumCulled={false}>
+              <cylinderGeometry args={[0.024, 0.05, 1.35, 5]} />
+              <meshBasicMaterial color="#d98d2b" />
             </instancedMesh>
 
             <mesh ref={dustRing} visible={false} material={built.dustB.mat} rotation={[-Math.PI / 2, 0, 0]}>

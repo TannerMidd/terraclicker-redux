@@ -21,7 +21,6 @@ import {
   buildSurfaceParams,
   bakeTierRows,
   buildNormalMap,
-  depositSites,
   findDrySite,
   heightAt,
   groundNormalAt,
@@ -29,15 +28,27 @@ import {
   smoothTier,
   TIER_FAR,
   TIER_NEAR,
-  type DepositSpec,
   type SurfaceParams,
   type SurfaceTiers,
 } from './terrainField';
+import { depositSites, type DepositSpec } from './surfaceSites';
+import { SAMPLE_BY_ID } from '../../../content/groundSamples';
+import { surfaceScanRange } from '../../../engine/deepField';
+import { siteMinable } from '../../../engine/groundSites';
+import type { GroundSiteOutcome, SampleHaul } from '../../../engine/types';
 import * as audio from '../../audio/audio';
 
 export type { GroundfallSession };
+export type { DepositSpec };
 
 export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'takeoff';
+
+/**
+ * What the pick can mean, once a seam has been scanned. `break` is the old
+ * hold-to-swing; the others are the decision the scan buys you.
+ */
+export type MiningVerb = 'break' | 'core' | 'prospect' | 'preserve';
+export const MINING_VERBS: readonly MiningVerb[] = ['break', 'core', 'prospect', 'preserve'];
 
 // ————— Tuning —————
 
@@ -58,9 +69,35 @@ const MINE_RANGE = 4.2;
 export const SWING_SECONDS = 0.72;
 /** Fraction of the swing at which the head actually lands. */
 export const SWING_IMPACT = 0.58;
+/** Identifying one seam under the scanner: a short, attended dwell. */
+export const SEAM_SCAN_SECONDS = 0.9;
+/** Charging the field pulse that sweeps every site in range onto the compass. */
+export const FIELD_SCAN_SECONDS = 1.4;
 /** Swings a seam takes before it gives: modest ones crack fast. */
 export function hitsNeeded(richness: number): number {
   return 2 + richness;
+}
+/** Swings by verb: a precision core is careful work; a prospect is a taste. */
+export function verbHits(verb: MiningVerb, richness: number): number {
+  switch (verb) {
+    case 'core':
+      return Math.round((2 + richness) * 1.8);
+    case 'prospect':
+      return 2;
+    default:
+      return hitsNeeded(richness);
+  }
+}
+/** Samples a completed verb hands the suit. */
+export function verbYield(verb: MiningVerb, richness: number): number {
+  switch (verb) {
+    case 'core':
+      return Math.max(1, Math.ceil(richness / 2));
+    case 'prospect':
+      return 1;
+    default:
+      return richness;
+  }
 }
 const BOARD_RANGE = 6.5;
 /** Where the runabout parks, metres from the touchdown point. */
@@ -94,16 +131,36 @@ export const surfaceLive = {
 
   // — work —
   samples: 0,
+  /** Survey credit banked so far this stay (cores double, preserves count). */
+  surveyCredit: 0,
+  /** What the suit is carrying, by kind and extraction method. */
+  haul: [] as SampleHaul[],
+  /** Site id → what happened there this stay; banked on boarding. */
+  outcomes: new Map<string, GroundSiteOutcome>(),
   /** Deposit currently in reach + view, or null. */
   target: null as DepositSpec | null,
   /** 0–1 toward the current seam giving way (hits landed / hits needed). */
   mineProgress: 0,
-  /** Deposit ids already worked this stay. */
-  mined: new Set<number>(),
+  /** Deposit ids spent this stay (worked or prospected). */
+  mined: new Set<string>(),
   /** What the engage key would do right now, for the HUD. */
-  prompt: null as { verb: 'mine' | 'board'; label: string; blocked?: string } | null,
+  prompt: null as { verb: 'mine' | 'board' | 'scan'; label: string; blocked?: string } | null,
   /** Sun elevation −1…1 (sin of altitude angle); negative is night. */
   sunUp: 0,
+
+  // — the scanner —
+  /** Site ids identified this stay: composition readable, verbs unlocked. */
+  scanned: new Set<string>(),
+  /** 0–1 progress of whichever scan is charging. */
+  scanCharge: 0,
+  /** A field pulse is charging (engage held with nothing in reach). */
+  scanning: false,
+  /** Bumped when a pulse resolves; FX and audio key off it. */
+  scanNonce: 0,
+  /** Metres the field pulse reaches — refit-gated, frozen at landing. */
+  scanRange: 90,
+  /** Selected mining verb (index into MINING_VERBS); the wheel cycles it. */
+  verbIdx: 0,
 
   // — the pick —
   /** 0–1 phase of the current swing; 0 is the pick at rest. */
@@ -115,7 +172,7 @@ export const surfaceLive = {
   /** Where the last hit landed, for sparks. */
   hitAt: { x: 0, y: 0, z: 0 },
   /** Hits landed per seam this stay (visual cracking reads it too). */
-  hits: new Map<number, number>(),
+  hits: new Map<string, number>(),
   /** Camera dip from the last impact, decays fast. */
   kick: 0,
   /** Bumped whenever a deposit finishes, for FX. */
@@ -135,7 +192,12 @@ export const surfaceInput = {
 let session: GroundfallSession | null = null;
 let params: SurfaceParams | null = null;
 let tiers: SurfaceTiers | null = null;
+/** The workable field: lattice sites minus what this world remembers as spent. */
 let deposits: DepositSpec[] = [];
+/** Every lattice site in the region, spent or not — the scene's full census. */
+let allSites: DepositSpec[] = [];
+/** What the save already knew about these sites when we landed. */
+let priorStates: Map<string, GroundSiteOutcome> = new Map();
 /** Bake resolution. Tests shrink it; the game never touches it. */
 let tierSpecs: { near: { texels: number; extent: number }; far: { texels: number; extent: number } } = {
   near: TIER_NEAR,
@@ -170,6 +232,17 @@ export function surfaceTiers(): SurfaceTiers | null {
 export function surfaceDeposits(): readonly DepositSpec[] {
   return deposits;
 }
+/**
+ * Sites standing as prospect markers: what earlier landings staked out, plus
+ * whatever this stay has staked so far. The scene plants a marker on each —
+ * the first persistent, visible change a player leaves on a world.
+ */
+export function surfaceProspects(): DepositSpec[] {
+  return allSites.filter((d) => {
+    const now = surfaceLive.outcomes.get(d.id) ?? priorStates.get(d.id);
+    return now === 'prospected';
+  });
+}
 
 // ————— Entry / exit —————
 
@@ -201,6 +274,8 @@ export function beginGroundfall(s: GroundfallSession): void {
   tiers = { near: makeTier(tierSpecs.near), far: makeTier(tierSpecs.far) };
   bakeCursor = { near: 0, far: 0, normals: false };
   deposits = [];
+  allSites = [];
+  priorStates = new Map();
 
   const live = surfaceLive;
   live.phase = 'entry';
@@ -211,8 +286,16 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.genProgress = 0;
   live.ready = false;
   live.samples = 0;
+  live.surveyCredit = 0;
+  live.haul = [];
+  live.outcomes.clear();
   live.mined.clear();
   live.hits.clear();
+  live.scanned.clear();
+  live.scanCharge = 0;
+  live.scanning = false;
+  live.scanRange = surfaceScanRange(st.expedition);
+  live.verbIdx = 0;
   live.target = null;
   live.mineProgress = 0;
   live.swing = 0;
@@ -241,15 +324,21 @@ export function beginTakeoff(): void {
   audio.entryRoarStart();
 }
 
-/** Deliver what the suit is carrying to the ship's ledger. */
+/**
+ * Deliver what the suit is carrying — and what it decided — to the ship's
+ * ledger. Every boarding banks, even an empty-handed one: the visit itself,
+ * and any seams preserved on the walk, are part of the world's record.
+ */
 function bankSamples(): void {
   const s = session;
-  if (!s || surfaceLive.samples <= 0) {
-    if (s) actions.bankGroundSamples(s.worldKey, s.name, 0);
-    return;
-  }
-  actions.bankGroundSamples(s.worldKey, s.name, surfaceLive.samples);
+  if (!s) return;
+  const sites: Record<string, GroundSiteOutcome> = {};
+  for (const [id, outcome] of surfaceLive.outcomes) sites[id] = outcome;
+  actions.bankGroundSamples(s.worldKey, s.name, [...surfaceLive.haul], sites);
   surfaceLive.samples = 0;
+  surfaceLive.surveyCredit = 0;
+  surfaceLive.haul = [];
+  surfaceLive.outcomes.clear();
 }
 
 /** Hard exit — takeoff finished, or the session must end now. */
@@ -259,6 +348,8 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   params = null;
   tiers = null;
   deposits = [];
+  allSites = [];
+  priorStates = new Map();
   releasePointer();
   audio.entryRoarStop();
   audio.surfaceWindStop();
@@ -293,7 +384,20 @@ function stepGeneration(): number {
       smoothTier(tiers.near);
       buildNormalMap(tiers.far);
       buildNormalMap(tiers.near);
-      deposits = depositSites(params, tiers, 12);
+      // The lattice says where the seams grew; the save says which of them
+      // this world still has. Worked and prospected seams are spent — the
+      // ground remembers, which is the entire point of the record.
+      allSites = depositSites(params, tiers, session?.quirks ?? []);
+      priorStates = new Map();
+      const record = session
+        ? useGame.getState().s.expedition.groundWorlds[session.worldKey]
+        : undefined;
+      if (record) {
+        for (const [id, st] of Object.entries(record.sites)) priorStates.set(id, st.s);
+      }
+      deposits = allSites.filter((d) => siteMinable(
+        record?.sites[d.id],
+      ));
       bakeCursor.normals = true;
       surfaceLive.ready = true;
     } else {
@@ -376,12 +480,24 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
   const onLockChange = () => {
     pointerLocked = document.pointerLockElement != null;
   };
+  // The wheel chooses what the pick will mean. Only with a scanned seam in
+  // reach — everywhere else the wheel keeps whatever job the browser gave it.
+  const onWheel = (e: WheelEvent) => {
+    if (!pointerLocked || surfaceLive.phase !== 'walk') return;
+    const t = surfaceLive.target;
+    if (!t || !surfaceLive.scanned.has(t.id)) return;
+    const n = MINING_VERBS.length;
+    surfaceLive.verbIdx =
+      (surfaceLive.verbIdx + (e.deltaY > 0 ? 1 : -1) + n) % n;
+    e.preventDefault();
+  };
 
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('wheel', onWheel, { passive: false });
   document.addEventListener('pointerlockchange', onLockChange);
   const detach = () => {
     window.removeEventListener('keydown', onKeyDown);
@@ -389,6 +505,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('pointerdown', onPointerDown);
+    window.removeEventListener('wheel', onWheel);
     document.removeEventListener('pointerlockchange', onLockChange);
     releasePointer();
   };
@@ -606,14 +723,38 @@ function stepFootsteps(dt: number, planar: number): void {
   }
 }
 
+/** Carry one completed extraction into the suit's ledgers. */
+function collectYield(d: DepositSpec, verb: MiningVerb): void {
+  const live = surfaceLive;
+  const n = verbYield(verb, d.richness);
+  const method: SampleHaul['method'] =
+    verb === 'core' ? 'core' : verb === 'prospect' ? 'prospect' : 'quick';
+  const slot = live.haul.find((h) => h.kind === d.kind && h.method === method);
+  if (slot) slot.n += n;
+  else live.haul.push({ kind: d.kind, n, method });
+  live.samples += n;
+  live.surveyCredit += n * (method === 'core' ? 2 : 1);
+  live.outcomes.set(d.id, verb === 'prospect' ? 'prospected' : 'worked');
+  live.mined.add(d.id);
+  live.hits.delete(d.id);
+  live.mineNonce++;
+  audio.crystalShatter();
+  audio.sampleChime();
+}
+
+/** The engage key's edge, for decisions that are a press rather than work. */
+let engageWasHeld = false;
+
 /** Deposits and the runabout: what the engage key means on foot. */
 function stepWork(dt: number): void {
   const live = surfaceLive;
+  const engageTapped = surfaceInput.engage && !engageWasHeld;
+  engageWasHeld = surfaceInput.engage;
   EUL.set(live.pitch, live.yaw, 0);
   Q.setFromEuler(EUL);
   FWD.set(0, 0, -1).applyQuaternion(Q);
 
-  // Nearest unmined deposit in reach and roughly in view.
+  // Nearest unspent deposit in reach and roughly in view.
   let best: DepositSpec | null = null;
   let bestScore = Infinity;
   for (const d of deposits) {
@@ -630,7 +771,10 @@ function stepWork(dt: number): void {
       best = d;
     }
   }
-  if (live.target?.id !== best?.id) live.mineProgress = 0;
+  if (live.target?.id !== best?.id) {
+    live.mineProgress = 0;
+    live.scanCharge = 0;
+  }
   live.target = best;
 
   // Boarding the runabout outranks a seam you happen to face through it.
@@ -640,14 +784,65 @@ function stepWork(dt: number): void {
   if (boardable) {
     const cargo = live.samples > 0 ? ` · bank ${live.samples} samples` : '';
     live.prompt = { verb: 'board', label: `board the runabout${cargo}` };
+    live.scanning = false;
     if (surfaceInput.engage) beginTakeoff();
     return;
   }
 
   if (best) {
-    const needed = hitsNeeded(best.richness);
+    live.scanning = false;
+
+    // Stage one: the scan. Composition, stability, rarity — and only then
+    // the decision. An unscanned seam offers nothing but the instrument.
+    if (!live.scanned.has(best.id)) {
+      live.prompt = { verb: 'scan', label: 'scan the seam' };
+      live.swinging = false;
+      live.swing = Math.max(0, live.swing - dt * 2.6);
+      live.mineProgress = 0;
+      if (surfaceInput.engage) {
+        live.scanCharge += dt / SEAM_SCAN_SECONDS;
+        if (live.scanCharge >= 1) {
+          live.scanCharge = 0;
+          live.scanned.add(best.id);
+          live.scanNonce++;
+          audio.subEthaBlip(false);
+        }
+      } else {
+        live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+      }
+      return;
+    }
+
+    const verb = MINING_VERBS[live.verbIdx] ?? 'break';
+    const kindName = SAMPLE_BY_ID[best.kind]?.name ?? 'core samples';
+
+    // Preserve is a decision, not work: one press, and the seam stands.
+    if (verb === 'preserve') {
+      const already =
+        live.outcomes.has(best.id) || priorStates.has(best.id);
+      live.prompt = already
+        ? { verb: 'mine', label: 'already on record', blocked: 'this seam is already on record' }
+        : { verb: 'mine', label: 'preserve the seam · survey credit' };
+      live.swinging = false;
+      live.swing = Math.max(0, live.swing - dt * 2.6);
+      live.mineProgress = 0;
+      if (engageTapped && !already) {
+        live.outcomes.set(best.id, 'preserved');
+        live.surveyCredit += 1;
+        audio.sampleChime();
+      }
+      return;
+    }
+
+    const needed = verbHits(verb, best.richness);
     const done = live.hits.get(best.id) ?? 0;
-    live.prompt = { verb: 'mine', label: `mine the seam (${best.richness} samples)` };
+    const label =
+      verb === 'core'
+        ? `precision core — ${verbYield(verb, best.richness)}× ${kindName} · double survey`
+        : verb === 'prospect'
+          ? `prospect — mark the seam · take 1 ${kindName}`
+          : `quick break — ${verbYield(verb, best.richness)}× ${kindName}`;
+    live.prompt = { verb: 'mine', label };
 
     if (surfaceInput.engage) {
       // The pick swings on its own cadence while the key is held; the HIT is
@@ -665,14 +860,7 @@ function stepWork(dt: number): void {
         live.hitAt.z = best.z;
         live.kick = 1;
         audio.pickThunk();
-        if (now >= needed) {
-          live.mined.add(best.id);
-          live.hits.delete(best.id);
-          live.samples += best.richness;
-          live.mineNonce++;
-          audio.crystalShatter();
-          audio.sampleChime();
-        }
+        if (now >= needed) collectYield(best, verb);
       }
       if (live.swing >= 1) live.swing = 0;
     } else {
@@ -689,6 +877,27 @@ function stepWork(dt: number): void {
   live.swing = Math.max(0, live.swing - dt * 2.6);
   live.mineProgress = 0;
   live.prompt = null;
+
+  // Nothing in reach: the engage key charges the field pulse instead. One
+  // held breath and every site within range reports to the compass.
+  if (surfaceInput.engage) {
+    live.scanning = true;
+    live.scanCharge += dt / FIELD_SCAN_SECONDS;
+    if (live.scanCharge >= 1) {
+      live.scanCharge = 0;
+      const r2 = live.scanRange * live.scanRange;
+      for (const d of allSites) {
+        const dx = d.x - live.pos.x;
+        const dz = d.z - live.pos.z;
+        if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
+      }
+      live.scanNonce++;
+      audio.subEthaBlip(true);
+    }
+  } else {
+    live.scanning = false;
+    live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+  }
 }
 
 // ————— Camera —————
@@ -775,14 +984,39 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       alt: surfaceLive.alt,
       grounded: surfaceLive.grounded,
       samples: surfaceLive.samples,
+      surveyCredit: surfaceLive.surveyCredit,
+      haul: surfaceLive.haul.map((h) => ({ ...h })),
+      outcomes: Object.fromEntries(surfaceLive.outcomes),
+      scanned: [...surfaceLive.scanned],
+      scanCharge: surfaceLive.scanCharge,
+      scanRange: surfaceLive.scanRange,
+      verb: MINING_VERBS[surfaceLive.verbIdx],
       prompt: surfaceLive.prompt,
       target: surfaceLive.target,
-      deposits: deposits.map((d) => ({ id: d.id, x: d.x, y: d.y, z: d.z, richness: d.richness })),
+      deposits: deposits.map((d) => ({
+        id: d.id,
+        x: d.x,
+        y: d.y,
+        z: d.z,
+        richness: d.richness,
+        kind: d.kind,
+      })),
+      prospects: surfaceProspects().map((d) => d.id),
       mined: [...surfaceLive.mined],
       session,
       seaLevelM: params?.seaLevelM ?? null,
       sunLocal: session?.sunLocal ?? null,
     }),
+    /** Choose the pick's meaning by index into MINING_VERBS. */
+    setVerb: (i: number) => {
+      surfaceLive.verbIdx = ((i | 0) % MINING_VERBS.length + MINING_VERBS.length) % MINING_VERBS.length;
+      return MINING_VERBS[surfaceLive.verbIdx];
+    },
+    /** Skip the dwell: identify every site in the region at once. */
+    identifyAll: () => {
+      for (const d of allSites) surfaceLive.scanned.add(d.id);
+      return surfaceLive.scanned.size;
+    },
     input: surfaceInput,
     /** Skip the cinematic: finish generation now and stand at the airlock. */
     skipToWalk: () => {

@@ -530,6 +530,40 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: { ...exp, ground: {} } };
     },
   },
+  {
+    // v22 → v23: Planetary Expeditions. The bare first-survey timestamp grows
+    // into a per-world expedition record — sites, samples, species, marks —
+    // and the certification ledgers arrive empty. A v22 survey becomes a
+    // record that remembers when it was filed and one visit; the sites and
+    // samples of that landing were never written down, which is the whole
+    // reason the record now exists.
+    from: 22,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      const ground =
+        typeof exp['ground'] === 'object' && exp['ground'] !== null
+          ? (exp['ground'] as Record<string, unknown>)
+          : {};
+      const groundWorlds: Record<string, unknown> = {};
+      for (const [key, at] of Object.entries(ground)) {
+        groundWorlds[key] = {
+          surveyedAtMs: typeof at === 'number' ? at : 0,
+          visits: 1,
+          sites: {},
+          samples: {},
+          species: {},
+          marks: [],
+          salvagePaid: 0,
+        };
+      }
+      const next: Record<string, unknown> = { ...exp, groundWorlds, certs: {}, certFirsts: {} };
+      delete next['ground'];
+      return { ...raw, expedition: next };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

@@ -87,6 +87,9 @@ import type { WorldSize } from './universeLayout';
 import { starColor } from './universeLayout';
 import { SUN_DIR } from './Planet';
 import { isLandableType, landingRefusal } from '../../engine/groundfall';
+import { openRequestsAt } from '../../engine/bridge';
+import { standingOf } from '../../engine/situations';
+import { worldRecord, worldTraits } from '../../engine/worldRecords';
 import { beginGroundfall, entryProgress, stepSurface, surfaceLive } from './surface/surfaceControl';
 import type { GroundfallSession } from '../fx/uiBus';
 
@@ -187,6 +190,8 @@ export interface LandableWorld {
   type: PlanetType;
   size: WorldSize;
   hero: boolean;
+  /** Unique across every commission — the key into the world's records. */
+  lifetimeIndex: number;
   /** Seed of the system's first world — the star's colour convention. */
   starSeed: number;
   /** The star this world orbits, or null for the hero (global sun). */
@@ -1205,6 +1210,14 @@ function commitGroundfall(body: FlightBody): void {
   const returnYaw = Math.atan2(-ENTRY_TANGENT.x, -ENTRY_TANGENT.z);
   const returnPitch = -0.08;
 
+  // The world's civic facts, frozen now so the surface never has to ask the
+  // flight scene (or the store's hot paths) a question mid-walk.
+  const record = land.hero
+    ? null
+    : st.run.completedPlanets.find((r) => r.lifetimeIndex === land.lifetimeIndex) ?? null;
+  const standing = land.hero ? 1 : standingOf(st, land.lifetimeIndex);
+  const life = land.hero ? null : worldRecord(st, land.lifetimeIndex);
+
   const session: GroundfallSession = {
     worldKey: land.key,
     name: land.name,
@@ -1219,6 +1232,15 @@ function commitGroundfall(body: FlightBody): void {
     returnPos: [returnPos.x, returnPos.y, returnPos.z],
     returnYaw,
     returnPitch,
+    lifetimeIndex: land.lifetimeIndex,
+    completed: !land.hero,
+    gameTimeMs: st.gameTimeMs,
+    standing,
+    traits: life ? worldTraits(life, standing) : [],
+    installations: record ? [...record.installations] : [],
+    quirks: land.hero ? [...st.planet.quirks] : record ? [...record.quirks] : [],
+    openRequests: openRequestsAt(st, land.lifetimeIndex),
+    certs: { ...st.expedition.certs },
   };
 
   // The dive is flown from the canopy; a chase boom through a fireball is
@@ -1608,6 +1630,7 @@ function scanSurroundings(): void {
     type: st.planet.type,
     size: st.planet.size,
     hero: true,
+    lifetimeIndex: st.planet.lifetimeIndex,
     starSeed: st.planet.seed,
     starSeat: null,
   });
@@ -1644,6 +1667,7 @@ function scanSurroundings(): void {
         type: record.type,
         size: record.size,
         hero: false,
+        lifetimeIndex: record.lifetimeIndex,
         starSeed: inSystem[0]!.seed,
         starSeat: CURRENT_SYSTEM_ANCHOR,
       },
@@ -1688,6 +1712,7 @@ function scanSurroundings(): void {
           type: record.type,
           size: record.size,
           hero: false,
+          lifetimeIndex: record.lifetimeIndex,
           starSeed: worlds[0]!.seed,
           starSeat: seat,
         },

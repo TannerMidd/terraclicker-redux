@@ -12,19 +12,20 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { Vector3 } from 'three/webgpu';
 import { newGame, step } from '../src/engine/sim';
 import { bankGroundSamples, groundReturnValue, isLandableType, landingRefusal } from '../src/engine/groundfall';
-import type { SimEffect } from '../src/engine/types';
+import type { SampleHaul, SimEffect } from '../src/engine/types';
 import { C } from '../src/content/constants';
+import { SAMPLE_BY_ID } from '../src/content/groundSamples';
 import {
   buildSurfaceParams,
   bakeTierRows,
   buildNormalMap,
-  depositSites,
   groundNormalAt,
   heightAt,
   macroNormAt,
   makeTier,
   type SurfaceTiers,
 } from '../src/ui/scene/surface/terrainField';
+import { depositSites } from '../src/ui/scene/surface/surfaceSites';
 import { createPlanetGeometry } from '../src/ui/scene/planetGeometry';
 import {
   beginTakeoff,
@@ -37,6 +38,7 @@ import {
   surfaceInput,
   surfaceLive,
   surfaceParams,
+  surfaceProspects,
   surfaceTiers,
   SWING_SECONDS,
   TAKEOFF_SECONDS,
@@ -86,40 +88,115 @@ describe('groundfall ledger (engine rules)', () => {
     }
   });
 
-  it('pays per sample, pays the survey bonus once, and only for a real survey', () => {
+  it('pays per kind, pays the survey and catalogue bonuses once each', () => {
     const s = newGame(7, 0);
-    // Below the survey threshold: paid per sample, nothing filed.
-    const small = groundReturnValue(s, 'w1', C.GROUND_SURVEY_SAMPLES - 1);
+    const crystal = SAMPLE_BY_ID['field-crystal']!;
+    // Below the survey threshold: paid per sample plus the first-kind bonus,
+    // nothing filed.
+    const smallHaul: SampleHaul[] = [
+      { kind: 'field-crystal', n: C.GROUND_SURVEY_SAMPLES - 1, method: 'quick' },
+    ];
+    const small = groundReturnValue(s, 'w1', smallHaul);
     expect(small.firstSurvey).toBe(false);
-    expect(small.salvage).toBe((C.GROUND_SURVEY_SAMPLES - 1) * C.GROUND_SAMPLE_SALVAGE);
+    expect(small.salvage).toBe(
+      (C.GROUND_SURVEY_SAMPLES - 1) * crystal.salvage + C.GROUND_CATALOGUE_BONUS,
+    );
 
     const effects: SimEffect[] = [];
-    bankGroundSamples(s, effects, 'w1', 'Testworld', 6);
-    expect(s.expedition.salvage).toBe(6 * C.GROUND_SAMPLE_SALVAGE + C.GROUND_SURVEY_BONUS);
-    expect(s.expedition.ground['w1']).toBeDefined();
-    expect(effects[0]).toMatchObject({ t: 'groundReturn', firstSurvey: true, samples: 6 });
+    const haul: SampleHaul[] = [{ kind: 'field-crystal', n: 6, method: 'quick' }];
+    bankGroundSamples(s, effects, 'w1', 'Testworld', haul, { 'g0:1:1': 'worked' });
+    expect(s.expedition.salvage).toBe(
+      6 * crystal.salvage + C.GROUND_SURVEY_BONUS + C.GROUND_CATALOGUE_BONUS,
+    );
+    const record = s.expedition.groundWorlds['w1']!;
+    expect(record.surveyedAtMs).not.toBeNull();
+    expect(record.visits).toBe(1);
+    expect(record.sites['g0:1:1']).toMatchObject({ s: 'worked' });
+    expect(record.samples['field-crystal']).toBeDefined();
+    expect(effects[0]).toMatchObject({
+      t: 'groundReturn',
+      firstSurvey: true,
+      samples: 6,
+      newKinds: ['field-crystal'],
+    });
 
-    // A second full haul from the same world: per-sample pay only.
+    // A second full haul of the same kind from the same world: per-sample pay
+    // only — the survey is filed and the kind is already in the catalogue.
     const before = s.expedition.salvage;
-    bankGroundSamples(s, effects, 'w1', 'Testworld', 6);
-    expect(s.expedition.salvage).toBe(before + 6 * C.GROUND_SAMPLE_SALVAGE);
-    expect(effects[1]).toMatchObject({ firstSurvey: false });
+    bankGroundSamples(s, effects, 'w1', 'Testworld', haul, {});
+    expect(s.expedition.salvage).toBe(before + 6 * crystal.salvage);
+    expect(effects[1]).toMatchObject({ firstSurvey: false, newKinds: [] });
+    expect(record.visits).toBe(2);
   });
 
-  it('banking nothing records nothing', () => {
+  it('precision cores count double toward the survey; preserved seams count too', () => {
+    const s = newGame(8, 0);
+    // Three cores at double credit clear a five-credit survey.
+    const cores: SampleHaul[] = [{ kind: 'glacier-core', n: 3, method: 'core' }];
+    expect(groundReturnValue(s, 'w2', cores).firstSurvey).toBe(true);
+
+    // Two ordinary samples plus three preserved seams also clear it.
+    const effects: SimEffect[] = [];
+    bankGroundSamples(
+      s,
+      effects,
+      'w4',
+      'Elsewhere',
+      [{ kind: 'field-crystal', n: 2, method: 'quick' }],
+      { 'g1:2:3': 'preserved', 'g1:2:4': 'preserved', 'g1:2:5': 'preserved' },
+    );
+    expect(s.expedition.groundWorlds['w4']!.surveyedAtMs).not.toBeNull();
+    expect(s.expedition.groundWorlds['w4']!.sites['g1:2:3']).toMatchObject({ s: 'preserved' });
+  });
+
+  it('banking nothing still counts the visit, quietly', () => {
     const s = newGame(8, 0);
     const effects: SimEffect[] = [];
-    bankGroundSamples(s, effects, 'w1', 'Testworld', 0);
+    bankGroundSamples(s, effects, 'w1', 'Testworld', [], {});
     expect(s.expedition.salvage).toBe(0);
-    expect(s.expedition.ground['w1']).toBeUndefined();
+    expect(s.expedition.groundWorlds['w1']!.visits).toBe(1);
+    expect(s.expedition.groundWorlds['w1']!.surveyedAtMs).toBeNull();
     expect(effects).toHaveLength(0);
+  });
+
+  it('a worked site never regrows, and the world yield cap holds', () => {
+    const s = newGame(9, 0);
+    const effects: SimEffect[] = [];
+    bankGroundSamples(s, effects, 'w5', 'Quarry', [], { 'g2:7:7': 'worked' });
+    // Working the same site again on a later landing cannot un-work it, and
+    // a preserve arriving later cannot downgrade it either.
+    bankGroundSamples(s, effects, 'w5', 'Quarry', [], { 'g2:7:7': 'preserved' });
+    expect(s.expedition.groundWorlds['w5']!.sites['g2:7:7']).toMatchObject({ s: 'worked' });
+
+    // The cap: a world nearly paid out trims the payout and says so.
+    s.expedition.groundWorlds['w5']!.salvagePaid = C.GROUND_WORLD_YIELD_CAP - 3;
+    const big: SampleHaul[] = [{ kind: 'field-crystal', n: 10, method: 'quick' }];
+    const before = s.expedition.salvage;
+    bankGroundSamples(s, effects, 'w5', 'Quarry', big, {});
+    expect(s.expedition.salvage).toBe(before + 3);
+    expect(effects.at(-1)).toMatchObject({ capped: true, salvage: 3 });
   });
 
   it('is reachable through the sim input, like every other verb', () => {
     const s = newGame(9, 0);
-    step(s, 0, [{ type: 'bankGroundSamples', worldKey: 'w3', worldName: 'Elsewhere', samples: 5 }], { utcDay: 1 });
-    expect(s.expedition.ground['w3']).toBeDefined();
-    expect(s.expedition.salvage).toBe(5 * C.GROUND_SAMPLE_SALVAGE + C.GROUND_SURVEY_BONUS);
+    step(
+      s,
+      0,
+      [
+        {
+          type: 'bankGroundSamples',
+          worldKey: 'w3',
+          worldName: 'Elsewhere',
+          haul: [{ kind: 'field-crystal', n: 5, method: 'quick' }],
+          sites: {},
+        },
+      ],
+      { utcDay: 1 },
+    );
+    expect(s.expedition.groundWorlds['w3']!.surveyedAtMs).not.toBeNull();
+    expect(s.expedition.salvage).toBe(
+      5 * SAMPLE_BY_ID['field-crystal']!.salvage + C.GROUND_SURVEY_BONUS + C.GROUND_CATALOGUE_BONUS,
+    );
   });
 });
 
@@ -180,10 +257,10 @@ describe('the terrain field', () => {
     }
   });
 
-  it('grows deposits on standable, dry ground', () => {
+  it('grows deposits on standable, dry ground, deterministically', () => {
     const { p, tiers } = bakeSmall();
-    const seams = depositSites(p, tiers, 12);
-    expect(seams.length).toBeGreaterThan(6);
+    const seams = depositSites(p, tiers);
+    expect(seams.length).toBeGreaterThan(3);
     const n = new Vector3();
     for (const d of seams) {
       expect(d.y).toBeGreaterThan(p.seaLevelM + 1.4);
@@ -191,9 +268,43 @@ describe('the terrain field', () => {
       expect(n.y).toBeGreaterThan(0.8);
       expect(d.richness).toBeGreaterThanOrEqual(2);
       expect(d.richness).toBeLessThanOrEqual(5);
+      expect(d.id).toMatch(/^g\d:\d+:\d+$/);
+      expect(SAMPLE_BY_ID[d.kind]).toBeDefined();
     }
     // Deterministic placement, twice over.
-    expect(depositSites(p, tiers, 12)).toEqual(seams);
+    expect(depositSites(p, tiers)).toEqual(seams);
+  });
+
+  it('sites are properties of the place: the same ground is the same seam from any approach', () => {
+    // Two landings a few dozen metres apart: overlapping ground, different
+    // frames. The seams under both must agree on identity, richness and kind.
+    const a = bakeSmall();
+    const nudged = new Vector3(
+      TEST_SPEC.dir[0] + 0.0002,
+      TEST_SPEC.dir[1],
+      TEST_SPEC.dir[2],
+    ).normalize();
+    const b = bakeSmall({ ...TEST_SPEC, dir: [nudged.x, nudged.y, nudged.z] });
+
+    const seamsA = depositSites(a.p, a.tiers);
+    const seamsB = depositSites(b.p, b.tiers);
+    const byIdB = new Map(seamsB.map((d) => [d.id, d]));
+    const shared = seamsA.filter((d) => byIdB.has(d.id));
+    expect(shared.length).toBeGreaterThan(2);
+    for (const d of shared) {
+      const other = byIdB.get(d.id)!;
+      expect(other.richness).toBe(d.richness);
+      expect(other.kind).toBe(d.kind);
+    }
+
+    // A landing on the far side of the planet shares no ground and no seams.
+    const far = bakeSmall({
+      ...TEST_SPEC,
+      dir: [-TEST_SPEC.dir[0], -TEST_SPEC.dir[1], -TEST_SPEC.dir[2]],
+    });
+    const seamsFar = depositSites(far.p, far.tiers);
+    const idsA = new Set(seamsA.map((d) => d.id));
+    expect(seamsFar.some((d) => idsA.has(d.id))).toBe(false);
   });
 });
 
@@ -266,53 +377,63 @@ describe('the walk (control layer, driven like the frame loop)', () => {
     expect(surfaceLive.grounded).toBe(true);
   });
 
-  it('mines a seam by holding engage, banks on boarding, and files the survey', () => {
-    commitOverHero();
-    bakeAndLand();
+  /** Stand two metres back from a seam, facing it, ready to work. */
+  function standAt(seam: { x: number; y: number; z: number }): void {
     const p = surfaceParams()!;
     const tiers = surfaceTiers()!;
+    const back = 2.2;
+    const a = Math.atan2(seam.x - 0.001, seam.z - 0.001);
+    const sx = seam.x - Math.sin(a) * back;
+    const sz = seam.z - Math.cos(a) * back;
+    surfaceLive.pos.set(sx, heightAt(p, tiers, sx, sz) + EYE, sz);
+    surfaceLive.vel.set(0, 0, 0);
+    const dx = seam.x - sx;
+    const dz = seam.z - sz;
+    surfaceLive.yaw = Math.atan2(-dx, -dz);
+    surfaceLive.pitch = Math.atan2(seam.y + 0.9 - surfaceLive.pos.y, Math.hypot(dx, dz));
+  }
+
+  it('scans, mines by holding engage, banks on boarding, and files the survey', () => {
+    commitOverHero();
+    bakeAndLand();
     let t = 5000;
 
-    // Work seams until the suit holds a survey's worth.
+    // Work seams until the suit holds a survey's worth. The hold covers both
+    // stages: the scan dwell resolves first, then the pick starts swinging.
     const seams = [...surfaceDeposits()];
     expect(seams.length).toBeGreaterThan(0);
     for (const seam of seams) {
       if (surfaceLive.samples >= C.GROUND_SURVEY_SAMPLES) break;
-      // Stand two metres back from the seam, facing it.
-      const back = 2.2;
-      const a = Math.atan2(seam.x - 0.001, seam.z - 0.001);
-      const sx = seam.x - Math.sin(a) * back;
-      const sz = seam.z - Math.cos(a) * back;
-      surfaceLive.pos.set(sx, heightAt(p, tiers, sx, sz) + EYE, sz);
-      surfaceLive.vel.set(0, 0, 0);
-      const dx = seam.x - sx;
-      const dz = seam.z - sz;
-      surfaceLive.yaw = Math.atan2(-dx, -dz);
-      const dy = seam.y + 0.9 - surfaceLive.pos.y;
-      surfaceLive.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      standAt(seam);
       surfaceInput.engage = true;
-      // Hit-based now: the richest seam takes 2+5 swings at SWING_SECONDS
-      // apiece, so give the arm ten honest seconds before calling it stuck.
-      for (let i = 0; i < 620 && !surfaceLive.mined.has(seam.id); i++) {
+      for (let i = 0; i < 700 && !surfaceLive.mined.has(seam.id); i++) {
         stepSurface(1 / 60, (t += 1 / 60));
       }
       surfaceInput.engage = false;
+      expect(surfaceLive.scanned.has(seam.id)).toBe(true); // the scan came first
       expect(surfaceLive.mined.has(seam.id)).toBe(true);
       expect(surfaceLive.hits.has(seam.id)).toBe(false); // ledger cleaned
+      expect(surfaceLive.outcomes.get(seam.id)).toBe('worked');
     }
     const carried = surfaceLive.samples;
     expect(carried).toBeGreaterThanOrEqual(C.GROUND_SURVEY_SAMPLES);
+    expect(surfaceLive.haul.length).toBeGreaterThan(0);
 
-    // Board and leave; the ledger settles on the way up.
+    // Board and leave; the ledger settles on the way up. The expected pay is
+    // the engine's own pure valuation of the haul the suit actually carries.
     const worldKey = useUiBus.getState().groundfall!.worldKey;
-    const salvageBefore = useGame.getState().s.expedition.salvage;
+    const preState = useGame.getState().s;
+    const salvageBefore = preState.expedition.salvage;
+    const expected = groundReturnValue(preState, worldKey, surfaceLive.haul, 0);
+    expect(expected.firstSurvey).toBe(true);
     beginTakeoff();
     expect(surfaceLive.samples).toBe(0);
     const st = useGame.getState().s;
-    expect(st.expedition.salvage).toBe(
-      salvageBefore + carried * C.GROUND_SAMPLE_SALVAGE + C.GROUND_SURVEY_BONUS,
-    );
-    expect(st.expedition.ground[worldKey]).toBeDefined();
+    expect(st.expedition.salvage).toBe(salvageBefore + expected.salvage);
+    const record = st.expedition.groundWorlds[worldKey]!;
+    expect(record.surveyedAtMs).not.toBeNull();
+    expect(record.visits).toBe(1);
+    expect(Object.values(record.sites).some((s2) => s2.s === 'worked')).toBe(true);
 
     // Takeoff runs to completion and hands back a flight pose.
     let done: { pos: Vector3 } | null = null;
@@ -323,23 +444,72 @@ describe('the walk (control layer, driven like the frame loop)', () => {
     expect(useUiBus.getState().groundfall).toBeNull();
   });
 
+  it('the ground remembers: a worked seam is gone next landing, a prospect stands', () => {
+    commitOverHero();
+    bakeAndLand();
+    let t = 20000;
+
+    const seams = [...surfaceDeposits()];
+    expect(seams.length).toBeGreaterThan(1);
+    const workedSeam = seams[0]!;
+    const prospectSeam = seams[1]!;
+
+    // Quick-break the first seam.
+    standAt(workedSeam);
+    surfaceLive.scanned.add(workedSeam.id);
+    surfaceInput.engage = true;
+    for (let i = 0; i < 700 && !surfaceLive.mined.has(workedSeam.id); i++) {
+      stepSurface(1 / 60, (t += 1 / 60));
+    }
+    surfaceInput.engage = false;
+    expect(surfaceLive.outcomes.get(workedSeam.id)).toBe('worked');
+
+    // Prospect the second: two swings, one sample, a stake left standing.
+    standAt(prospectSeam);
+    surfaceLive.scanned.add(prospectSeam.id);
+    surfaceLive.verbIdx = 2; // prospect
+    surfaceInput.engage = true;
+    for (let i = 0; i < 400 && !surfaceLive.mined.has(prospectSeam.id); i++) {
+      stepSurface(1 / 60, (t += 1 / 60));
+    }
+    surfaceInput.engage = false;
+    expect(surfaceLive.outcomes.get(prospectSeam.id)).toBe('prospected');
+    expect(surfaceProspects().map((d) => d.id)).toContain(prospectSeam.id);
+
+    // Bank and complete the takeoff.
+    beginTakeoff();
+    let done: { pos: Vector3 } | null = null;
+    for (let i = 0; i < TAKEOFF_SECONDS * 60 + 30 && !done; i++) {
+      done = stepSurface(1 / 60, (t += 1 / 60)).done;
+    }
+    expect(done).not.toBeNull();
+    const record = useGame.getState().s.expedition.groundWorlds[
+      `w${useGame.getState().s.planet.lifetimeIndex}`
+    ]!;
+    expect(record.sites[workedSeam.id]).toMatchObject({ s: 'worked' });
+    expect(record.sites[prospectSeam.id]).toMatchObject({ s: 'prospected' });
+
+    // Land again on the same approach: same region, same lattice — but the
+    // worked seam does not return, and the prospect stake is still standing.
+    endFlight();
+    commitOverHero();
+    bakeAndLand();
+    const idsNow = new Set(surfaceDeposits().map((d) => d.id));
+    expect(idsNow.has(workedSeam.id)).toBe(false);
+    expect(idsNow.has(prospectSeam.id)).toBe(false);
+    expect(surfaceProspects().map((d) => d.id)).toContain(prospectSeam.id);
+    // Untouched seams from the first landing are exactly where they were.
+    for (const d of seams.slice(2)) expect(idsNow.has(d.id)).toBe(true);
+  });
+
   it('lands one swing at a time: hits accumulate, then the seam gives', () => {
     commitOverHero();
     bakeAndLand();
-    const p = surfaceParams()!;
-    const tiers = surfaceTiers()!;
     let t = 9000;
     const seam = [...surfaceDeposits()][0]!;
-    const back = 2.2;
-    const a = Math.atan2(seam.x, seam.z);
-    const sx = seam.x - Math.sin(a) * back;
-    const sz = seam.z - Math.cos(a) * back;
-    surfaceLive.pos.set(sx, heightAt(p, tiers, sx, sz) + EYE, sz);
-    surfaceLive.vel.set(0, 0, 0);
-    const dx = seam.x - sx;
-    const dz = seam.z - sz;
-    surfaceLive.yaw = Math.atan2(-dx, -dz);
-    surfaceLive.pitch = Math.atan2(seam.y + 0.9 - surfaceLive.pos.y, Math.hypot(dx, dz));
+    standAt(seam);
+    // Scanned already — this test is about the pick, not the instrument.
+    surfaceLive.scanned.add(seam.id);
 
     // One full swing lands exactly one hit.
     surfaceInput.engage = true;

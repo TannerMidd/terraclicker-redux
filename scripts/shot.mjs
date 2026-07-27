@@ -15,6 +15,8 @@
  * Groundfall: gfland (park over the hero world and press engage for real) |
  * gfskip (finish the bake, stand at the airlock) | gfstate (log the walker) |
  * gflook:yaw,pitch | gfteleport:x,z[,yaw] | gfmine[:ms] (work nearest seam) |
+ * gfscanall (identify every site — the field pulse, without the dwell) |
+ * gfverb:i (choose the pick's meaning: 0 break · 1 core · 2 prospect · 3 preserve) |
  * gfboard (board the runabout and take off).
  * Prints console errors and the active render backend.
  */
@@ -287,6 +289,10 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     });
     await page.waitForTimeout(Number(arg || 2400));
     await page.evaluate(() => { window.__tcSurface.input.engage = false; });
+  } else if (kind === 'gfscanall') {
+    await page.evaluate(() => window.__tcSurface.identifyAll());
+  } else if (kind === 'gfverb') {
+    await page.evaluate((i) => window.__tcSurface.setVerb(i), Number(arg));
   } else if (kind === 'gfboard') {
     await page.evaluate(() => window.__tcSurface.board());
   }
