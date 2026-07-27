@@ -7,7 +7,7 @@
     <title>TerraClicker Redux — terraform the cosmos one click at a time</title>
     <meta
       name="description"
-      content="A free browser idle game where the cookie is a planet. Click it, industrialise it, and watch the ice caps retreat and the oceans rise in real time. Then finish it, keep it, and fly out to see what was already there."
+      content="A free browser idle game about terraforming planets to order. Click a world, industrialise it, and watch the ice caps retreat and the oceans rise in real time. Then keep it, fly out to it, and land on it."
     />
     <link rel="canonical" href="https://tannermidd.github.io/terraclicker-redux/" />
 
@@ -71,10 +71,11 @@
           <h1>TerraClicker <span class="redux">Redux</span></h1>
           <p class="tagline">Terraform the cosmos one click at a time. Mostly harmless.</p>
           <p class="lede">
-            The cookie is a planet. Click it, industrialise it, and watch the ice caps retreat, the
-            oceans find the basins and city lights wake on the night side — live, in the shader, not
-            on a progress bar. Finish it and it doesn't disappear: it takes an orbit and stays there
-            while the next, stranger world drifts in.
+            You have a planet, a quota, and no particular say in either. Click it, industrialise it,
+            and watch the ice caps retreat, the oceans find the basins and city lights wake on the
+            night side — live, in the shader, not on a progress bar. Finish it and it doesn't
+            disappear: it takes an orbit and stays there while the next, stranger world drifts in.
+            Later, when you have a ship, you can go back and land on it.
           </p>
 
           <div class="cta">
@@ -162,7 +163,7 @@
 
           <article class="feature">
             <div class="feature-copy">
-              <p class="kicker" style="--k: var(--bio)">The planet is the cookie</p>
+              <p class="kicker" style="--k: var(--bio)">The planet is the interface</p>
               <h3>Your numbers are the picture</h3>
               <p>
                 Thermal, Atmospheric, Hydrologic and Biotic aren't a readout of progress — they are
@@ -237,6 +238,69 @@
                 alt="First-person view from the runabout: a lava-veined world fills the left of the frame, a ringed star and freighters ahead, throttle readout along the bottom reading making excellent time."
               />
               <figcaption>Manual flight. The console reports speed in plain language.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature reverse">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--thermal)">Groundfall</p>
+              <h3>And then you can land on it</h3>
+              <p>
+                Point the nose at any world with a floor and hold the dive. The runabout flies the
+                entry itself — plasma sheath, cloud deck, a glide onto a shelf the autoland picks —
+                and you get out and walk around on a planet you made, at one unit to the metre.
+              </p>
+              <p>
+                It is the same world. The surface evaluates the identical continent field the orbital
+                shader does, so the coastline you watched fill from a hundred thousand kilometres up
+                is the coastline under your boots, and a test holds the two together. Ore seams live
+                on a lattice fixed to the planet rather than to your approach, which means the ground
+                remembers: a seam you work is worked for good, and a claim you stake is still
+                standing the next time you come down, on a world you may not visit again for hours.
+              </p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/11-groundfall.webp"
+                width="1400"
+                height="836"
+                alt="Standing on a moonlit planet beside the parked runabout, pick in hand, with the compass tape at the top of the screen naming a standing ring 2.1 kilometres away."
+              />
+              <figcaption>Boots down, ship parked, one named landmark 2.1 km off.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--improbable)">Weather, and the people in it</p>
+              <h3>The lights are somebody's windows</h3>
+              <p>
+                Weather is arithmetic — a function of the world, the spot and the clock, with no
+                stored state — so both scales agree about it: the front you can see turning over a
+                planet from orbit is the dust you land in. It never damages you. It changes what you
+                can do. Dust chokes the scanner and uncovers seams the sand was sitting on;
+                whiteouts erase your instruments and leave heat, so getting back to the ship becomes
+                navigation; electrical storms feed the scanner instead.
+              </p>
+              <p>
+                And the settlement lights you saw on the night side turn out to be somewhere. Walk
+                into one and it's the town those exact lights described — lit by how well you've
+                looked after the place, with the hardware from the delivery paperwork standing in the
+                yard, scaffolding up wherever somebody's request is still open, and whatever lives on
+                the world going about its business nearby. Look after a world and its windows are lit
+                when you visit. Ignore it and they go out, a few at a time, in the same places.
+              </p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/12-settlement.webp"
+                width="1400"
+                height="560"
+                alt="Dusk on a delivered world: a small town of lit habs, masts and a dome strung along a ridge, with the compass naming the lights of Port Correction 105 metres ahead."
+              />
+              <figcaption>Port Correction, 105 m. You built the world; somebody else moved in.</figcaption>
             </figure>
           </article>
 
@@ -338,11 +402,22 @@
               </p>
             </article>
             <article class="card">
-              <h3>Six planet types, twenty quirks</h3>
+              <h3>Six planet types, fourteen quirks</h3>
               <p>
                 A volcanic world arrives with Thermal mostly filled and triple the Hydrologic target,
                 so your dusty seeders are suddenly the bottleneck. One world refuses to terraform on
-                Mondays. Planet 42 is always Earth, and its quirk does nothing whatsoever.
+                Mondays. One has a pet asteroid, which has a name you are not told. Planet 42 is
+                always Earth, and its quirk does nothing whatsoever.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The Survey Skimmer</h3>
+              <p>
+                A ground-effect sled that folds out of the runabout, bought with salvage in three
+                ranks: one gets you off your feet, two puts the scanner on a mast steady enough to
+                work in weather, three makes open water something you cross rather than something
+                you stop at. Park it anywhere and it stays parked, on the compass, warm enough to
+                find in a whiteout.
               </p>
             </article>
             <article class="card">
@@ -409,6 +484,18 @@
               <button type="button" data-src="media/09-flight.webp" data-cap="At the helm of the company runabout, with nothing staged for it.">
                 <img loading="lazy" src="media/09-flight.webp" width="1400" height="836" alt="First-person flight past a lava-veined world towards a ringed star." />
                 <figcaption>At the helm</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/13-dust-front.webp" data-cap="A heavy dust front on a desert world. The sand has moved, and a seam that was buried under it is now worth a look.">
+                <img loading="lazy" src="media/13-dust-front.webp" width="1400" height="836" alt="A desert surface under a heavy ochre dust front, with a cluster of pale blue crystals newly uncovered in the sand ahead." />
+                <figcaption>The sand has moved</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/12-settlement.webp" data-cap="A settlement on a world you delivered, at dusk. Its lights are the ones visible from orbit.">
+                <img loading="lazy" src="media/12-settlement.webp" width="1400" height="560" alt="A small lit town along a ridge at dusk on a delivered world." />
+                <figcaption>Somebody moved in</figcaption>
               </button>
             </li>
             <li class="portrait">
@@ -491,6 +578,15 @@
             <p>
               No. You'll be caught up when you come back, with a report on what happened while you
               were away. Research raises both the offline efficiency and the cap.
+            </p>
+          </details>
+          <details>
+            <summary>Do I have to fly the ship or land on anything?</summary>
+            <p>
+              No. Flight, the Deep Field and groundfall are a sealed sideline: they pay salvage,
+              salvage buys ship equipment, and nothing out there ever touches the idle economy. If
+              you never leave the planet you lose nothing but the view. It's there for the days you
+              want to go and look at something.
             </p>
           </details>
           <details>
