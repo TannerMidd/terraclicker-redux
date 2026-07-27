@@ -12,6 +12,14 @@ import { Group, Sprite, Vector3 } from 'three/webgpu';
 import type { CompletedPlanetRecord } from '../../../engine/types';
 import { mulberry } from '../../../engine/rng';
 import { standingOf } from '../../../engine/situations';
+import {
+  SETTLEMENT_COOL_HEX,
+  SETTLEMENT_WARM_HEX,
+  settlementCharacter,
+  settlementRoster,
+  settlementShownCount,
+  settlementSpecOf,
+} from '../../../engine/settlements';
 import { useGame } from '../../../state/store';
 import { SCENE_SPRITES } from '../../assets';
 import { sharedGlowSprite, sharedTexSprite } from './shared';
@@ -21,20 +29,8 @@ import { universeMotion } from './operationsVisual';
 export type CivilizationVariant = 'mini' | 'visit' | 'closeup';
 
 const GOLDEN = 2.39996;
-const WARM = 0xffd9a0;
-const COOL = 0x9fdcff;
-
-/** Career maturity of a world: later deliveries carry denser settlement. */
-function maturity(record: CompletedPlanetRecord): number {
-  return 0.5 + 0.5 * Math.min(1, record.lifetimeIndex / 30);
-}
-
-const LIGHT_BASE: Record<CompletedPlanetRecord['size'], number> = {
-  small: 6,
-  medium: 9,
-  large: 12,
-  huge: 16,
-};
+const WARM = SETTLEMENT_WARM_HEX;
+const COOL = SETTLEMENT_COOL_HEX;
 
 const LIGHT_COUNT_MULT: Record<CivilizationVariant, number> = {
   mini: 0.6,
@@ -64,6 +60,11 @@ interface LightSpot {
 /**
  * Seeded settlement sites on the sphere (planet-local, radius 1).
  *
+ * The positions come from `engine/settlements` — the same roster the landing
+ * divert and the walkable districts read, which is the Phase 4 promise made
+ * structural: this component can no longer draw a light anywhere the ground
+ * would decline to build.
+ *
  * `standing` is how the stakes become visible. A neglected world does not
  * change colour or get a badge — its lights go out, a few at a time, in the
  * same places they always were, and come back when it is looked after again.
@@ -76,30 +77,19 @@ function settlementSpots(
   standing: number,
   traits: readonly string[] = [],
 ): LightSpot[] {
-  const r = mulberry((record.seed ^ 0x11f5) >>> 0);
-  // What the world has become shows up as how built-up it looks. Heavily
-  // engineered worlds sprawl; austere ones stayed small on purpose. Both are
-  // derived from the record, so a world looks like its own biography.
-  const character = traits.includes('engineered') ? 1.25 : traits.includes('austere') ? 0.75 : 1;
-  const full = Math.round(
-    LIGHT_BASE[record.size] * maturity(record) * LIGHT_COUNT_MULT[variant] * character,
+  const roster = settlementRoster(settlementSpecOf(record));
+  const shown = settlementShownCount(
+    roster.length,
+    record,
+    LIGHT_COUNT_MULT[variant],
+    settlementCharacter(traits),
+    standing,
   );
-  // Never all the way dark: somebody is always still there.
-  const count = Math.max(full > 0 ? 1 : 0, Math.round(full * standing));
-  const hasLab = record.installations.includes('researchLab');
-  const spots: LightSpot[] = [];
-  for (let i = 0; i < count; i++) {
-    // Uniform on the sphere, nudged off the deep poles where nobody builds.
-    const z = (r() * 2 - 1) * 0.86;
-    const a = r() * Math.PI * 2;
-    const k = Math.sqrt(Math.max(0, 1 - z * z));
-    spots.push({
-      pos: [Math.cos(a) * k * 1.03, z * 1.03, Math.sin(a) * k * 1.03],
-      scale: (0.055 + r() * 0.05) * LIGHT_SCALE_MULT[variant],
-      cool: hasLab && r() < 0.22, // a science quarter glows cooler
-    });
-  }
-  return spots;
+  return roster.slice(0, shown).map((s) => ({
+    pos: [s.dir[0] * 1.03, s.dir[1] * 1.03, s.dir[2] * 1.03],
+    scale: (0.055 + s.sizeRoll * 0.05) * LIGHT_SCALE_MULT[variant],
+    cool: s.cool,
+  }));
 }
 
 /**

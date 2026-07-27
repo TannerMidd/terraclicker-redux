@@ -159,16 +159,59 @@ Two more renderer-adjacent laws, recorded beside Phase 2's: tier centres
 snap to the texel grid or a re-centre pops; and anything placed beyond the
 near tier judges water analytically or the rolling bake will embarrass it.
 
-## Phase 4 — record-driven settlements, installations, ecology
+## Phase 4 — record-driven settlements, installations, ecology (SHIPPED)
 
-`settlementSpots()` (SettledWorld.tsx) is already the orbital truth; project
-its planet-space spots into the landing frame and the settlement you saw as
-lights from orbit is the settlement you walk into. Standing drives liveliness;
-traits drive character; `record.installations` become walkable facilities;
-petition outcomes become physical details. Ecology in three levels — ambient
-instanced life, authored vignettes, civilization — all derived from planet
-facts, catalogued into `groundWorlds[key].species`. No NPC simulation;
-silhouettes, vehicles, drones and audio sell it within the frame budget.
+- **One truth for both scales** (`engine/settlements.ts`): the settlement
+  roster is planet-space directions, drawn from the orbit's ORIGINAL stream
+  (`seed ^ 0x11f5`, draw order sacred — dry spots have not moved by a roll)
+  and accepted against the transcribed macro field, so no light may promise
+  ground the sea owns. Shore-band spots are HARBOURS. The orbit component
+  (`SettledWorld.tsx`) now truncates this roster; standing truncates the
+  same prefix everywhere — lights out, never lights moved. Names come from
+  a separate stream (`Port Consequence`, `The Long Weekend`…), because a
+  name must never move a light.
+- **The landing knows the lights.** Settled worlds spin on screen with the
+  lights aboard, so `FocusedSystem` publishes each mesh's live spin
+  (`worldSpins`) and `commitGroundfall` un-rotates the approach (and the
+  sun) into the RECORD frame for delivered worlds — the ground you get is
+  the ground you were looking at. The offer names the aim
+  (`· the lights of Port Prudence below` / `· Port Prudence, dark, below`),
+  and the autoland's strongest opinion (`settlementApproach`) lands any
+  approach inside the snap cone (0.2 rad) on that settlement's one
+  deterministic doorstep pad. The snap cone dwarfs the sight radius, so
+  every visit to a settlement shares one landing frame: the same streets,
+  every time, which is what makes the local octaves' landing-seeded terrain
+  compatible with towns.
+- **Districts** (`surface/surfaceSettlements.ts`, drawn by
+  `Settlements.tsx`): structures are laid out in the SPOT's own planet-space
+  tangent frame and projected through `dirToLocal` per landing — habs on
+  radial rings facing the plaza, masts with pulsing beacons, a dome quarter,
+  stilts and decks wherever the waterline argues (a harbour town chose it).
+  Windows are the orbit's exact hexes, warm and cool; a dark district keeps
+  exactly one lamp burning. Standing drives liveliness (lit windows, drone
+  count, the civic hum); traits drive character (engineered sprawls,
+  neglected topples a mast, the well-attended fly banners, the storied get
+  an avenue); `record.installations` stand as facilities on the outer ring
+  (the seed probe on a plinth, the atmo processor's stacks, Deep Thought
+  still thinking); an open petition keeps scaffolding and a crane up.
+  Eleven instanced families, shared materials, no mounted lights.
+- **Ecology in three levels** (`content/groundSpecies.ts`): AMBIENT life
+  streams in hashed clusters around the walker (`Ecology.tsx` — grazers,
+  flocks, the glass shoal in the shallows; motion is a pure function of
+  (anchor, index, t), nothing simulated, grounded by whiteouts and storms);
+  VIGNETTES live on the coarse lattice (`surface/surfaceEcology.ts`,
+  `V{face}:{iu}:{iv}`, shore kinds probe the shore fan, dry kinds obey the
+  analytic water veto) — the grazer ring, the nesting colony, the ember
+  swarm; CIVIC species live where people do. Presence is planet fact (type ×
+  Bio gauge): a young commission is quiet and life arrives as Biotic climbs.
+- **The biologger** rides the existing instruments: the field pulse
+  catalogues ambient life and any vignette in range; walking up to a
+  vignette (46 m) or standing in a lit district (90 m) catalogues by eye.
+  First records on a world toast with the Guide's blurb. Banking rides the
+  same seal — `groundWorlds[key].species` (in the v23 schema since Phase 1)
+  records forever; `GROUND_SPECIES_BONUS` pays once per species per world,
+  inside `GROUND_WORLD_YIELD_CAP`; a naturalist's empty-handed landing
+  still banks its records.
 
 ## Phase 5 — mission families, Field Certifications, persistent outcomes
 
@@ -198,9 +241,11 @@ orbit. Prove the whole shape on one world before generalising.
 ## Verification conventions
 
 `npm test` (groundfall + ground-sites + weather + ground-landmarks + skimmer
-suites hold the promises above), `npm run build`, `npm run balance` after
-economy changes. Visual verification is headless: `scripts/shot.mjs` with the
-`__tcSurface` hooks (`gfscanall`, `gfverb:i`, `gfmine`, `gfstate`,
-`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`, and Phase 3's
-`gfskimmer:rank` + `gfskim:on|off`) — the Browser pane cannot composite this
-scene. Extend the hook object as each phase lands.
++ settlements + settlements-ground suites hold the promises above),
+`npm run build`, `npm run balance` after economy changes. Visual verification
+is headless: `scripts/shot.mjs` with the `__tcSurface` hooks (`gfscanall`,
+`gfverb:i`, `gfmine`, `gfstate`, `gfweather:kind`, `gfvisit`,
+`gfshore[:look]`, `gflandmarks`, Phase 3's `gfskimmer:rank` + `gfskim:on|off`,
+and Phase 4's `gfland:i` — land on the i-th landable body, settled worlds
+included — `gfsettle[:i]`, `gfspecies`, `gfcatalog`) — the Browser pane
+cannot composite this scene. Extend the hook object as each phase lands.

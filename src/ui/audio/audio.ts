@@ -416,6 +416,112 @@ export function surfaceWindStop(): void {
   windGain = null;
 }
 
+// ————— Settlements: somebody's power grid, audibly —————
+
+let townOscA: OscillatorNode | null = null;
+let townOscB: OscillatorNode | null = null;
+let townFilter: BiquadFilterNode | null = null;
+let townGain: GainNode | null = null;
+
+/**
+ * The civic hum: mains, climate plant, and a thousand small machines heard
+ * as one warm chord. Strength 0 parks it silent; the loop starts lazily and
+ * fades with distance from the lights (the caller does the geometry).
+ */
+export function settlementHumSet(strength: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  if (!townGain) {
+    townOscA = c.createOscillator();
+    townOscA.type = 'triangle';
+    townOscA.frequency.value = 92;
+    townOscB = c.createOscillator();
+    townOscB.type = 'triangle';
+    townOscB.frequency.value = 138;
+    townOscB.detune.value = 7;
+    townFilter = c.createBiquadFilter();
+    townFilter.type = 'lowpass';
+    townFilter.frequency.value = 340;
+    townFilter.Q.value = 0.7;
+    townGain = c.createGain();
+    townGain.gain.value = 0.0001;
+    townOscA.connect(townFilter);
+    townOscB.connect(townFilter);
+    townFilter.connect(townGain).connect(master);
+    townOscA.start();
+    townOscB.start();
+  }
+  const t = c.currentTime;
+  const k = Math.max(0, Math.min(1, strength));
+  townGain.gain.setTargetAtTime(k * 0.045, t, 0.8);
+  townFilter!.frequency.setTargetAtTime(280 + k * 260, t, 1.1);
+}
+
+export function settlementHumStop(): void {
+  if (!ctx || !townGain) return;
+  const t = ctx.currentTime;
+  townGain.gain.setTargetAtTime(0.0001, t, 0.4);
+  townOscA?.stop(t + 1.6);
+  townOscB?.stop(t + 1.6);
+  townOscA = null;
+  townOscB = null;
+  townFilter = null;
+  townGain = null;
+}
+
+// ————— Wildlife: the catalogue, audibly —————
+
+/**
+ * One creature saying one thing, once. Registers by level: ambient life
+ * chirps high and brief, vignette life calls lower and longer. Synthesized
+ * like everything else — no files, only opinions about frequencies.
+ */
+export function wildlifeCall(register: 'chirp' | 'call' | 'drone'): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  const g = c.createGain();
+  g.connect(master);
+  const o = c.createOscillator();
+  o.connect(g);
+  if (register === 'chirp') {
+    o.type = 'sine';
+    const f0 = 1900 + Math.random() * 900;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 1.5, t + 0.06);
+    o.frequency.exponentialRampToValueAtTime(f0 * 0.9, t + 0.14);
+    g.gain.setValueAtTime(0.028, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    o.start(t);
+    o.stop(t + 0.18);
+  } else if (register === 'call') {
+    o.type = 'triangle';
+    const f0 = 340 + Math.random() * 160;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.25, t + 0.35);
+    o.frequency.linearRampToValueAtTime(f0 * 0.8, t + 0.8);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.035, t + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+    o.start(t);
+    o.stop(t + 0.95);
+  } else {
+    o.type = 'sawtooth';
+    const f0 = 110 + Math.random() * 40;
+    o.frequency.setValueAtTime(f0, t);
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 320;
+    o.disconnect();
+    o.connect(lp).connect(g);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.03, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    o.start(t);
+    o.stop(t + 1.5);
+  }
+}
+
 // ————— Weather: the sky, audibly —————
 
 let rainSrc: AudioBufferSourceNode | null = null;

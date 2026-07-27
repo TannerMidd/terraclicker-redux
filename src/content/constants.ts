@@ -163,6 +163,10 @@ export const C = {
   /** One-time bonus per sample KIND first catalogued on a world — variety
    * pays; volume merely adds up. */
   GROUND_CATALOGUE_BONUS: 6,
+  /** One-time bonus per SPECIES first recorded on a world (Phase 4). Field
+   * biology pays a little better than field geology, because the rocks hold
+   * still. */
+  GROUND_SPECIES_BONUS: 9,
   /**
    * Lifetime salvage cap per world's ground. Seams deplete permanently, but a
    * planet has a lot of ground; the cap is what makes "strip-mine the same

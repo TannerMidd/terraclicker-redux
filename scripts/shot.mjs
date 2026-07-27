@@ -20,6 +20,9 @@
  * gfverb:i (choose the pick's meaning: 0 break · 1 core · 2 prospect · 3 preserve) |
  * gfweather:kind (pin the sky: rain fog storm dust whiteout ash tremor meteors clear) |
  * gflandmarks (log the region's landmark census) |
+ * gfsettle[:i] (stand at the i-th nearest settlement's edge, facing the plaza) |
+ * gfspecies (log districts, vignettes, ambient species and the stay's catalogue) |
+ * gfcatalog (catalogue everything the region offers — the biologger, hurried) |
  * gfboard (board the runabout and take off).
  * Prints console errors and the active render backend.
  */
@@ -205,6 +208,47 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'newseed') {
     await page.evaluate((n) => window.__tc.newUniverse(Number(n)), arg);
     await page.waitForTimeout(700);
+  } else if (kind === 'gfaimsettle') {
+    // gfaimsettle[:body,spot] — park over a settled world's roster spot in
+    // its CURRENT spin frame and commit in the same breath (the world turns
+    // faster than a polite pause). Body index counts landable bodies.
+    const [bIdx = '0', sIdx = '0'] = (arg || '').split(',');
+    const aimed = await page.evaluate(([b, s]) => {
+      const ok = window.__tcFlight.aimSettlement(Number(b), Number(s));
+      if (ok) window.__tcFlight.input.engage = true;
+      return ok;
+    }, [bIdx, sIdx]);
+    if (!aimed) errors.push(`gfaimsettle:${arg}: no roster spot to aim at`);
+    else console.log('gfaimsettle:', JSON.stringify(aimed));
+    await page.waitForTimeout(250);
+    await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+  } else if (kind === 'gfland' && arg) {
+    // gfland:i — park over the i-th LANDABLE body (0 = hero; revealed
+    // settled worlds follow) and press engage for real. The near-system
+    // must be revealed first (focus a world, then flight:on).
+    const landed = await page.evaluate((i) => {
+      const all = window.__tcFlight.bodies();
+      const landable = all.filter((b) => b.land);
+      const body = landable[Number(i)];
+      if (!body) return null;
+      window.__tcFlight.pose(
+        body.pos[0],
+        body.pos[1] + body.radius + 0.22,
+        body.pos[2],
+        0,
+        -0.6,
+      );
+      return { label: body.label, hero: body.land.hero };
+    }, arg);
+    if (!landed) {
+      errors.push(`gfland:${arg}: no such landable body (is the system revealed?)`);
+    } else {
+      console.log('gfland:', JSON.stringify(landed));
+      await page.waitForTimeout(500);
+      await page.evaluate(() => { window.__tcFlight.input.engage = true; });
+      await page.waitForTimeout(200);
+      await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+    }
   } else if (kind === 'gfland') {
     // Park the runabout just off the hero world and press engage for real:
     // the live frame loop sees the landing prompt and commits the groundfall.
@@ -337,6 +381,26 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'gflandmarks') {
     const list = await page.evaluate(() => window.__tcSurface.state()?.landmarks ?? []);
     console.log('gflandmarks:', JSON.stringify(list));
+  } else if (kind === 'gfsettle') {
+    const at = await page.evaluate((i) => window.__tcSurface.visitSettlement(Number(i || 0)), arg);
+    if (!at) errors.push('gfsettle: no settlement in this landing\'s sight');
+    else console.log('gfsettle:', JSON.stringify(at));
+    await page.waitForTimeout(500);
+  } else if (kind === 'gfspecies') {
+    const eco = await page.evaluate(() => {
+      const st = window.__tcSurface.state();
+      return {
+        settlements: st?.settlements ?? [],
+        vignettes: st?.vignettes ?? [],
+        ambient: st?.ambientSpecies ?? [],
+        seen: st?.speciesSeen ?? [],
+      };
+    });
+    console.log('gfspecies:', JSON.stringify(eco));
+  } else if (kind === 'gfcatalog') {
+    const seen = await page.evaluate(() => window.__tcSurface.catalogueAll());
+    console.log('gfcatalog:', JSON.stringify(seen));
+    await page.waitForTimeout(400);
   } else if (kind === 'gfvisit') {
     // gfvisit[:i] — stand a photographer's distance from the i-th (default
     // nearest) landmark and face it.

@@ -20,9 +20,12 @@ import {
   surfaceLive,
   surfaceProspects,
   surfaceSeamCensus,
+  surfaceSettlementList,
+  surfaceVignetteList,
   type MiningVerb,
 } from '../scene/surface/surfaceControl';
 import { LANDMARK_SIGHT_M } from '../scene/surface/surfaceLandmarks';
+import { SETTLEMENT_SIGHT_M } from '../scene/surface/surfaceSettlements';
 import {
   THERMAL_SHIP_RANGE_M,
   THERMAL_SKIMMER_RANGE_M,
@@ -71,7 +74,7 @@ interface CompassMark {
   /** World bearing, degrees, 0 = north. */
   deg: number;
   distM: number;
-  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal' | 'skimmer';
+  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal' | 'skimmer' | 'settlement' | 'life';
 }
 
 /** Bearing (deg, 0=N, 90=E) from the walker to a ground point. */
@@ -147,15 +150,33 @@ function compassMarks(): CompassMark[] {
       out.push({ key: l.id, deg: bearingTo(l.x, l.z), distM: dd, kind: 'landmark' });
     }
   }
+  // Settlements carry far: a town is the easiest thing on a world to find.
+  for (const sd of surfaceSettlementList()) {
+    out.push({ key: sd.id, deg: bearingTo(sd.x, sd.z), distM: distTo(sd.x, sd.z), kind: 'settlement' });
+  }
+  // Vignette life in sight — the biologger's marks.
+  for (const vg of surfaceVignetteList()) {
+    const dd = distTo(vg.x, vg.z);
+    if (dd <= LANDMARK_SIGHT_M) {
+      out.push({ key: vg.id, deg: bearingTo(vg.x, vg.z), distM: dd, kind: 'life' });
+    }
+  }
   return out;
 }
 
-/** The nearest named place in sight, for the line under the compass. */
+/** The nearest named place in sight, for the line under the compass. A
+ * settlement outranks scenery at equal distance — towns have addresses. */
 function nearestLandmark(): { name: string; distM: number } | null {
   let best: { name: string; distM: number } | null = null;
   for (const l of surfaceLandmarkList()) {
     const dd = distTo(l.x, l.z);
     if (dd <= LANDMARK_SIGHT_M && (!best || dd < best.distM)) best = { name: l.name, distM: dd };
+  }
+  for (const sd of surfaceSettlementList()) {
+    const dd = distTo(sd.x, sd.z);
+    if (dd <= SETTLEMENT_SIGHT_M && (!best || dd <= best.distM)) {
+      best = { name: sd.lit ? `the lights of ${sd.name}` : `${sd.name}, dark`, distM: dd };
+    }
   }
   return best;
 }
@@ -383,6 +404,8 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
   landmark: '⌖',
   thermal: '◉',
   skimmer: '▽',
+  settlement: '⌂',
+  life: '✳',
 };
 
 /**

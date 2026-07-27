@@ -46,6 +46,8 @@ import {
 } from './surfaceControl';
 import { SurfaceWeather } from './WeatherFX';
 import { Landmarks } from './Landmarks';
+import { Settlements } from './Settlements';
+import { Ecology } from './Ecology';
 import {
   buildTierTextures,
   createCloudDeckMaterial,
@@ -622,6 +624,8 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             <ImpactShards gravity={built.p.gravity} />
             <SurfaceWeather session={session} palette={palette} />
             <Landmarks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} />
+            <Settlements p={built.p} tiers={built.tiers} palette={palette} session={session} epoch={epoch} />
+            <Ecology p={built.p} tiers={built.tiers} palette={palette} bio={session.aspects.bio} epoch={epoch} />
 
             {shipPose && (
               <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>

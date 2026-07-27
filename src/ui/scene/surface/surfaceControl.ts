@@ -18,14 +18,18 @@ import { useUiBus, type GroundfallSession } from '../../fx/uiBus';
 import { actions, useGame } from '../../../state/store';
 import { flightPrefs } from '../flightBindings';
 import {
+  analyticHeight,
   buildSurfaceParams,
   bakeTierRows,
   buildNormalMap,
+  curvatureDrop,
+  dirToLocal,
   findDrySite,
   heightAt,
   groundNormalAt,
   makeTier,
   makeTierStream,
+  PLANET_RADIUS_M,
   smoothTier,
   streamBegin,
   streamCommit,
@@ -39,6 +43,22 @@ import {
 } from './terrainField';
 import { depositSites, SITE_FIELD_RADIUS_SKIM, type DepositSpec } from './surfaceSites';
 import { landmarkSites, type LandmarkSpec } from './surfaceLandmarks';
+import {
+  settlementApproach,
+  settlementPadCandidates,
+  settlementSpecOf,
+} from '../../../engine/settlements';
+import { settlementDistricts, type DistrictSpec } from './surfaceSettlements';
+import {
+  vignetteSites,
+  VIGNETTE_CATALOG_M,
+  type VignetteSpec,
+} from './surfaceEcology';
+import {
+  SPECIES_BY_ID,
+  speciesPresent,
+  type GroundSpeciesDef,
+} from '../../../content/groundSpecies';
 import { SAMPLE_BY_ID } from '../../../content/groundSamples';
 import { skimmerRank, surfaceScanRange } from '../../../engine/deepField';
 import {
@@ -272,6 +292,12 @@ export const surfaceLive = {
   /** Until this live.t, skimPrompt is a refusal note and must not be recomputed. */
   skimNoteUntil: 0,
 
+  // — the biologger (Phase 4) —
+  /** Species ids catalogued this stay; banked with the samples on boarding. */
+  speciesSeen: new Set<string>(),
+  /** Bumped when the catalogue grows; HUD and FX key off it. */
+  speciesNonce: 0,
+
   // — the rolling ground —
   /** Bumped when a tier re-centre commits; the scene re-seats and re-uploads. */
   terrainEpoch: 0,
@@ -298,6 +324,15 @@ let deposits: DepositSpec[] = [];
 let allSites: DepositSpec[] = [];
 /** The coarse lattice's memorable places for this region. */
 let landmarks: LandmarkSpec[] = [];
+/** Settlements of a delivered world within sight of this landing. */
+let settlements: DistrictSpec[] = [];
+/** The biology lattice's set-pieces for this region. */
+let vignettes: VignetteSpec[] = [];
+/** Species levels present at these gauges — ambient everywhere, civic in town. */
+let ambientSpecies: GroundSpeciesDef[] = [];
+let civicSpecies: GroundSpeciesDef[] = [];
+/** What the world's record had already catalogued when we landed. */
+let priorSpecies: Set<string> = new Set();
 /** What the save already knew about these sites when we landed. */
 let priorStates: Map<string, GroundSiteOutcome> = new Map();
 /** DEV harness only: pin the sky to a kind for visual verification. */
@@ -354,6 +389,18 @@ export function surfaceSeamCensus(): DepositSpec[] {
 export function surfaceLandmarkList(): readonly LandmarkSpec[] {
   return landmarks;
 }
+/** The delivered world's settlements in this landing's sight, projected. */
+export function surfaceSettlementList(): readonly DistrictSpec[] {
+  return settlements;
+}
+/** The region's living set-pieces — the biologger's marks. */
+export function surfaceVignetteList(): readonly VignetteSpec[] {
+  return vignettes;
+}
+/** Ambient species alive at these gauges (the background biology). */
+export function surfaceAmbientSpecies(): readonly GroundSpeciesDef[] {
+  return ambientSpecies;
+}
 /**
  * Sites standing as prospect markers: what earlier landings staked out, plus
  * whatever this stay has staked so far. The scene plants a marker on each —
@@ -377,15 +424,57 @@ export function beginGroundfall(s: GroundfallSession): void {
   const st = useGame.getState().s;
   heroLifetimeIndex = st.planet.lifetimeIndex;
 
-  // The autoland has opinions about setting down in the sea: it diverts to
-  // the nearest dry shelf, and the session records where it ACTUALLY landed
-  // so the return-to-orbit sits over the right spot.
+  // The autoland has opinions, in order of strength. An approach at a
+  // delivered world aimed inside a settlement's snap cone lands on that
+  // settlement's doorstep — the pad the offer advertised. The engine's
+  // candidates are macro-dry; the local octaves are seeded PER FRAME and
+  // can still sink a district bowl, so each candidate's own countryside is
+  // auditioned (analytically — no tiers exist yet) and the first frame
+  // that keeps the plaza out of the sea wins. Fixed order, first accept:
+  // a settlement has exactly one doorstep, forever.
+  // Everything else keeps the shoreline divert: if the sub-ship point is
+  // wet, spiral to the nearest dry shelf, and the session records where it
+  // ACTUALLY landed so the return-to-orbit sits over the right spot.
   const fjords = s.quirks.includes('award-winning-fjords') ? 1 : 0;
-  const dry = findDrySite(
-    { seed: s.seed, type: s.type, size: s.size, dir: s.dir, aspects: s.aspects, fjords },
-    DRY_DIR,
-  );
-  session = s = { ...s, dir: [dry.x, dry.y, dry.z] };
+  const approach = s.completed
+    ? settlementApproach(settlementSpecOf(s), s.dir, PLANET_RADIUS_M[s.size])
+    : null;
+  if (approach) {
+    const pads = settlementPadCandidates(
+      settlementSpecOf(s),
+      approach.spot,
+      PLANET_RADIUS_M[s.size],
+    );
+    let chosen = pads[pads.length - 1]!;
+    for (const pad of pads) {
+      const audition = buildSurfaceParams({
+        seed: s.seed,
+        type: s.type,
+        size: s.size,
+        dir: pad,
+        aspects: s.aspects,
+        fjords,
+      });
+      DRY_DIR.set(approach.spot.dir[0], approach.spot.dir[1], approach.spot.dir[2]);
+      dirToLocal(audition, DRY_DIR, PAD_LOCAL);
+      if (!Number.isFinite(PAD_LOCAL.x)) continue;
+      const ground =
+        analyticHeight(audition, PAD_LOCAL.x, PAD_LOCAL.z)
+        - curvatureDrop(audition, PAD_LOCAL.x, PAD_LOCAL.z);
+      // Deckable counts: a plaza a stilt-deck can carry is a harbour town.
+      if (ground > audition.seaLevelM - 1.2) {
+        chosen = pad;
+        break;
+      }
+    }
+    session = s = { ...s, dir: chosen };
+  } else {
+    const dry = findDrySite(
+      { seed: s.seed, type: s.type, size: s.size, dir: s.dir, aspects: s.aspects, fjords },
+      DRY_DIR,
+    );
+    session = s = { ...s, dir: [dry.x, dry.y, dry.z] };
+  }
 
   params = buildSurfaceParams({
     seed: s.seed,
@@ -400,7 +489,16 @@ export function beginGroundfall(s: GroundfallSession): void {
   deposits = [];
   allSites = [];
   landmarks = [];
+  settlements = [];
+  vignettes = [];
+  ambientSpecies = [];
+  civicSpecies = [];
   priorStates = new Map();
+  // The biologger arrives knowing what the world's record already holds, so
+  // a species catalogued years ago is a neighbour, not a headline.
+  priorSpecies = new Set(
+    Object.keys(st.expedition.groundWorlds[s.worldKey]?.species ?? {}),
+  );
 
   const live = surfaceLive;
   live.phase = 'entry';
@@ -438,6 +536,8 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.revealNonce = 0;
   live.wade = 0;
   live.wadeRefused = false;
+  live.speciesSeen.clear();
+  live.speciesNonce = 0;
   live.skimRank = skimmerRank(st.expedition);
   live.skimmerAt = null;
   live.skimSpeed = 0;
@@ -482,11 +582,18 @@ function bankSamples(): void {
   if (!s) return;
   const sites: Record<string, GroundSiteOutcome> = {};
   for (const [id, outcome] of surfaceLive.outcomes) sites[id] = outcome;
-  actions.bankGroundSamples(s.worldKey, s.name, [...surfaceLive.haul], sites);
+  actions.bankGroundSamples(
+    s.worldKey,
+    s.name,
+    [...surfaceLive.haul],
+    sites,
+    [...surfaceLive.speciesSeen],
+  );
   surfaceLive.samples = 0;
   surfaceLive.surveyCredit = 0;
   surfaceLive.haul = [];
   surfaceLive.outcomes.clear();
+  surfaceLive.speciesSeen.clear();
 }
 
 /** Hard exit — takeoff finished, or the session must end now. */
@@ -498,6 +605,11 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   deposits = [];
   allSites = [];
   landmarks = [];
+  settlements = [];
+  vignettes = [];
+  ambientSpecies = [];
+  civicSpecies = [];
+  priorSpecies = new Set();
   priorStates = new Map();
   weatherOverride = null;
   nearStream = null;
@@ -557,6 +669,15 @@ function stepGeneration(): number {
       );
       // The coarse lattice: the region's memorable places.
       landmarks = landmarkSites(params, tiers, session?.quirks ?? []);
+      // A delivered world's settlements, projected from the roster the
+      // orbit lights read — the lights you saw are the places you get.
+      settlements = session ? settlementDistricts(params, tiers, session) : [];
+      // The living catalogue: what these gauges support, and where the
+      // set-pieces stand. A young commission is quiet; Bio fills the air.
+      const bio = session?.aspects.bio ?? 0;
+      vignettes = session ? vignetteSites(params, tiers, bio) : [];
+      ambientSpecies = session ? speciesPresent(session.type, bio, 'ambient') : [];
+      civicSpecies = session ? speciesPresent(session.type, bio, 'civic') : [];
       bakeCursor.normals = true;
       surfaceLive.ready = true;
     } else {
@@ -688,6 +809,7 @@ const WISH = new Vector3();
 const NORMAL = new Vector3();
 const TO_TARGET = new Vector3();
 const DRY_DIR = new Vector3();
+const PAD_LOCAL = { x: 0, z: 0 };
 
 function smooth01(x: number): number {
   const k = Math.max(0, Math.min(1, x));
@@ -712,6 +834,85 @@ function rebuildWorkableField(): void {
 /** Seconds between outlook refreshes — a forecast is not a per-frame need. */
 const OUTLOOK_EVERY_S = 5;
 let outlookAt = -100;
+
+// ————— The biologger (Phase 4) —————
+
+/** Standing this close to a lit district catalogues its civic species. */
+const CIVIC_CATALOG_M = 90;
+/** Seconds between proximity sweeps — biology is patient. */
+const ECOLOGY_EVERY_S = 0.5;
+let ecologyAt = -100;
+
+/**
+ * Enter species into the stay's catalogue. New-to-this-world entries get a
+ * word and a voice; everything else is quietly noted for the record.
+ */
+function catalogueSpecies(ids: readonly string[]): void {
+  const live = surfaceLive;
+  const fresh: string[] = [];
+  for (const id of ids) {
+    if (live.speciesSeen.has(id)) continue;
+    live.speciesSeen.add(id);
+    if (!priorSpecies.has(id)) fresh.push(id);
+  }
+  if (fresh.length === 0) return;
+  live.speciesNonce++;
+  const first = SPECIES_BY_ID[fresh[0]!];
+  if (first) audio.wildlifeCall(first.register);
+  useUiBus.getState().addToast({
+    kind: 'info',
+    kicker: 'FIELD BIOLOGY',
+    title:
+      fresh.length === 1
+        ? `${first?.name ?? fresh[0]} · first record on this world`
+        : `${fresh.length} species · first records on this world`,
+    body:
+      fresh.length === 1
+        ? first?.blurb ?? ''
+        : fresh.map((id) => SPECIES_BY_ID[id]?.name ?? id).join(' · '),
+    ttlMs: 5600,
+  });
+}
+
+/**
+ * The walk-up half of field biology: a vignette you can plainly see, and a
+ * lit settlement you are standing in, catalogue themselves. Throttled — the
+ * biologger checks its instruments twice a second, which is already keen.
+ */
+function stepEcology(): void {
+  const live = surfaceLive;
+  if (live.t - ecologyAt < ECOLOGY_EVERY_S) return;
+  ecologyAt = live.t;
+  for (const vg of vignettes) {
+    if (live.speciesSeen.has(vg.kind)) continue;
+    const dd = Math.hypot(vg.x - live.pos.x, vg.z - live.pos.z);
+    if (dd <= VIGNETTE_CATALOG_M) catalogueSpecies([vg.kind]);
+  }
+  if (civicSpecies.length > 0) {
+    for (const sd of settlements) {
+      if (!sd.lit) continue;
+      const dd = Math.hypot(sd.x - live.pos.x, sd.z - live.pos.z);
+      if (dd <= CIVIC_CATALOG_M) {
+        catalogueSpecies(civicSpecies.map((s) => s.id));
+        break;
+      }
+    }
+  }
+}
+
+/** The pulse's biologger sweep: ambient life answers everywhere it exists;
+ * vignettes answer from inside the pulse radius, like every other site. */
+function pulseEcology(rangeM: number): void {
+  const live = surfaceLive;
+  const ids: string[] = ambientSpecies.map((s) => s.id);
+  const r2 = rangeM * rangeM;
+  for (const vg of vignettes) {
+    const dx = vg.x - live.pos.x;
+    const dz = vg.z - live.pos.z;
+    if (dx * dx + dz * dz <= r2) ids.push(vg.kind);
+  }
+  catalogueSpecies(ids);
+}
 
 /** Evaluate the sky for this frame: snapshot, latch, shake, forecast. */
 function stepWeather(gameTimeMs: number): void {
@@ -828,11 +1029,13 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
     case 'walk': {
       stepWalk(dt);
       stepTierStreams();
+      stepEcology();
       break;
     }
     case 'skim': {
       stepSkim(dt);
       stepTierStreams();
+      stepEcology();
       break;
     }
     case 'takeoff': {
@@ -1029,6 +1232,8 @@ function stepTierStreams(): void {
       const which = active === nearStream ? 'near' : 'far';
       for (const d of allSites) d.y = heightAt(p, tr, d.x, d.z);
       for (const l of landmarks) l.y = heightAt(p, tr, l.x, l.z);
+      for (const sd of settlements) sd.y = heightAt(p, tr, sd.x, sd.z);
+      for (const vg of vignettes) vg.y = heightAt(p, tr, vg.x, vg.z);
       // A standing walker stays standing: where near detail arrives under
       // your boots the floor can step, and a step is worn as a step — not
       // as two seconds of surprised freefall (or a burial). Jumps keep
@@ -1271,6 +1476,7 @@ function stepSkimWork(dt: number): void {
         const dz = d.z - live.pos.z;
         if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
       }
+      pulseEcology(live.scanRangeNow);
       live.scanNonce++;
       audio.subEthaBlip(true);
     }
@@ -1464,6 +1670,8 @@ function stepWork(dt: number): void {
   // held breath and every site within range reports to the compass. The
   // range is the weather's to bend — dust chokes it, storms feed it — and
   // buried seams answer no pulse until the dust has moved them into the sun.
+  // The biologger rides the same pulse: ambient life answers wherever it
+  // lives, vignettes answer from inside the radius.
   if (surfaceInput.engage) {
     live.scanning = true;
     live.scanCharge += dt / FIELD_SCAN_SECONDS;
@@ -1476,6 +1684,7 @@ function stepWork(dt: number): void {
         const dz = d.z - live.pos.z;
         if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
       }
+      pulseEcology(live.scanRangeNow);
       live.scanNonce++;
       audio.subEthaBlip(true);
     }
@@ -1615,6 +1824,15 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       landmarks: landmarks.map((l) => ({
         id: l.id, kind: l.kind, name: l.name, x: l.x, y: l.y, z: l.z,
       })),
+      settlements: settlements.map((sd) => ({
+        id: sd.id, name: sd.name, x: sd.x, y: sd.y, z: sd.z,
+        lit: sd.lit, harbor: sd.harbor,
+      })),
+      vignettes: vignettes.map((vg) => ({
+        id: vg.id, kind: vg.kind, name: vg.name, x: vg.x, y: vg.y, z: vg.z,
+      })),
+      ambientSpecies: ambientSpecies.map((sp) => sp.id),
+      speciesSeen: [...surfaceLive.speciesSeen],
       skimRank: surfaceLive.skimRank,
       skimmerAt: surfaceLive.skimmerAt ? { ...surfaceLive.skimmerAt } : null,
       skimSpeed: surfaceLive.skimSpeed,
@@ -1666,6 +1884,35 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
     heightAt: (x: number, z: number) =>
       params && tiers ? heightAt(params, tiers, x, z) : null,
     board: () => beginTakeoff(),
+    /** Teleport a photographer's distance from the i-th nearest settlement. */
+    visitSettlement: (i = 0) => {
+      if (!params || !tiers || settlements.length === 0) return null;
+      const sorted = [...settlements].sort(
+        (a, b) =>
+          Math.hypot(a.x - surfaceLive.pos.x, a.z - surfaceLive.pos.z)
+          - Math.hypot(b.x - surfaceLive.pos.x, b.z - surfaceLive.pos.z),
+      );
+      const sd = sorted[Math.max(0, Math.min(sorted.length - 1, i | 0))]!;
+      const dx = surfaceLive.pos.x - sd.x;
+      const dz = surfaceLive.pos.z - sd.z;
+      const dd = Math.hypot(dx, dz) || 1;
+      const px = sd.x + (dx / dd) * 70;
+      const pz = sd.z + (dz / dd) * 70;
+      surfaceLive.pos.set(px, heightAt(params, tiers, px, pz) + EYE, pz);
+      surfaceLive.yaw = Math.atan2(-(sd.x - px), -(sd.z - pz));
+      surfaceLive.pitch = -0.02;
+      surfaceLive.vel.set(0, 0, 0);
+      return { id: sd.id, name: sd.name, lit: sd.lit };
+    },
+    /** Catalogue everything the region offers, instruments be damned. */
+    catalogueAll: () => {
+      catalogueSpecies([
+        ...ambientSpecies.map((sp) => sp.id),
+        ...vignettes.map((vg) => vg.kind),
+        ...(settlements.some((sd) => sd.lit) ? civicSpecies.map((sp) => sp.id) : []),
+      ]);
+      return [...surfaceLive.speciesSeen];
+    },
     /** DEV: write a skimmer rank straight into the expedition (and the stay). */
     grantSkimmer: (rank: number) => {
       const st = useGame.getState().s;

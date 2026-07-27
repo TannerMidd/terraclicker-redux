@@ -577,6 +577,8 @@ export type Input =
       haul: SampleHaul[];
       /** Site id → what happened there this stay. */
       sites: Record<string, GroundSiteOutcome>;
+      /** Species the biologger catalogued this stay (Phase 4). */
+      species?: string[];
     }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
@@ -640,6 +642,8 @@ export type SimEffect =
       firstSurvey: boolean;
       /** Sample kinds this world had never produced before this landing. */
       newKinds: string[];
+      /** Species first recorded on this world this landing (Phase 4). */
+      newSpecies: string[];
       /** True when the world's lifetime yield cap trimmed the payout. */
       capped: boolean;
     }

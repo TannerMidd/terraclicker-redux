@@ -26,7 +26,7 @@ import {
   systemOrbitOffset,
 } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { worldAnchors } from '../navControl';
+import { worldAnchors, worldSpins } from '../navControl';
 import { useLamp } from '../SceneLamps';
 import {
   focusOn,
@@ -137,11 +137,18 @@ function VisitWorld({
     [record, isCloseup],
   );
   const material = useMemo(() => settledMaterial(record), [record]);
-  // Publish this world's exact position for the camera to descend onto.
+  // Publish this world's exact position for the camera to descend onto, and
+  // its live spin for the landing to un-rotate (the lights turn with the
+  // mesh; a groundfall must know how far the world had turned when the
+  // pilot committed, or the settlement it promises drifts off the map).
   useEffect(() => {
     worldAnchors.set(globalIndex, new Vector3());
-    return () => void worldAnchors.delete(globalIndex);
-  }, [globalIndex]);
+    worldSpins.set(record.lifetimeIndex, 0);
+    return () => {
+      worldAnchors.delete(globalIndex);
+      worldSpins.delete(record.lifetimeIndex);
+    };
+  }, [globalIndex, record.lifetimeIndex]);
   const size = detailWorldRadius(record.size);
 
   useFrame((state) => {
@@ -156,7 +163,10 @@ function VisitWorld({
     group.scale.setScalar(size);
     const anchor = worldAnchors.get(globalIndex);
     if (anchor) group.getWorldPosition(anchor);
-    if (planet.current) planet.current.rotation.y = universeMotion.reduced ? 0 : t * 0.35;
+    if (planet.current) {
+      planet.current.rotation.y = universeMotion.reduced ? 0 : t * 0.35;
+      worldSpins.set(record.lifetimeIndex, planet.current.rotation.y);
+    }
     if (heritageRing.current && !universeMotion.reduced) {
       heritageRing.current.rotation.z = slot * 0.7 - t * 0.16;
     }

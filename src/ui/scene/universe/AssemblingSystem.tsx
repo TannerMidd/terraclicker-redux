@@ -29,6 +29,7 @@ import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
 import { useLamp } from '../SceneLamps';
 import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
+import { worldSpins } from '../navControl';
 import { sharedBasicMaterial } from './pool';
 
 /** The tilted circular orbit path a slot's world actually follows.
@@ -66,6 +67,14 @@ function MiniWorld({
   const target = useMemo(() => new Vector3(), []);
   const size = detailWorldRadius(record.size);
 
+  // These worlds are landable from the helm, and their lights ride the
+  // spinning mesh — publish the spin exactly as FocusedSystem does, so a
+  // groundfall can un-rotate its approach into the record's frame.
+  useEffect(() => {
+    worldSpins.set(record.lifetimeIndex, 0);
+    return () => void worldSpins.delete(record.lifetimeIndex);
+  }, [record.lifetimeIndex]);
+
   useFrame((state) => {
     const group = root.current;
     if (!group) return;
@@ -75,7 +84,10 @@ function MiniWorld({
     // departs from the pose the helm targets and collides with.
     group.position.copy(target);
     group.scale.setScalar(size);
-    if (mesh.current) mesh.current.rotation.y = t * 0.3;
+    if (mesh.current) {
+      mesh.current.rotation.y = t * 0.3;
+      worldSpins.set(record.lifetimeIndex, mesh.current.rotation.y);
+    }
   });
 
   return (

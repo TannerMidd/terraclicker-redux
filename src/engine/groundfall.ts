@@ -48,7 +48,8 @@ export function groundReturnValue(
   worldKey: string,
   haul: readonly SampleHaul[],
   preserved = 0,
-): { salvage: number; firstSurvey: boolean; newKinds: string[]; capped: boolean } {
+  species: readonly string[] = [],
+): { salvage: number; firstSurvey: boolean; newKinds: string[]; newSpecies: string[]; capped: boolean } {
   // A survey is a real piece of work: enough attention paid to say something
   // about the world, banked in one landing. Precision cores count double;
   // a seam deliberately preserved counts too.
@@ -59,11 +60,13 @@ export function groundReturnValue(
     state.expedition.groundWorlds[worldKey],
     haul,
     firstSurvey ? C.GROUND_SURVEY_BONUS : 0,
+    species,
   );
   return {
     salvage: value.salvage,
     firstSurvey,
     newKinds: value.newKinds,
+    newSpecies: value.newSpecies,
     capped: value.capped,
   };
 }
@@ -81,6 +84,7 @@ export function bankGroundSamples(
   worldName: string,
   haul: readonly SampleHaul[],
   sites: Record<string, GroundSiteOutcome> = {},
+  species: readonly string[] = [],
 ): void {
   const record = ensureGroundWorld(state, worldKey);
   record.visits += 1;
@@ -88,7 +92,7 @@ export function bankGroundSamples(
   const cleaned = haul.filter((h) => h.n > 0);
   const outcomes = Object.entries(sites);
   const preserved = outcomes.filter(([, o]) => o === 'preserved').length;
-  const value = groundReturnValue(state, worldKey, cleaned, preserved);
+  const value = groundReturnValue(state, worldKey, cleaned, preserved, species);
 
   for (const [siteId, outcome] of outcomes) {
     recordSiteOutcome(record, siteId, outcome, state.gameTimeMs);
@@ -96,14 +100,19 @@ export function bankGroundSamples(
   for (const h of cleaned) {
     if (record.samples[h.kind] === undefined) record.samples[h.kind] = state.gameTimeMs;
   }
+  // The catalogue remembers every species seen, paid or not — the record is
+  // the point; the bonus is merely the record being worth keeping.
+  for (const id of species) {
+    if (record.species[id] === undefined) record.species[id] = state.gameTimeMs;
+  }
 
   const n = cleaned.reduce((sum, h) => sum + h.n, 0);
-  if (n <= 0 && !value.firstSurvey && outcomes.length === 0) return;
+  if (n <= 0 && !value.firstSurvey && outcomes.length === 0 && value.newSpecies.length === 0) return;
 
   state.expedition.salvage += value.salvage;
   record.salvagePaid += value.salvage;
   if (value.firstSurvey) record.surveyedAtMs = state.gameTimeMs;
-  if (n <= 0 && !value.firstSurvey) return;
+  if (n <= 0 && !value.firstSurvey && value.newSpecies.length === 0) return;
 
   effects.push({
     t: 'groundReturn',
@@ -113,6 +122,7 @@ export function bankGroundSamples(
     salvage: value.salvage,
     firstSurvey: value.firstSurvey,
     newKinds: value.newKinds,
+    newSpecies: value.newSpecies,
     capped: value.capped,
   });
 }

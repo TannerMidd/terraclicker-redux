@@ -113,18 +113,22 @@ export interface GroundYield {
   rawSalvage: number;
   /** Kinds this world has never produced before (catalogue bonus each). */
   newKinds: string[];
+  /** Species this world has never recorded before (species bonus each). */
+  newSpecies: string[];
   capped: boolean;
 }
 
 /**
  * What a haul is worth on this world: per-kind salvage plus a one-time
- * catalogue bonus per new kind, clamped to the world's remaining yield.
+ * catalogue bonus per new kind, plus a one-time record bonus per new
+ * species the biologger noticed, clamped to the world's remaining yield.
  * Pure — call it before mutating anything, including for the HUD.
  */
 export function groundYield(
   record: GroundWorldRecord | undefined,
   haul: readonly SampleHaul[],
   surveyBonus: number,
+  species: readonly string[] = [],
 ): GroundYield {
   let raw = surveyBonus;
   const newKinds: string[] = [];
@@ -138,7 +142,13 @@ export function groundYield(
     if (catalogued[h.kind] === undefined && !newKinds.includes(h.kind)) newKinds.push(h.kind);
   }
   raw += newKinds.length * C.GROUND_CATALOGUE_BONUS;
+  const newSpecies: string[] = [];
+  const known = record?.species ?? {};
+  for (const id of species) {
+    if (known[id] === undefined && !newSpecies.includes(id)) newSpecies.push(id);
+  }
+  raw += newSpecies.length * C.GROUND_SPECIES_BONUS;
   const remaining = Math.max(0, C.GROUND_WORLD_YIELD_CAP - (record?.salvagePaid ?? 0));
   const salvage = Math.min(raw, remaining);
-  return { salvage, rawSalvage: raw, newKinds, capped: salvage < raw };
+  return { salvage, rawSalvage: raw, newKinds, newSpecies, capped: salvage < raw };
 }

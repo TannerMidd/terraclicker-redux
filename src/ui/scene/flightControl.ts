@@ -92,6 +92,16 @@ import { openRequestsAt } from '../../engine/bridge';
 import { standingOf } from '../../engine/situations';
 import { worldRecord, worldTraits } from '../../engine/worldRecords';
 import { beginGroundfall, entryProgress, stepSurface, surfaceLive } from './surface/surfaceControl';
+import {
+  SETTLEMENT_CLOSEUP_MULT,
+  settlementApproach,
+  settlementCharacter,
+  settlementRoster,
+  settlementShownCount,
+  settlementSpecOf,
+} from '../../engine/settlements';
+import { PLANET_RADIUS_M } from './surface/terrainField';
+import { worldSpins } from './navControl';
 import type { GroundfallSession } from '../fx/uiBus';
 
 // ————— Tuning —————
@@ -1117,8 +1127,12 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
 
       // The same weather function the ground runs, asked about the ground
       // under the nose — a front over the site is worth a word on the offer,
-      // because a pilot who can see the storm can choose it.
+      // because a pilot who can see the storm can choose it. Delivered
+      // worlds spin on screen, so the question is asked in the RECORD frame
+      // (the ground that is actually under the nose), not the world frame.
       const land = landBody.land;
+      const spinNow = land.hero ? 0 : (worldSpins.get(land.lifetimeIndex) ?? 0);
+      OFFER_DIR.copy(TMP).applyAxisAngle(Y_AXIS, -spinNow);
       const wAspects = land.hero
         ? {
             thermal: Math.min(1, st.planet.gauges.thermal.div(st.planet.targets.thermal).toNumber()),
@@ -1128,13 +1142,47 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
           }
         : { thermal: 1, atmo: 1, hydro: 1, bio: 1 };
       const siteWx = weatherAt(
-        { seed: land.seed, type: land.type, aspects: wAspects, dir: [TMP.x, TMP.y, TMP.z] },
+        { seed: land.seed, type: land.type, aspects: wAspects, dir: [OFFER_DIR.x, OFFER_DIR.y, OFFER_DIR.z] },
         st.gameTimeMs,
       );
       const wxNote =
         siteWx.kind !== 'clear' && siteWx.intensity >= 0.3
           ? ` · ${WEATHER_LABEL[siteWx.kind]} below`
           : '';
+
+      // An approach aimed at a settlement says so on the offer — the same
+      // snap cone the autoland will honour, so the console never advertises
+      // a doorstep the descent then declines to find.
+      let setNote = '';
+      if (!land.hero) {
+        const record = st.run.completedPlanets.find(
+          (w) => w.lifetimeIndex === land.lifetimeIndex,
+        );
+        if (record) {
+          const app = settlementApproach(
+            settlementSpecOf(record),
+            [OFFER_DIR.x, OFFER_DIR.y, OFFER_DIR.z],
+            PLANET_RADIUS_M[land.size],
+          );
+          if (app) {
+            const standing = standingOf(st, land.lifetimeIndex);
+            const life = worldRecord(st, land.lifetimeIndex);
+            const roster = settlementRoster(settlementSpecOf(record));
+            const lit =
+              app.spot.index
+              < settlementShownCount(
+                roster.length,
+                record,
+                SETTLEMENT_CLOSEUP_MULT,
+                settlementCharacter(life ? worldTraits(life, standing) : []),
+                standing,
+              );
+            setNote = lit
+              ? ` · the lights of ${app.spot.name} below`
+              : ` · ${app.spot.name}, dark, below`;
+          }
+        }
+      }
 
       if (entryArm > 0) {
         f.prompt = {
@@ -1143,7 +1191,11 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
           hold: false,
         };
       } else {
-        f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}${wxNote}`, hold: false };
+        f.prompt = {
+          verb: 'land',
+          label: `make groundfall on ${landBody.land.name}${setNote}${wxNote}`,
+          hold: false,
+        };
       }
       if (!f.paused && (engagePressed || entryArm >= ENTRY_ARM_SECONDS)) {
         entryArm = 0;
@@ -1174,6 +1226,8 @@ let entryArm = 0;
 
 /** Scene context of the active descent, kept out of the serializable session. */
 let entryBody: FlightBody | null = null;
+const Y_AXIS = new Vector3(0, 1, 0);
+const OFFER_DIR = new Vector3();
 const ENTRY_DIR = new Vector3();
 const ENTRY_START = new Vector3();
 const ENTRY_CENTER = new Vector3();
@@ -1199,10 +1253,19 @@ function commitGroundfall(body: FlightBody): void {
   entryBody = body;
   entryRadius = body.radius;
 
+  // A delivered world's mesh spins with its lights aboard; its record does
+  // not. Un-rotate the approach (and the sun) into the record's frame, so
+  // the terrain, weather and settlements the ground builds are the ones the
+  // pilot was looking at when they committed. The hero world keeps Phase 2's
+  // convention untouched: world-frame truth, clouds counter-rotated. The
+  // dive cinematic and the return pose stay in WORLD frame (ENTRY_DIR) —
+  // they belong to the scene the camera is in, not to the record.
+  const spin = land.hero ? 0 : (worldSpins.get(land.lifetimeIndex) ?? 0);
+  const up = new Vector3().copy(ENTRY_DIR).applyAxisAngle(Y_AXIS, -spin).normalize();
+
   // The landing frame: east/up/north exactly as terrainField will derive it,
   // so a sun expressed here rises where the ground expects it.
-  const up = ENTRY_DIR;
-  const east = TMP.set(0, 1, 0).cross(up);
+  const east = new Vector3(0, 1, 0).cross(up);
   if (east.lengthSq() < 1e-6) east.set(1, 0, 0).cross(up);
   east.normalize();
   const north = new Vector3().crossVectors(up, east).normalize();
@@ -1210,6 +1273,7 @@ function commitGroundfall(body: FlightBody): void {
   const sunWorld = land.starSeat
     ? new Vector3().copy(land.starSeat).sub(ENTRY_CENTER).normalize()
     : new Vector3(SUN_DIR[0], SUN_DIR[1], SUN_DIR[2]).normalize();
+  sunWorld.applyAxisAngle(Y_AXIS, -spin);
   const sunLocal: [number, number, number] = [
     sunWorld.dot(east),
     sunWorld.dot(up),
@@ -1226,9 +1290,12 @@ function commitGroundfall(body: FlightBody): void {
     : { thermal: 1, atmo: 1, hydro: 1, bio: 1 };
 
   // Where the runabout reappears: parked in low orbit over the site, facing
-  // the horizon rather than the ground it just left.
-  ENTRY_TANGENT.copy(north);
-  const returnPos = new Vector3().copy(ENTRY_CENTER).addScaledVector(up, entryRadius + 0.55);
+  // the horizon rather than the ground it just left. World frame — this is
+  // a flight pose, and the flight scene never learned the record's.
+  ENTRY_TANGENT.set(0, 1, 0).cross(ENTRY_DIR);
+  if (ENTRY_TANGENT.lengthSq() < 1e-6) ENTRY_TANGENT.set(1, 0, 0).cross(ENTRY_DIR);
+  ENTRY_TANGENT.normalize().crossVectors(ENTRY_DIR, ENTRY_TANGENT).normalize();
+  const returnPos = new Vector3().copy(ENTRY_CENTER).addScaledVector(ENTRY_DIR, entryRadius + 0.55);
   const returnYaw = Math.atan2(-ENTRY_TANGENT.x, -ENTRY_TANGENT.z);
   const returnPitch = -0.08;
 
@@ -2731,6 +2798,37 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       beginFlightAt(TMP.set(x, y, z), yaw, pitch);
       return flightLive.pos.toArray();
     },
+    /**
+     * Park directly over a settled world's roster spot, in the mesh's
+     * CURRENT spin frame (headless verification). Returns null when the
+     * body has no record or the roster is empty. Press engage in the same
+     * breath — the world turns 0.35 rad/s and the snap cone is 0.2.
+     */
+    aimSettlement: (bodyIdx: number, spotIdx = 0) => {
+      const landable = bodies.filter((b) => b.land);
+      const body = landable[bodyIdx];
+      if (!body?.land || body.land.hero) return null;
+      const st = useGame.getState().s;
+      const rec = st.run.completedPlanets.find(
+        (w) => w.lifetimeIndex === body.land!.lifetimeIndex,
+      );
+      if (!rec) return null;
+      const roster = settlementRoster(settlementSpecOf(rec));
+      const spot = roster[spotIdx];
+      if (!spot) return null;
+      const spin = worldSpins.get(body.land.lifetimeIndex) ?? 0;
+      const dir = new Vector3(spot.dir[0], spot.dir[1], spot.dir[2]).applyAxisAngle(
+        Y_AXIS,
+        spin,
+      );
+      bodyPosition(body, flightLive.clock, TMP);
+      const pos = TMP.clone().addScaledVector(dir, body.radius + 0.22);
+      const fwd = dir.clone().multiplyScalar(-1);
+      const yaw = Math.atan2(-fwd.x, -fwd.z);
+      const pitch = Math.asin(Math.max(-1, Math.min(1, fwd.y)));
+      beginFlightAt(pos, yaw, pitch);
+      return { name: spot.name, index: spot.index, spin };
+    },
     /** Park the runabout beside a landmark (headless verification). */
     goto: (id: string) => {
       const site = sitesForSeed(useGame.getState().s.seed).find((s) => s.def.id === id);
@@ -2745,6 +2843,9 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
         label: b.label,
         radius: b.radius,
         pos: bodyPosition(b, flightLive.clock, TMP).toArray(),
+        land: b.land
+          ? { hero: b.land.hero, name: b.land.name, lifetimeIndex: b.land.lifetimeIndex }
+          : null,
       })),
   };
 }

@@ -14,6 +14,16 @@ import { Vector3 } from 'three/webgpu';
  */
 export const worldAnchors = new Map<number, Vector3>();
 
+/**
+ * Live spin (rotation.y, radians) of each settled world's planet mesh,
+ * written by FocusedSystem beside the anchors. Keyed by LIFETIME INDEX —
+ * the key a landing carries. The settlement lights ride the spinning mesh,
+ * so a groundfall on a delivered world must un-spin its approach direction
+ * into the record's own frame or the pilot lands beside the lights they
+ * aimed at, which is the sort of thing people write in to complain about.
+ */
+export const worldSpins = new Map<number, number>();
+
 export const navLive = {
   /** Orbit target angles (radians), written by input, chased by the camera. */
   tYaw: 0,
