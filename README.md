@@ -2,14 +2,30 @@
 
 > Terraform the cosmos one click at a time. Mostly harmless.
 
-A Hitchhiker-flavored incremental game where the cookie is a planet. Click it, industrialize
-it, watch ice caps recede and oceans rise and city lights wake on the night side — then
-finish it, and a stranger world drifts in. Five planets form a system, five systems a
-galaxy, and when Magrathea reopens, you sell the whole portfolio to the mice and start
+## ▶ [Play it, free, in your browser](https://tannermidd.github.io/terraclicker-redux/play/)
+
+You are very welcome here. There is no account to make, nothing to install, no ads, no
+premium currency and nothing to unsubscribe from afterwards — you click the link, a planet
+turns up, and the rest is between the two of you. Your save lives in your own browser and
+can be exported as a string whenever you want to carry a run to another machine. Desktop
+and phone both work.
+
+If you'd rather know what you're agreeing to first, the
+[front page](https://tannermidd.github.io/terraclicker-redux/) explains the game before you
+commit an evening to it.
+
+---
+
+A Hitchhiker-flavored incremental game about terraforming planets to order. Click a world,
+industrialize it, and watch ice caps recede, oceans rise and city lights wake on the night
+side — then finish it, and a stranger world drifts in. Five planets make a system, five
+systems a galaxy. Nothing you finish is thrown away: take the runabout out and every world
+you delivered is still in its orbit, close enough to fly to and solid enough to land on and
+walk around. When Magrathea reopens, you sell the whole portfolio to the mice and start
 again, richer in Blueprints.
 
 Built to the specs in [DESIGN.md](DESIGN.md), [docs/ART_DIRECTION.md](docs/ART_DIRECTION.md),
-and [docs/PROGRESSION.md](docs/PROGRESSION.md).
+[docs/PROGRESSION.md](docs/PROGRESSION.md) and [docs/EXPEDITIONS.md](docs/EXPEDITIONS.md).
 
 ## Showcase
 
@@ -27,6 +43,8 @@ and [docs/PROGRESSION.md](docs/PROGRESSION.md).
 | *Scroll out: every world you finished is still there — orbiting its star, forming systems, running freighter routes.* | *Twenty-five worlds later, a galaxy swallows its five systems and starts to turn.* |
 | ![At the helm](docs/screenshots/09-flight.png) | ![A Deep Field contact](docs/screenshots/10-deep-field.png) |
 | *Press `F` and the camera becomes the company runabout. Nothing out here is staged for you.* | *A Deep Field landmark, scanned. It was here before you and is unmoved by the commission.* |
+| ![Groundfall](docs/screenshots/11-groundfall.png) | ![A settlement at dusk](docs/screenshots/12-settlement.png) |
+| *Boots on a world you finished. One unit is one metre, and the coastline is the one you watched fill from orbit.* | *Port Correction, 105 m off. The lights you saw on the night side turn out to be somewhere.* |
 
 ## Run it
 
