@@ -1,46 +1,87 @@
 /**
- * Publish the assembled site/ to the public playable-build repo (GitHub Pages).
- * Usage: npm run deploy  (builds + assembles first, then syncs, commits, pushes)
+ * Deploy = push main and prove it went live.
  *
- * site/ is the landing page at the root with the game under /play/ — see
- * scripts/assemble-site.mjs, which owns that layout.
+ * Pages builds FROM SOURCE via .github/workflows/deploy.yml (workflow mode);
+ * there is no build-output branch any more — `main` is the source of truth
+ * and the only branch. This script exists so `npm run deploy` still means
+ * "make it live and verify it", not "push and hope":
  *
- * Keeps a shallow working clone in .deploy-pages/ (gitignored). Only build
- * output ships — the source tree never leaves this machine.
+ *   1. refuse to deploy a dirty tree or a branch that is not main
+ *   2. push
+ *   3. watch the workflow run to completion
+ *   4. poll the live game until it serves the same bundle hash `npm run
+ *      site` just built locally — the proof the new build is what's live
+ *
+ * `npm run deploy` runs the local site build first, which catches build and
+ * test errors before anything is pushed and provides the hash for step 4.
  */
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const REPO = 'https://github.com/TannerMidd/terraclicker-redux.git';
 const LIVE = 'https://tannermidd.github.io/terraclicker-redux/';
 const root = process.cwd();
-const site = path.join(root, 'site');
-const work = path.join(root, '.deploy-pages');
-const run = (cmd, cwd = work) => execSync(cmd, { cwd, stdio: 'inherit' });
+const sh = (cmd) => execSync(cmd, { cwd: root, stdio: ['ignore', 'pipe', 'inherit'] }).toString().trim();
 
-if (!fs.existsSync(path.join(site, 'play', 'index.html'))) {
-  console.error('site/ not assembled — use `npm run deploy` (build → assemble → push).');
+const branch = sh('git rev-parse --abbrev-ref HEAD');
+if (branch !== 'main') {
+  console.error(`On "${branch}" — deploys ship from main.`);
+  process.exit(1);
+}
+if (sh('git status --porcelain') !== '') {
+  console.error('Working tree is dirty — commit first; the workflow builds what is pushed.');
   process.exit(1);
 }
 
-if (!fs.existsSync(work)) run(`git clone --depth 1 "${REPO}" "${work}"`, root);
-else run('git pull --ff-only');
-
-// Wipe everything except the repo plumbing and the README, then lay in site/.
-for (const entry of fs.readdirSync(work)) {
-  if (entry === '.git' || entry === 'README.md') continue;
-  fs.rmSync(path.join(work, entry), { recursive: true, force: true });
+// The hash the local build produced; the live site must serve the same one.
+const assets = path.join(root, 'site', 'play', 'assets');
+const localBundle = fs.existsSync(assets)
+  ? fs.readdirSync(assets).find((f) => /^index-[\w-]+\.js$/.test(f))
+  : null;
+if (!localBundle) {
+  console.error('site/ not assembled — use `npm run deploy` (build → assemble → push → verify).');
+  process.exit(1);
 }
-fs.cpSync(site, work, { recursive: true });
 
-run('git add -A');
-const staged = execSync('git diff --cached --quiet || echo dirty', { cwd: work }).toString();
-if (!staged.includes('dirty')) {
-  console.log('Nothing changed — the universe is already up to date.');
-} else {
-  run(`git commit -m "Deploy build ${new Date().toISOString().slice(0, 16)}Z"`);
-  run('git push');
+console.log(`Pushing main (${sh('git rev-parse --short HEAD')})…`);
+execSync('git push origin main', { cwd: root, stdio: 'inherit' });
+
+console.log('Waiting for the Pages workflow…');
+const deadline = Date.now() + 8 * 60_000;
+let runOk = false;
+while (Date.now() < deadline) {
+  let status = '';
+  try {
+    status = sh('gh run list --workflow "Deploy to GitHub Pages" --branch main --limit 1 --json status,conclusion --jq ".[0].status + \\":\\" + (.[0].conclusion // \\"\\")"');
+  } catch {
+    /* transient API hiccup — keep polling */
+  }
+  if (status.startsWith('completed:')) {
+    if (status === 'completed:success') { runOk = true; break; }
+    console.error(`Workflow finished: ${status.split(':')[1]} — see \`gh run view\`.`);
+    process.exit(1);
+  }
+  await new Promise((r) => setTimeout(r, 8000));
 }
-console.log(`\nLive at: ${LIVE} (landing) and ${LIVE}play/ (game)`);
-console.log('Pages usually refreshes within a minute.');
+if (!runOk) {
+  console.error('Workflow did not complete in time — check `gh run list`.');
+  process.exit(1);
+}
+
+console.log(`Workflow green. Verifying ${LIVE}play/ serves ${localBundle}…`);
+const liveDeadline = Date.now() + 4 * 60_000;
+let liveOk = false;
+while (Date.now() < liveDeadline) {
+  try {
+    const html = await (await fetch(`${LIVE}play/?v=${Date.now()}`)).text();
+    if (html.includes(localBundle)) { liveOk = true; break; }
+  } catch {
+    /* CDN warming up */
+  }
+  await new Promise((r) => setTimeout(r, 6000));
+}
+if (!liveOk) {
+  console.error(`Live page never served ${localBundle} — the CDN may lag; re-check manually.`);
+  process.exit(1);
+}
+console.log(`\nLive and verified: ${LIVE} (landing) · ${LIVE}play/ (game) · bundle ${localBundle}`);
