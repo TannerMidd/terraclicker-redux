@@ -128,7 +128,10 @@ describe('groundfall ledger (engine rules)', () => {
     const before = s.expedition.salvage;
     bankGroundSamples(s, effects, 'w1', 'Testworld', haul, {});
     expect(s.expedition.salvage).toBe(before + 6 * crystal.salvage);
-    expect(effects[1]).toMatchObject({ firstSurvey: false, newKinds: [] });
+    // By type, not position: firsts recorded along the way may raise
+    // certAdvanced effects between the two return reports (Phase 5).
+    const returns = effects.filter((e) => e.t === 'groundReturn');
+    expect(returns[1]).toMatchObject({ firstSurvey: false, newKinds: [] });
     expect(record.visits).toBe(2);
   });
 
@@ -177,7 +180,10 @@ describe('groundfall ledger (engine rules)', () => {
     const before = s.expedition.salvage;
     bankGroundSamples(s, effects, 'w5', 'Quarry', big, {});
     expect(s.expedition.salvage).toBe(before + 3);
-    expect(effects.at(-1)).toMatchObject({ capped: true, salvage: 3 });
+    expect(effects.filter((e) => e.t === 'groundReturn').at(-1)).toMatchObject({
+      capped: true,
+      salvage: 3,
+    });
   });
 
   it('is reachable through the sim input, like every other verb', () => {

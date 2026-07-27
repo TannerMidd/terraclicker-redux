@@ -2394,6 +2394,21 @@ button {
 .fr-item.maxed { opacity: 0.62; }
 .fr-item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .fr-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+
+/* — Field Certifications: the column salvage cannot buy — */
+.fr-cert-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.fr-cert { border-left: 2px solid #ffc561; }
+.fr-cert.maxed { opacity: 1; border-left-color: #6fe0a8; }
+.fr-cert-title { font-style: normal; font-weight: 500; color: #ffc561; font-size: 12px; }
+.fr-cert-earns { margin-top: 5px; font-size: 10px; color: var(--ink-faint); letter-spacing: 0.03em; }
+@media (max-width: 900px) {
+  .fr-cert-list { grid-template-columns: minmax(0, 1fr); }
+}
 .fr-rank { display: flex; gap: 3px; }
 .fr-rank i {
   width: 7px;
@@ -3842,6 +3857,9 @@ button {
 .sh-mark.prospect { color: #ffb454; }
 .sh-mark.landmark { color: #b8a2e0; }
 .sh-mark.thermal { color: #ff8a5c; text-shadow: 0 0 6px rgba(255, 120, 60, 0.55); }
+.sh-mark.beacon { color: #ffc561; text-shadow: 0 0 7px rgba(255, 179, 71, 0.6); }
+.sh-mark.mark { color: #a8c8bc; }
+.sh-mark.sense { color: rgba(150, 182, 236, 0.5); }
 
 /* — Conditions rail: the weather line and the nearest named place — */
 .sh-conditions {
@@ -3945,6 +3963,34 @@ button {
 .sh-samples b { font-size: 17px; margin-right: 5px; color: var(--improbable); }
 .sh-samples em { display: block; font-style: normal; color: var(--ink-dim); font-size: 11px; }
 .sh-samples .sh-world { color: var(--ink-faint); letter-spacing: 0.04em; }
+
+/* — Open field work: the stay's missions, quietly, above the samples — */
+.sh-missions {
+  position: absolute;
+  left: max(22px, env(safe-area-inset-left));
+  bottom: calc(max(22px, env(safe-area-inset-bottom)) + 132px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 300px;
+}
+.sh-mission {
+  padding: 7px 12px;
+  border: 1px solid rgba(150, 182, 236, 0.14);
+  border-left: 2px solid #ffc561;
+  border-radius: 8px;
+  background: rgba(13, 16, 32, 0.55);
+  backdrop-filter: blur(10px);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.sh-mission b { display: block; font-weight: 600; color: #ffc561; letter-spacing: 0.02em; }
+.sh-mission em { font-style: normal; color: var(--ink-dim); }
+.sh-mission.done { border-left-color: #6fe0a8; }
+.sh-mission.done b { color: #6fe0a8; }
+
+/* — The field kit selector rides the assay card's look — */
+.sh-fieldkit { bottom: 22%; padding: 6px 12px; }
 
 /* — The engage line — */
 .sh-prompt {

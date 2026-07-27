@@ -553,7 +553,13 @@ button.mk2-priority:hover { background: rgba(174, 199, 255, .045); }
 .mk2-answer-scroll { flex: 0 1 auto; min-height: 42px; overflow-y: auto; overflow-x: hidden; }
 .mk2-answer-title { font-family: var(--display); font-size: 17.5px; font-weight: 650; letter-spacing: -.012em; line-height: 1.18; }
 .mk2-answer-text { margin: 4px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); text-wrap: pretty; }
-.mk2-answer-acts { display: flex; gap: 5px; margin: 8px 0 7px; flex: none; }
+.mk2-answer-acts { display: flex; flex-direction: column; gap: 5px; margin: 8px 0 7px; flex: none; }
+.mk2-answer-ground {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: #ffc561;
+  letter-spacing: 0.02em;
+}
 .mk2-answer-acts button {
   flex: 1; padding: 4px 8px;
   border: 1px dashed var(--line-3);

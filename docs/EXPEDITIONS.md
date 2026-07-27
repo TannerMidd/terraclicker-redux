@@ -213,17 +213,68 @@ near tier judges water analytically or the rolling bake will embarrass it.
   inside `GROUND_WORLD_YIELD_CAP`; a naturalist's empty-handed landing
   still banks its records.
 
-## Phase 5 — mission families, Field Certifications, persistent outcomes
+## Phase 5 — mission families, Field Certifications, persistent outcomes (SHIPPED)
 
-Surface missions extend situations/petitions through `bridge.ts` (a surface
-resolution path beside `attendInPerson`): survey, ecology, maintenance, civil,
-recovery, storm response, logistics, and mysteries that span scales — rumour →
-orbit → landing → another world → a Guide entry. Keep one to three strong
-planetary leads at a time; reward variety, never completionist clearing.
-Certifications in four tracks (Mobility, Survey, Geology, Liaison) rank on
-firsts recorded in `certFirsts`, unlocking verbs. `GroundMark[]` become real
-beacons, stations and repairs, each writing a `WorldRecordEvent` — visible in
-biographies, the Circular, and from orbit (Expansion law 2).
+- **Requests answered by boots** (`bridge.ts`): a `SituationDef` may carry a
+  `ground` objective — survey, species, a named sample, a landmark reached,
+  a civic call, weather stood in, a repair, a beacon, freight to the docks —
+  and such a request is settled by DOING THE THING on that world's ground
+  and boarding, never by merely arriving in orbit (`attendInPerson` refuses
+  ground defs; the arrival latch therefore skips them). The banking path
+  verifies what it can against the world's own tables (weather against
+  `weatherKindsFor`, landmarks against the type's grammar), then
+  `resolveGroundRequests` pays the bridge's law: the desk's best standing,
+  `GROUND_MISSION_SALVAGE`, and `visited` + `petitionAnswered` in the
+  history. Fourteen authored ground petitions cover the families (weather
+  watches and provenance runs are type-shaped; repair and beacon petitions
+  arrive only once the player holds the verb); one urgent situation
+  (`storm-watch`) rides the same path; logistics settles from
+  `deliverManifest`. Desk options always remain — the surface is an
+  addition, never a hostage — and the petition queue's cap of three IS the
+  "one to three strong planetary leads" rule.
+- **Field Certifications** (`content/certifications.ts`,
+  `engine/certifications.ts`): four tracks — Mobility, Survey, Geology,
+  Liaison — advance on FIRSTS (`certFirsts`: `${track}:${key}`, written
+  once, ever) at thresholds [2, 6, 12]; conferred ranks are stored like
+  achievements so a re-tuned threshold never demotes anybody. Ranks unlock
+  verbs: the beacon (Mobility I), shelter + field-deploying the sled
+  (Mobility II), the station (Survey I), kept charts — landing near a
+  standing station arrives pre-scanned to `STATION_CHART_M` (Survey II),
+  seam sense — unscanned seams inside 46 m ride the rail unlabelled
+  (Geology I), reading the sand — the pulse raises buried seams without a
+  dust front (Geology II), the repair (Liaison I), and the civic call —
+  attending a town pays `CIVIC_CALL_STANDING`, once a stay (Liaison II).
+  Rank III is a title, which is the point of titles. The refit bay shows
+  the tracks in the one column salvage cannot buy.
+- **Marks are real** (`engine/groundMarks.ts`, `surface/Marks.tsx`): with
+  nothing in reach the wheel chooses the FIELD KIT — the pulse, or a mark
+  planted at the boots (`localToDir`; the gnomonic frame runs both ways to
+  centimetres, by test). The engine validates against certification, a
+  per-world cap (`MARKS_PER_WORLD_MAX` 10), same-kind spacing (30 m), and
+  for repairs the presence of a settlement within `REPAIR_REACH_M` — one
+  repair per settlement, ever, worth `REPAIR_STANDING` where the lights
+  actually come from. Marks persist in `groundWorlds[key].marks` as planet
+  directions, re-seat on every later landing's live ground, ride the
+  compass (a beacon survives whiteouts; a shelter shows on thermal), and
+  write `markPlaced`/`repairMade` `WorldRecordEvent`s — feeding the
+  `tended`/`waymarked` traits, the biography, one standing-mark line in
+  the Circular, and amber pin lights on the orbiting world (mounted inside
+  the same spinning mesh as the settlement lights, so a beacon turns with
+  the ground it stands on). Marks planted on the hero commission enter its
+  history at delivery. Known consequences, accepted: local octaves are
+  landing-seeded, so a wilderness mark can stand on different countryside
+  next visit (it re-reads the live ground); the hero world's orbital mark
+  lights are deferred until its spin/landing frame is reconciled.
+- **The lead** (`engine/leads.ts`): the spec's sentence built exactly once —
+  rumour → orbit → landing → another world → a Guide entry. The Sub-Etha
+  rolls it ahead of ordinary rumours (`LEAD_ODDS`, three landable delivered
+  worlds required, state in engine-known flags); the named world's next
+  landing stands a RESONATOR a short walk from the pad (analytically dry,
+  ring-searched); reading it names a counterpart world (seeded pick over
+  the live candidates); the counterpart closes the file — `LEAD_SALVAGE`,
+  a chronicle line, the hidden `Mostly Harmonic` achievement. The trail
+  goes cold at prestige (`clearLead` in `doPrestige`), because the worlds
+  it named left the sky.
 
 ## Phase 6 — low-altitude runabout flight
 
@@ -236,16 +287,24 @@ Handling Package refit, arbitrary landing validation (generalised
 After Phase 4: one completed world with a settlement petition, a storm
 visible from orbit, a deployable skimmer, two wilderness POIs, one biological
 encounter, and an installation repair visible from the surface **and** from
-orbit. Prove the whole shape on one world before generalising.
+orbit. Prove the whole shape on one world before generalising. *(Phase 5
+delivered the last item: a repair made by hand raises standing, and standing
+is what the orbit's lights are drawn from — both scales agree because both
+read the same number.)*
 
 ## Verification conventions
 
 `npm test` (groundfall + ground-sites + weather + ground-landmarks + skimmer
-+ settlements + settlements-ground suites hold the promises above),
-`npm run build`, `npm run balance` after economy changes. Visual verification
-is headless: `scripts/shot.mjs` with the `__tcSurface` hooks (`gfscanall`,
-`gfverb:i`, `gfmine`, `gfstate`, `gfweather:kind`, `gfvisit`,
-`gfshore[:look]`, `gflandmarks`, Phase 3's `gfskimmer:rank` + `gfskim:on|off`,
-and Phase 4's `gfland:i` — land on the i-th landable body, settled worlds
-included — `gfsettle[:i]`, `gfspecies`, `gfcatalog`) — the Browser pane
-cannot composite this scene. Extend the hook object as each phase lands.
++ settlements + settlements-ground + certifications + ground-missions suites
+hold the promises above), `npm run build`, `npm run balance` after economy
+changes. Visual verification is headless: `scripts/shot.mjs` with the
+`__tcSurface` hooks (`gfscanall`, `gfverb:i`, `gfmine`, `gfstate`,
+`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`, Phase 3's
+`gfskimmer:rank` + `gfskim:on|off`, Phase 4's `gfland:i` — land on the i-th
+landable body, settled worlds included — `gfsettle[:i]`, `gfspecies`,
+`gfcatalog`, and Phase 5's `gfcert:track,rank`, `gfmark:kind`, `gfmarks`,
+`gfmission`, `gflead[:read|:force]`) — the Browser pane cannot composite
+this scene. Extend the hook object as each phase lands. Harness law learned
+in Phase 5: a fixed-length engage tap races the headless frame loop and the
+target body keeps orbiting, so `gfland` now re-parks and HOLDS engage until
+the surface session exists — never trust a timed tap to commit a dive.

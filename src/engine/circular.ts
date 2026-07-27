@@ -22,6 +22,7 @@
 import { MEGAPROJECT_BY_ID } from '../content/megaprojects';
 import { SEAM_BY_ID } from '../content/freight';
 import { SITUATION_BY_ID } from '../content/situations';
+import { PETITION_BY_ID } from '../content/petitions';
 import { rigCapacity } from './freight';
 import { waypointId } from './waypoints';
 import { openPhases } from './programmes';
@@ -99,12 +100,27 @@ export function buildCircular(state: GameState, sinceMs: number): CircularItem[]
 
   // 4. Worlds waiting on an answer. These are people, and they go above rumour.
   for (const petition of state.run.petitions) {
-    const def = SITUATION_BY_ID[petition.id];
+    const def = SITUATION_BY_ID[petition.id] ?? PETITION_BY_ID[petition.id];
     const who = petition.worldName || 'A world';
+    const ground = def?.ground
+      ? ' What it asks for is on the ground, in person.'
+      : '';
     items.push({
       kind: 'asking',
-      text: `${who} has written${def ? ` about ${def.name.toLowerCase()}` : ''}, and is waiting.`,
+      text: `${who} has written${def ? ` about ${def.name.toLowerCase()}` : ''}, and is waiting.${ground}`,
       waypoint: petition.world ? waypointId('world', petition.world) : undefined,
+    });
+  }
+
+  // 4b. The most recent mark still standing, one line, so the briefing
+  //     remembers you are the kind of operation that leaves things behind.
+  const marked = newestMark(state);
+  const markLine = marked ? MARK_STANDING_LINE[marked.kind] : undefined;
+  if (marked && markLine) {
+    items.push({
+      kind: 'rumour',
+      text: markLine(marked.world),
+      waypoint: waypointId('world', marked.lifetimeIndex),
     });
   }
 
@@ -115,6 +131,35 @@ export function buildCircular(state: GameState, sinceMs: number): CircularItem[]
   }
 
   return items;
+}
+
+const MARK_STANDING_LINE: Record<string, (world: string) => string> = {
+  beacon: (world) =>
+    `The beacon on ${world} is still broadcasting, which it describes, on the hour, as a service.`,
+  station: (world) =>
+    `The survey station on ${world} continues to take readings. The readings agree with each other, which it finds suspicious.`,
+  shelter: (world) =>
+    `The shelter on ${world} reports itself warm, dry, and unvisited, in the tone of a lighthouse.`,
+  repair: (world) =>
+    `The repair on ${world} is holding. The residents check it daily, out of fondness rather than doubt.`,
+};
+
+/** The newest mark standing anywhere, resolved to a world the run still names. */
+function newestMark(
+  state: GameState,
+): { kind: string; world: string; lifetimeIndex: number } | null {
+  let best: { kind: string; world: string; lifetimeIndex: number; atMs: number } | null = null;
+  for (const [key, ground] of Object.entries(state.expedition.groundWorlds)) {
+    const lifetimeIndex = Number(key.slice(1));
+    const world = state.run.completedPlanets.find((w) => w.lifetimeIndex === lifetimeIndex);
+    if (!world) continue; // sold with a portfolio, or the hero in progress
+    for (const mark of ground.marks) {
+      if (!best || mark.atMs > best.atMs) {
+        best = { kind: mark.kind, world: world.name, lifetimeIndex, atMs: mark.atMs };
+      }
+    }
+  }
+  return best;
 }
 
 /**

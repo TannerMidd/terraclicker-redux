@@ -18,6 +18,8 @@ import { SubEthaTicker } from './SubEthaTicker';
 import { BAND_LABELS } from '../scene/universeLayout';
 import { BRAND_ASSETS, COCKPIT_ASSETS } from '../assets';
 import { REFITS } from '../../content/refit';
+import { CERTIFICATIONS, CERT_THRESHOLDS } from '../../content/certifications';
+import { certFirstCount, certRank } from '../../engine/certifications';
 import { DEEP_FIELD } from '../../content/deepField';
 import { refitCost } from '../../engine/deepField';
 import { currentManifestLeg, deterrentPower } from '../../engine/freight';
@@ -474,6 +476,41 @@ function RefitConsole({ onClose }: { onClose: () => void }) {
               >
                 {maxed ? 'fitted' : `${cost} salvage`}
               </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="fr-section-head">
+        <b>Field Certifications</b>
+        <span>earned on firsts · cannot be bought, to the fitter’s open disgust</span>
+      </div>
+      <div className="fr-cert-list">
+        {CERTIFICATIONS.map((track) => {
+          const rank = certRank(s.expedition, track.id);
+          const firsts = certFirstCount(s.expedition, track.id);
+          const next = CERT_THRESHOLDS[rank];
+          const title = rank > 0 ? track.ranks[rank - 1]?.title : null;
+          return (
+            <div key={track.id} className={`fr-item fr-cert${rank >= CERT_THRESHOLDS.length ? ' maxed' : ''}`}>
+              <div className="fr-item-head">
+                <span className="fr-name">
+                  {track.name}
+                  {title && <em className="fr-cert-title"> · {title}</em>}
+                </span>
+                <span className="fr-rank">
+                  {CERT_THRESHOLDS.map((_, i) => (
+                    <i key={i} className={i < rank ? 'on' : ''} />
+                  ))}
+                </span>
+              </div>
+              <div className="fr-effect">
+                {next !== undefined
+                  ? `${firsts}/${next} firsts toward ${track.ranks[rank]?.title ?? 'the next rank'} — ${track.ranks[rank]?.unlock ?? ''}`
+                  : `complete — ${track.ranks[CERT_THRESHOLDS.length - 1]!.unlock}`}
+              </div>
+              <div className="fr-guide">{track.guide}</div>
+              <div className="fr-cert-earns">{track.earns}</div>
             </div>
           );
         })}

@@ -88,6 +88,16 @@ export const WORLD_BIOGRAPHY: Composition = {
           requires: ['well-attended'],
         },
         {
+          id: 'mended',
+          text: 'Something here was mended by hand, and the residents point it out to visitors.',
+          requires: ['tended'],
+        },
+        {
+          id: 'marked',
+          text: 'A mark stands on it that somebody walked out and planted, which the maps mention first.',
+          requires: ['waymarked'],
+        },
+        {
           id: 'stopped',
           text: 'It has stopped writing, which the Guide notes without comment.',
           requires: ['neglected'],

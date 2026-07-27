@@ -67,7 +67,9 @@ import {
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
 import { bankGroundSamples } from './groundfall';
 import { creditDeferredWork } from './deferred';
-import { createWorldRecord } from './worldRecords';
+import { createWorldRecord, recordWorldEvent } from './worldRecords';
+import { deliveryEvidence, resolveGroundRequests } from './bridge';
+import { clearLead } from './leads';
 import { findWaypoint } from './waypoints';
 import { acceptDossier, activeDossier, declineDossier, dossierEffects, offerDossiers } from './dossiers';
 import { charterOffersFor, signCharter } from './charters';
@@ -399,7 +401,17 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       break;
     }
     case 'deliverManifest': {
+      // Logistics requests are answered at the docks: note the destination
+      // before the manifest clears, then offer the delivery as evidence.
+      const to = state.expedition.manifest?.to;
       deliverManifest(state, effects);
+      if (
+        to !== undefined
+        && state.expedition.manifest === null
+        && effects.some((e) => e.t === 'manifestDelivered')
+      ) {
+        resolveGroundRequests(state, effects, deliveryEvidence(to));
+      }
       break;
     }
     case 'prospectSeam': {
@@ -415,7 +427,16 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       break;
     }
     case 'bankGroundSamples': {
-      bankGroundSamples(state, effects, input.worldKey, input.worldName, input.haul, input.sites, input.species ?? []);
+      bankGroundSamples(
+        state,
+        effects,
+        input.worldKey,
+        input.worldName,
+        input.haul,
+        input.sites,
+        input.species ?? [],
+        input.evidence ?? {},
+      );
       break;
     }
     case 'startMegaproject': {
@@ -572,6 +593,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     standing: {},
     // The worlds that were asking went with the sale.
     petitions: [],
+    // (The open lead, if any, is cleared just below — the trail went cold
+    // when the worlds it named left the sky.)
     // The unscheduled oddities expire with the commission that found them.
     // (state.expedition.unscheduled is cleared just below.)
     // The brief went with it too. Magrathea files three more below.
@@ -582,6 +605,7 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     charterOffers: {},
   };
   state.expedition.unscheduled = {};
+  clearLead(state);
   // Freight addresses belong to the portfolio that was just sold. Keeping
   // either an accepted manifest or old offers here creates routes to worlds
   // that no longer exist in the current commission.
@@ -667,6 +691,19 @@ function completePlanet(
     state.run.number,
     state.gameTimeMs,
   );
+  // A world walked BEFORE it was finished remembers that too: marks planted
+  // during the commission enter the history at delivery, when the history
+  // begins. The mark itself was in groundWorlds all along.
+  const walked = state.expedition.groundWorlds[`w${completed.lifetimeIndex}`];
+  if (walked) {
+    for (const mark of walked.marks) {
+      recordWorldEvent(state, completed.lifetimeIndex, {
+        kind: mark.kind === 'repair' ? 'repairMade' : 'markPlaced',
+        id: mark.kind,
+        atGameMs: mark.atMs,
+      });
+    }
+  }
   progressContractOnPlanet(state, completed, derived.totalBuildings, effects);
 
   // Earth setpiece: ten minutes after Earth completes, a demolition notice arrives.
@@ -786,6 +823,18 @@ function chronicleEffect(state: GameState, effect: SimEffect): void {
       break;
     case 'vogonStart':
       fileBroadcast(state, 'chronicle', CHRONICLE.vogonStart());
+      break;
+    case 'certAdvanced':
+      fileBroadcast(state, 'chronicle', CHRONICLE.certAdvanced(effect.title, effect.track));
+      break;
+    case 'markPlaced':
+      fileBroadcast(state, 'chronicle', CHRONICLE.markPlaced(effect.kind, effect.world));
+      break;
+    case 'civicCalled':
+      fileBroadcast(state, 'chronicle', CHRONICLE.civicCalled(effect.world));
+      break;
+    case 'leadAdvanced':
+      fileBroadcast(state, 'chronicle', CHRONICLE.leadAdvanced(effect.text));
       break;
     default:
       break; // clicks, bubbles, achievements — the channel has standards

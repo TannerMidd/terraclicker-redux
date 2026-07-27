@@ -48,6 +48,7 @@ import { SurfaceWeather } from './WeatherFX';
 import { Landmarks } from './Landmarks';
 import { Settlements } from './Settlements';
 import { Ecology } from './Ecology';
+import { Marks } from './Marks';
 import {
   buildTierTextures,
   createCloudDeckMaterial,
@@ -287,6 +288,9 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   /** Terrain re-centre epoch mirrored into React for the memoised seats. */
   const [epoch, setEpoch] = useState(0);
   const epochShown = useRef(0);
+  /** Mark plantings mirrored the same way — a mark stands the frame it lands. */
+  const [markSeat, setMarkSeat] = useState(0);
+  const marksShown = useRef(0);
   /** Smoothed weather visibility so a front arrives instead of switching on. */
   const visSmooth = useRef(1);
   /** Prospect stakes standing (prior landings + this stay). */
@@ -429,6 +433,11 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       }
       stakesShown.current = -1; // stakes re-seat on their next pass
       setEpoch(live.terrainEpoch); // landmarks + ship pose re-memoise
+    }
+
+    if (live.markNonce !== marksShown.current) {
+      marksShown.current = live.markNonce;
+      setMarkSeat(live.markNonce);
     }
 
     // A dust front has moved the sand: seat the seams it uncovered.
@@ -626,6 +635,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             <Landmarks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} />
             <Settlements p={built.p} tiers={built.tiers} palette={palette} session={session} epoch={epoch} />
             <Ecology p={built.p} tiers={built.tiers} palette={palette} bio={session.aspects.bio} epoch={epoch} />
+            <Marks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} nonce={markSeat} />
 
             {shipPose && (
               <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>

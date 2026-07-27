@@ -60,6 +60,8 @@ export const WORLD_TRAITS = [
   'austere', // delivered lean
   'peculiar', // quirks, or a survey that went sideways
   'storied', // simply has a lot of history
+  'tended', // something was mended here, by hand (Phase 5)
+  'waymarked', // carries standing marks — beacons, stations, camps (Phase 5)
 ] as const;
 
 export type WorldTrait = (typeof WORLD_TRAITS)[number];
@@ -123,6 +125,10 @@ export function worldTraits(record: WorldRecord, standing: number): WorldTrait[]
 
   if (ignored > answered && ignored > 0) traits.push('neglected');
   else if (answered > 0 && standing >= 1) traits.push('well-attended');
+
+  // A repair made by hand outranks most of what a file can say about a place.
+  if (record.history.some((e) => e.kind === 'repairMade')) traits.push('tended');
+  else if (record.history.some((e) => e.kind === 'markPlaced')) traits.push('waymarked');
 
   if (record.installationCount >= 6) traits.push('engineered');
   else if (record.installationCount <= 2) traits.push('austere');

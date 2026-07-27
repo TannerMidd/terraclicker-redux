@@ -25,14 +25,32 @@
  *
  * The sealed economy is untouched: this hands out salvage, never TU.
  */
-import { SITUATION_BY_ID } from '../content/situations';
+import {
+  SITUATION_BY_ID,
+  fillSituationText,
+  type GroundObjectiveDef,
+  type SituationDef,
+} from '../content/situations';
 import { PETITION_BY_ID } from '../content/petitions';
 import { recordWorldEvent } from './worldRecords';
 import { waypointId } from './waypoints';
-import type { GameState, SimEffect } from './types';
+import { recordCertFirst } from './certifications';
+import { C } from '../content/constants';
+import type { GameState, SampleHaul, SimEffect } from './types';
 
 /** Salvage paid for attending to something in person. */
 export const ATTENDANCE_SALVAGE = 12;
+/**
+ * Salvage for answering a request with actual fieldwork (Phase 5). More than
+ * showing up, because it is more than showing up; still salvage and salvage
+ * only, because the seal does not bend for good deeds.
+ */
+export const GROUND_MISSION_SALVAGE = 18;
+
+/** The def behind an open request, whichever queue it lives in. */
+export function requestDef(id: string): SituationDef | undefined {
+  return SITUATION_BY_ID[id] ?? PETITION_BY_ID[id];
+}
 
 /** Anything open that names a world you could actually fly to. */
 export function attendable(state: GameState): { uid: number; world: number; name: string }[] {
@@ -90,8 +108,11 @@ export function attendInPerson(
   const idx = list.findIndex((s) => s.uid === uid);
   if (idx < 0) return false;
   const inst = list[idx]!;
-  const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
+  const def = requestDef(inst.id);
   if (!def) return false;
+  // A request with a ground objective is not answered by parking over it —
+  // the work is DOWN THERE, and orbit is merely the queue for it.
+  if (def.ground) return false;
 
   const visitedAt = state.expedition.visited[waypointId('world', match.world)];
   const openedAt = state.gameTimeMs - Math.max(0, def.windowMs - inst.remainingMs);
@@ -102,17 +123,7 @@ export function attendInPerson(
 
   // Standing: exactly what attending at the desk would have paid. The reward
   // for flying is not a bigger number.
-  const best = def.options.reduce(
-    (a, o) => Math.max(a, o.outcome.standing ?? 0),
-    0,
-  );
-  if (best > 0) {
-    const key = String(match.world);
-    const current = state.run.standing[key];
-    const next = Math.min(1, (typeof current === 'number' ? current : 1) + best);
-    if (next >= 1) delete state.run.standing[key];
-    else state.run.standing[key] = next;
-  }
+  payStandingBest(state, def, match.world);
 
   // Salvage: something the desk cannot produce at any price.
   state.expedition.salvage += ATTENDANCE_SALVAGE;
@@ -131,4 +142,134 @@ export function attendInPerson(
 
   effects.push({ t: 'attendedInPerson', world: match.name, id: inst.id });
   return true;
+}
+
+/** The desk's best standing offer, paid in full. Never a bigger number. */
+function payStandingBest(state: GameState, def: SituationDef, world: number): void {
+  const best = def.options.reduce((a, o) => Math.max(a, o.outcome.standing ?? 0), 0);
+  if (best <= 0 || world <= 0) return;
+  const key = String(world);
+  const current = state.run.standing[key];
+  const next = Math.min(1, (typeof current === 'number' ? current : 1) + best);
+  if (next >= 1) delete state.run.standing[key];
+  else state.run.standing[key] = next;
+}
+
+// ————— The surface resolution (Phase 5) —————
+
+/**
+ * What one stay can testify to, in the engine's own terms — assembled by the
+ * banking path from things it verified itself, never passed through raw from
+ * the scene. `delivered` is the odd one out: it arrives from the freight
+ * path, because logistics is answered at the docks rather than on foot.
+ */
+export interface GroundWorkEvidence {
+  lifetimeIndex: number;
+  surveyCredit: number;
+  haul: readonly SampleHaul[];
+  species: readonly string[];
+  landmarks: readonly string[];
+  civic: boolean;
+  weathered: readonly string[];
+  /** Mark kinds that actually stood (post-validation). */
+  markKinds: readonly string[];
+  repaired: boolean;
+  delivered?: boolean;
+}
+
+/** Evidence for the freight path: a manifest arrived at this world's docks. */
+export function deliveryEvidence(lifetimeIndex: number): GroundWorkEvidence {
+  return {
+    lifetimeIndex,
+    surveyCredit: 0,
+    haul: [],
+    species: [],
+    landmarks: [],
+    civic: false,
+    weathered: [],
+    markKinds: [],
+    repaired: false,
+    delivered: true,
+  };
+}
+
+/** Does the banked stay satisfy this objective? Pure. */
+export function groundObjectiveMet(
+  def: GroundObjectiveDef,
+  ev: GroundWorkEvidence,
+): boolean {
+  switch (def.kind) {
+    case 'survey':
+      return ev.surveyCredit >= (def.n ?? C.GROUND_SURVEY_SAMPLES);
+    case 'species':
+      return ev.species.length >= (def.n ?? 1);
+    case 'sample': {
+      if (!def.what) return false;
+      let n = 0;
+      for (const h of ev.haul) if (h.kind === def.what) n += h.n;
+      return n >= (def.n ?? 1);
+    }
+    case 'landmark':
+      return def.what ? ev.landmarks.includes(def.what) : ev.landmarks.length > 0;
+    case 'civic':
+      return ev.civic;
+    case 'weather':
+      return def.what ? ev.weathered.includes(def.what) : ev.weathered.length > 0;
+    case 'repair':
+      return ev.repaired;
+    case 'beacon':
+      return ev.markKinds.includes('beacon');
+    case 'logistics':
+      return ev.delivered === true;
+  }
+}
+
+/**
+ * Settle every open request this stay's work answers. The bridge's law
+ * holds: the desk's best standing, salvage the desk cannot mint, and a
+ * history line that says you came — plus the objective's own report, which
+ * is the sentence the whole trip was for.
+ */
+export function resolveGroundRequests(
+  state: GameState,
+  effects: SimEffect[],
+  ev: GroundWorkEvidence,
+): number {
+  let resolved = 0;
+  for (const list of [state.situations, state.run.petitions]) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      const inst = list[i]!;
+      if (inst.world !== ev.lifetimeIndex) continue;
+      const def = requestDef(inst.id);
+      if (!def?.ground) continue;
+      if (!groundObjectiveMet(def.ground, ev)) continue;
+
+      list.splice(i, 1);
+      resolved++;
+      state.lifetime.situationsAnswered += 1;
+      payStandingBest(state, def, inst.world);
+      state.expedition.salvage += GROUND_MISSION_SALVAGE;
+      recordWorldEvent(state, inst.world, {
+        kind: 'visited',
+        id: inst.id,
+        atGameMs: state.gameTimeMs,
+      });
+      recordWorldEvent(state, inst.world, {
+        kind: 'petitionAnswered',
+        id: inst.id,
+        atGameMs: state.gameTimeMs,
+      });
+      recordCertFirst(state, effects, `liaison:answered:${inst.id}`);
+      const best = def.options.reduce((a, o) => Math.max(a, o.outcome.standing ?? 0), 0);
+      effects.push({
+        t: 'situationResolved',
+        uid: inst.uid,
+        id: inst.id,
+        text: fillSituationText(def.ground.text, inst.worldName),
+        world: inst.worldName,
+        standing: best,
+      });
+    }
+  }
+  return resolved;
 }

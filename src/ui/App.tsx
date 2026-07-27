@@ -11,6 +11,7 @@ import { useUiBus } from './fx/uiBus';
 import { EVENT_BY_ID } from '../content/events';
 import { SITUATION_BY_ID } from '../content/situations';
 import { ACHIEVEMENT_BY_ID } from '../content/achievements';
+import { CERT_BY_ID } from '../content/certifications';
 import { RESEARCH_BY_ID } from '../content/research';
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { REFIT_BY_ID } from '../content/refit';
@@ -488,6 +489,38 @@ function useEffectWiring(): void {
               body: 'The request now recognises that the visit happened after it was filed.',
               ttlMs: 5200,
             });
+            break;
+          case 'certAdvanced': {
+            const track = CERT_BY_ID[e.track];
+            bus.addToast({
+              kind: 'achievement',
+              kicker: 'FIELD CERTIFICATION',
+              title: `${e.title} — ${track?.name ?? e.track} ${'I'.repeat(e.rank)}`,
+              body: track?.ranks[e.rank - 1]?.unlock ?? 'A qualification that cannot be bought.',
+              ttlMs: 6400,
+            });
+            audio.achievementSting();
+            break;
+          }
+          case 'civicCalled':
+            bus.addToast({
+              kind: 'info',
+              kicker: 'CIVIC CALL',
+              title: e.world,
+              body: `You came in person, which no form can record and everyone will remember. Standing +${e.standing.toFixed(2)}.`,
+              ttlMs: 5200,
+            });
+            break;
+          case 'leadAdvanced':
+            bus.addToast({
+              kind: e.stage === 3 ? 'achievement' : 'info',
+              kicker: e.stage === 3 ? 'FILE CLOSED — GUIDE ENTRY' : 'THE TRAIL CONTINUES',
+              title: e.stage === 3 ? 'Mostly Harmonic' : `The reading points to ${e.world}`,
+              body: e.text,
+              ttlMs: 8200,
+            });
+            if (e.stage === 3) audio.completeSting();
+            else audio.subEthaBlip(true);
             break;
           case 'prestiged':
             bus.flash();

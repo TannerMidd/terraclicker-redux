@@ -141,7 +141,11 @@ export interface WorldRecordEvent {
     | 'petitionIgnored'
     | 'situationResolved'
     | 'visited'
-    | 'charter';
+    | 'charter'
+    /** A GroundMark left standing (id = the mark kind). Phase 5. */
+    | 'markPlaced'
+    /** A facility mended where it stood, by hand. Phase 5. */
+    | 'repairMade';
   /** Content id of whatever caused it, where there is one. */
   id: string;
   atGameMs: number;
@@ -286,6 +290,26 @@ export interface GroundMark {
 
 /** What became of a site during one stay, as reported at boarding. */
 export type GroundSiteOutcome = GroundSiteState['s'];
+
+/**
+ * What one stay can testify to beyond samples and sites (Phase 5). The scene
+ * reports; the engine verifies what it can (marks against certification and
+ * geometry, the rest against the world's own tables) and records the firsts.
+ */
+export interface GroundEvidence {
+  /** Landmark KINDS the walker stood at (within reach, not merely in sight). */
+  landmarks?: string[];
+  /** The walker stood in a settlement's lit or dark heart this stay. */
+  civic?: boolean;
+  /** Weather kinds stood in at moderate strength or better. */
+  weathered?: string[];
+  /** Marks planted this stay, in planet-space directions. */
+  marks?: { kind: GroundMark['kind']; dir: [number, number, number] }[];
+  /** A buried seam was worked this stay. */
+  buriedWorked?: boolean;
+  /** The stay answered a lead's question (engine/leads.ts). */
+  lead?: boolean;
+}
 
 /** Samples of one kind carried aboard, and how they left the ground. */
 export interface SampleHaul {
@@ -579,6 +603,8 @@ export type Input =
       sites: Record<string, GroundSiteOutcome>;
       /** Species the biologger catalogued this stay (Phase 4). */
       species?: string[];
+      /** Everything else the stay can testify to (Phase 5). */
+      evidence?: GroundEvidence;
     }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
@@ -658,6 +684,14 @@ export type SimEffect =
   | { t: 'statuteEnacted'; id: string }
   | { t: 'reservationBooked' }
   | { t: 'sortieCompleted'; salvage: number }
+  /** A Field Certification advanced (Phase 5). */
+  | { t: 'certAdvanced'; track: string; rank: number; title: string }
+  /** A mark now stands on a world (id-less; the kind is the story). */
+  | { t: 'markPlaced'; worldKey: string; world: string; kind: GroundMark['kind'] }
+  /** A certified liaison paid a call, and the town noticed. */
+  | { t: 'civicCalled'; world: string; standing: number }
+  /** A lead advanced a stage: rumour → finding → the Guide entry. */
+  | { t: 'leadAdvanced'; stage: 1 | 2 | 3; world: string; text: string }
   | {
       t: 'situationResolved';
       uid: number;

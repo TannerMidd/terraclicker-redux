@@ -47,7 +47,7 @@ import {
 import { RESEARCH } from '../../content/research';
 import { statuteOffers } from '../../engine/statutes';
 import { cargoCapacity, currentManifestLeg } from '../../engine/freight';
-import { ATTENDANCE_SALVAGE } from '../../engine/bridge';
+import { ATTENDANCE_SALVAGE, GROUND_MISSION_SALVAGE } from '../../engine/bridge';
 import { Drawer, DRAWERS, type DrawerId } from './drawers';
 import './mk2.css';
 
@@ -672,8 +672,15 @@ function AnswerCard({
                   useUiBus.getState().setFlightMode(true);
                 }}
               >
-                {pinned ? 'TAKE THE HELM' : 'FLY THERE'} · +{ATTENDANCE_SALVAGE} SALVAGE
+                {def.ground
+                  ? `${pinned ? 'TAKE THE HELM' : 'FLY THERE'} · +${GROUND_MISSION_SALVAGE} SALVAGE`
+                  : `${pinned ? 'TAKE THE HELM' : 'FLY THERE'} · +${ATTENDANCE_SALVAGE} SALVAGE`}
               </button>
+              {def.ground && (
+                <div className="mk2-answer-ground">
+                  ⌦ the real answer is on the ground: {def.ground.brief}
+                </div>
+              )}
             </div>
           )}          <div className="mk2-answer-opts">
             {def.options.map((o) => {

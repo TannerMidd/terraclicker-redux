@@ -210,6 +210,16 @@ function kindTable(type: PlanetType, a: WeatherAspects): { kinds: KindWeight[]; 
   return { kinds, clearW: type === 'volcanic' ? 3 : 3.6 };
 }
 
+/**
+ * The kinds this sky can produce at these gauges — the same table the fronts
+ * draw from, exported so a storm-response request can be honest about being
+ * answerable (Phase 5) and so the ledger can refuse testimony about weather
+ * the world cannot make.
+ */
+export function weatherKindsFor(type: PlanetType, a: WeatherAspects): WeatherKind[] {
+  return kindTable(type, a).kinds.map((k) => k.kind);
+}
+
 // ————— Fronts —————
 
 /** Uniform point on the sphere from two rolls. */

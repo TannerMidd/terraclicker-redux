@@ -289,6 +289,18 @@ export const CHRONICLE = {
       : `Manifest discharged at ${to}. ${salvage} units of salvage, signed for by somebody who did not read it.`,
   rigPlaced: (seam: string) =>
     `A survey rig now stands at ${seam}. It has been left detailed instructions and will ignore all of them productively.`,
+  certAdvanced: (title: string, track: string) =>
+    `Field Certification advanced: ${title} (${track}). The qualification cannot be bought, which is why it is worth having and impossible to expense.`,
+  markPlaced: (kind: string, world: string) =>
+    ({
+      beacon: `A beacon now stands on ${world}, broadcasting its position to anyone who will listen. So far: everyone.`,
+      station: `A survey station now stands on ${world}, taking readings nobody asked for in case somebody does.`,
+      shelter: `A shelter now stands on ${world}. It is warm, it is dry, and it is exactly where you left it, which is more than can be said for most things.`,
+      repair: `A facility on ${world} has been mended by hand. The residents watched, and have adjusted their opinion of head office accordingly.`,
+    })[kind] ?? `A mark now stands on ${world}.`,
+  civicCalled: (world: string) =>
+    `A call was paid on ${world} in person. Nothing was asked for and nothing was signed, which the residents found deeply suspicious and then rather touching.`,
+  leadAdvanced: (text: string) => text,
   megaprojectFinished: (name: string) =>
     `${name} is finished and standing. It will outlast this commission, the next one, and very probably you.`,
   /**
@@ -333,4 +345,36 @@ export const RUMOUR_LINES: readonly ((
     `Navigation warns of an uncharted return ${bearing} at approximately ${dist} units. It has been there considerably longer than the chart has.`,
   (contact, bearing, dist) =>
     `Second-hand, and the Guide stresses second-hand: "${contact}", ${dist} units ${bearing}, sitting perfectly still and minding its own business.`,
+];
+
+// ————— Leads (Phase 5): the rumours with a second act —————
+
+/** The channel starts a lead: a delivered world's ground is asking for boots. */
+export const LEAD_RUMOUR_LINES: readonly ((world: string) => string)[] = [
+  (world) =>
+    `Three separate freight crews report that the ground of ${world} is humming the same four notes. The Guide has no entry for the tune, which worries it considerably more than the humming.`,
+  (world) =>
+    `Seismic monitoring on ${world} has filed a noise complaint against the planet. The planet, asked for comment, repeated the noise. A field reading is recommended by everyone not required to take it.`,
+  (world) =>
+    `Residents of ${world} describe a vibration underfoot as "patient". The Bureau of Geology notes that patience is not a frequency, and would like someone to stand on it with an instrument.`,
+];
+
+/** Stage two: the first reading points somewhere else. `{world}` = the next one. */
+export const LEAD_FINDING_LINES: readonly ((world: string) => string)[] = [
+  (world) =>
+    `The resonance underfoot is not a noise. It is half of a conversation, and the analysis suite is confident — insufferably so — that the other half is being said on ${world}.`,
+  (world) =>
+    `The reading resolves: the hum is an answer. The question is being asked, at four notes a century, from ${world}. The Guide suggests not keeping it waiting another century.`,
+  (world) =>
+    `Whatever is under this ground is counting, and it is counting in time with something on ${world}. The Guide's editors have opened a file and, unusually, closed their office door.`,
+];
+
+/** The close: both ends read, the file goes in the Guide. */
+export const LEAD_CLOSE_LINES: readonly ((first: string, second: string) => string)[] = [
+  (first, second) =>
+    `The two readings agree: ${first} and ${second} have been keeping four-note time with each other since before either had a name. The Guide has filed the pair under "Mostly Harmonic" and is quietly pleased with itself.`,
+  (first, second) =>
+    `File closed: the ground of ${first} and the ground of ${second} are, geologically speaking, old friends. What they are saying remains untranslated. The Guide notes that this is true of most old friends.`,
+  (first, second) =>
+    `The survey concludes that ${first} was asking and ${second} was answering, and that both have now noticed being overheard. The hum has stopped. The Guide entry ends: "politely".`,
 ];

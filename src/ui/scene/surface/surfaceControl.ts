@@ -27,6 +27,7 @@ import {
   findDrySite,
   heightAt,
   groundNormalAt,
+  localToDir,
   makeTier,
   makeTierStream,
   PLANET_RADIUS_M,
@@ -69,6 +70,13 @@ import {
 } from '../../../content/refit';
 import { siteMinable } from '../../../engine/groundSites';
 import {
+  markWorldFacts,
+  validateMark,
+  STATION_CHART_M,
+} from '../../../engine/groundMarks';
+import { leadTargetAt } from '../../../engine/leads';
+import { mulberry } from '../../../engine/rng';
+import {
   stormFlash,
   syntheticWeather,
   tremorPulse,
@@ -77,7 +85,7 @@ import {
   type LocalWeather,
   type WeatherKind,
 } from '../../../engine/weather';
-import type { GroundSiteOutcome, SampleHaul } from '../../../engine/types';
+import type { GroundEvidence, GroundMark, GroundSiteOutcome, SampleHaul } from '../../../engine/types';
 import * as audio from '../../audio/audio';
 
 export type { GroundfallSession };
@@ -91,6 +99,25 @@ export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'skim' | 'takeoff';
  */
 export type MiningVerb = 'break' | 'core' | 'prospect' | 'preserve';
 export const MINING_VERBS: readonly MiningVerb[] = ['break', 'core', 'prospect', 'preserve'];
+
+/**
+ * What the engage key can mean with NOTHING in reach (Phase 5): the field
+ * pulse always, and — as certification opens the verbs — the marks. The
+ * wheel chooses, exactly as it does at a seam.
+ */
+export type FieldVerb = 'pulse' | 'beacon' | 'station' | 'shelter' | 'repair';
+/** Holding engage this long plants the selected mark at your feet. */
+export const MARK_PLANT_SECONDS = 1.6;
+/** Standing this close to a named landmark counts as having reached it. */
+export const LANDMARK_REACH_M = 60;
+/** Geology I: unscanned seams inside this stand on the rail, unlabelled. */
+export const SEAM_SENSE_M = 46;
+/** Prior marks further than this from the landing stay off the ground. */
+const MARK_REGION_M = 30_000;
+/** The resonator answers a held read from this close (Phase 5 leads). */
+const RESONATOR_RANGE = 7;
+/** Reading the resonance is deliberate work — twice a seam's dwell. */
+const RESONATOR_READ_SECONDS = 1.8;
 
 // ————— Tuning —————
 
@@ -298,6 +325,35 @@ export const surfaceLive = {
   /** Bumped when the catalogue grows; HUD and FX key off it. */
   speciesNonce: 0,
 
+  // — the field kit (Phase 5) —
+  /** Selected field verb (index into the certified list); the wheel cycles it. */
+  fieldIdx: 0,
+  /** Marks planted this stay, in local metres AND planet space. */
+  marksPlaced: [] as { kind: GroundMark['kind']; dir: [number, number, number]; x: number; z: number }[],
+  /** Bumped when a mark plants; the scene seats a new object on it. */
+  markNonce: 0,
+  /** A field-kit refusal holding the prompt line, and until when. */
+  fieldNote: null as string | null,
+  fieldNoteUntil: 0,
+  /** Landmark KINDS stood at this stay (within reach, not merely sighted). */
+  landmarksStood: new Set<string>(),
+  /** Weather kinds stood in at moderate strength this stay. */
+  weathered: new Set<string>(),
+  /** The walker entered a settlement's heart this stay. */
+  civicStood: false,
+  /** A buried seam was worked this stay (a Geology first). */
+  buriedWorked: false,
+
+  // — the lead (Phase 5) —
+  /** Which lead stage this world answers (0 = not the lead's world). */
+  leadStage: 0 as 0 | 1 | 2,
+  /** Where the resonator stands, in landing-local metres, or null. */
+  leadAt: null as { x: number; z: number } | null,
+  /** The resonance was read this stay. */
+  leadDone: false,
+  /** Bumped when the read completes; FX and audio key off it. */
+  leadNonce: 0,
+
   // — the rolling ground —
   /** Bumped when a tier re-centre commits; the scene re-seats and re-uploads. */
   terrainEpoch: 0,
@@ -328,6 +384,8 @@ let landmarks: LandmarkSpec[] = [];
 let settlements: DistrictSpec[] = [];
 /** The biology lattice's set-pieces for this region. */
 let vignettes: VignetteSpec[] = [];
+/** Marks earlier stays left within this region, projected onto the landing. */
+let regionMarks: RegionMark[] = [];
 /** Species levels present at these gauges — ambient everywhere, civic in town. */
 let ambientSpecies: GroundSpeciesDef[] = [];
 let civicSpecies: GroundSpeciesDef[] = [];
@@ -358,9 +416,62 @@ let heroLifetimeIndex = -1;
 let nearStream: TierStream | null = null;
 let farStream: TierStream | null = null;
 
+/** A standing mark with a place on this landing's ground. */
+export interface RegionMark {
+  kind: GroundMark['kind'];
+  x: number;
+  y: number;
+  z: number;
+  /** True for marks planted this stay — the scene fades them in. */
+  fresh: boolean;
+}
+
 export function groundfallSession(): GroundfallSession | null {
   return session;
 }
+
+/**
+ * Every mark standing in this region — earlier stays' and this one's — with
+ * live ground heights. The scene, the compass and the HUD all read this.
+ */
+export function surfaceMarks(): readonly RegionMark[] {
+  return regionMarks;
+}
+
+/** Where the resonator stands, if this landing is the lead's question. */
+export function surfaceLead(): { x: number; z: number; stage: 1 | 2 } | null {
+  if (!surfaceLive.leadAt || surfaceLive.leadStage === 0) return null;
+  return { ...surfaceLive.leadAt, stage: surfaceLive.leadStage };
+}
+
+/**
+ * The field verbs this walker is certified for, `pulse` always first. Repair
+ * joins only within reach of a settlement — the verb exists where the town
+ * does. Frozen certs (the session's) — a rank cannot advance mid-stay.
+ */
+export function fieldVerbs(): FieldVerb[] {
+  const s = session;
+  const out: FieldVerb[] = ['pulse'];
+  if (!s) return out;
+  const certs = s.certs;
+  if ((certs['mobility'] ?? 0) >= 1) out.push('beacon');
+  if ((certs['survey'] ?? 0) >= 1) out.push('station');
+  if ((certs['mobility'] ?? 0) >= 2) out.push('shelter');
+  if ((certs['liaison'] ?? 0) >= 1 && nearSettlementD() < REPAIR_OFFER_M) out.push('repair');
+  return out;
+}
+
+/** Distance to the nearest settlement heart, or Infinity in the wilds. */
+function nearSettlementD(): number {
+  let best = Infinity;
+  for (const sd of settlements) {
+    const dd = Math.hypot(sd.x - surfaceLive.pos.x, sd.z - surfaceLive.pos.z);
+    if (dd < best) best = dd;
+  }
+  return best;
+}
+/** A repair is offered a little inside its validity, so the refusal is rare. */
+const REPAIR_OFFER_M = 150;
 /** 0–1 progress of the entry dive (flightControl scripts the camera off it). */
 export function entryProgress(): number {
   return Math.min(1, surfaceLive.t / ENTRY_SECONDS);
@@ -538,6 +649,20 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.wadeRefused = false;
   live.speciesSeen.clear();
   live.speciesNonce = 0;
+  live.fieldIdx = 0;
+  live.marksPlaced = [];
+  live.markNonce = 0;
+  live.fieldNote = null;
+  live.fieldNoteUntil = 0;
+  live.landmarksStood.clear();
+  live.weathered.clear();
+  live.civicStood = false;
+  live.buriedWorked = false;
+  live.leadStage = (leadTargetAt(st, s.lifetimeIndex) ?? 0) as 0 | 1 | 2;
+  live.leadAt = null;
+  live.leadDone = false;
+  live.leadNonce = 0;
+  regionMarks = [];
   live.skimRank = skimmerRank(st.expedition);
   live.skimmerAt = null;
   live.skimSpeed = 0;
@@ -582,18 +707,33 @@ function bankSamples(): void {
   if (!s) return;
   const sites: Record<string, GroundSiteOutcome> = {};
   for (const [id, outcome] of surfaceLive.outcomes) sites[id] = outcome;
+  const evidence: GroundEvidence = {
+    landmarks: [...surfaceLive.landmarksStood],
+    civic: surfaceLive.civicStood,
+    weathered: [...surfaceLive.weathered],
+    marks: surfaceLive.marksPlaced.map((m) => ({ kind: m.kind, dir: m.dir })),
+    buriedWorked: surfaceLive.buriedWorked,
+    lead: surfaceLive.leadDone,
+  };
   actions.bankGroundSamples(
     s.worldKey,
     s.name,
     [...surfaceLive.haul],
     sites,
     [...surfaceLive.speciesSeen],
+    evidence,
   );
   surfaceLive.samples = 0;
   surfaceLive.surveyCredit = 0;
   surfaceLive.haul = [];
   surfaceLive.outcomes.clear();
   surfaceLive.speciesSeen.clear();
+  surfaceLive.marksPlaced = [];
+  surfaceLive.landmarksStood.clear();
+  surfaceLive.weathered.clear();
+  surfaceLive.civicStood = false;
+  surfaceLive.buriedWorked = false;
+  surfaceLive.leadDone = false;
 }
 
 /** Hard exit — takeoff finished, or the session must end now. */
@@ -607,6 +747,7 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   landmarks = [];
   settlements = [];
   vignettes = [];
+  regionMarks = [];
   ambientSpecies = [];
   civicSpecies = [];
   priorSpecies = new Set();
@@ -678,6 +819,43 @@ function stepGeneration(): number {
       vignettes = session ? vignetteSites(params, tiers, bio) : [];
       ambientSpecies = session ? speciesPresent(session.type, bio, 'ambient') : [];
       civicSpecies = session ? speciesPresent(session.type, bio, 'civic') : [];
+      // Marks earlier stays left: planet directions, projected onto THIS
+      // landing. A mark beyond the region stays where it is, which is the
+      // entire point of a mark.
+      regionMarks = [];
+      const ground = session
+        ? useGame.getState().s.expedition.groundWorlds[session.worldKey]
+        : undefined;
+      if (ground) {
+        for (const m of ground.marks) {
+          DRY_DIR.set(m.dir[0], m.dir[1], m.dir[2]);
+          dirToLocal(params, DRY_DIR, PAD_LOCAL);
+          if (!Number.isFinite(PAD_LOCAL.x)) continue;
+          if (Math.hypot(PAD_LOCAL.x, PAD_LOCAL.z) > MARK_REGION_M) continue;
+          regionMarks.push({
+            kind: m.kind,
+            x: PAD_LOCAL.x,
+            y: heightAt(params, tiers, PAD_LOCAL.x, PAD_LOCAL.z),
+            z: PAD_LOCAL.z,
+            fresh: false,
+          });
+        }
+        // Survey II — kept charts: landing near a standing station arrives
+        // with its neighbourhood already on the rail.
+        if ((session?.certs['survey'] ?? 0) >= 2) {
+          for (const rm of regionMarks) {
+            if (rm.kind !== 'station') continue;
+            for (const d of allSites) {
+              if (d.buried) continue;
+              if (Math.hypot(d.x - rm.x, d.z - rm.z) <= STATION_CHART_M) {
+                surfaceLive.scanned.add(d.id);
+              }
+            }
+          }
+        }
+      }
+      // The resonator, where this landing is the lead's open question.
+      if (surfaceLive.leadStage > 0) placeResonator();
       bakeCursor.normals = true;
       surfaceLive.ready = true;
     } else {
@@ -686,6 +864,33 @@ function stepGeneration(): number {
   }
   const done = Math.min(bakeCursor.far, tiers.far.texels) + Math.min(bakeCursor.near, tiers.near.texels);
   return bakeCursor.normals ? 1 : (done / totalRows) * 0.97;
+}
+
+/**
+ * Stand the resonator a short, honest walk from the pad: a ring search over
+ * hashed bearings takes the first analytically dry footing, because the
+ * signal is in the ground and the ground, on a planet, is famously
+ * everywhere — but a resonator underwater answers nobody.
+ */
+function placeResonator(): void {
+  const p = params;
+  const s = session;
+  if (!p || !s) return;
+  const r = mulberry((s.seed ^ Math.imul(s.lifetimeIndex + 1, 0x51ea)) >>> 0);
+  const a0 = r() * Math.PI * 2;
+  for (const reach of [280, 340, 420, 520]) {
+    for (let i = 0; i < 12; i++) {
+      const a = a0 + (i / 12) * Math.PI * 2;
+      const x = Math.cos(a) * reach;
+      const z = Math.sin(a) * reach;
+      const ground = analyticHeight(p, x, z) - curvatureDrop(p, x, z);
+      if (ground > p.seaLevelM + 0.6) {
+        surfaceLive.leadAt = { x, z };
+        return;
+      }
+    }
+  }
+  surfaceLive.leadAt = { x: 300, z: 0 }; // the sea won everywhere; stand anyway
 }
 
 // ————— Input —————
@@ -766,16 +971,29 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
   const onLockChange = () => {
     pointerLocked = document.pointerLockElement != null;
   };
-  // The wheel chooses what the pick will mean. Only with a scanned seam in
-  // reach — everywhere else the wheel keeps whatever job the browser gave it.
+  // The wheel chooses what the pick will mean at a scanned seam — and, with
+  // nothing in reach, what the field kit will do (Phase 5): the pulse, or
+  // whichever marks certification has opened. Anywhere else the wheel keeps
+  // whatever job the browser gave it.
   const onWheel = (e: WheelEvent) => {
     if (!pointerLocked || surfaceLive.phase !== 'walk') return;
     const t = surfaceLive.target;
-    if (!t || !surfaceLive.scanned.has(t.id)) return;
-    const n = MINING_VERBS.length;
-    surfaceLive.verbIdx =
-      (surfaceLive.verbIdx + (e.deltaY > 0 ? 1 : -1) + n) % n;
-    e.preventDefault();
+    if (t && surfaceLive.scanned.has(t.id)) {
+      const n = MINING_VERBS.length;
+      surfaceLive.verbIdx =
+        (surfaceLive.verbIdx + (e.deltaY > 0 ? 1 : -1) + n) % n;
+      e.preventDefault();
+      return;
+    }
+    if (!t) {
+      const kit = fieldVerbs();
+      if (kit.length > 1) {
+        surfaceLive.fieldIdx =
+          (surfaceLive.fieldIdx + (e.deltaY > 0 ? 1 : -1) + kit.length) % kit.length;
+        surfaceLive.scanCharge = 0; // a change of mind restarts the dwell
+        e.preventDefault();
+      }
+    }
   };
 
   window.addEventListener('keydown', onKeyDown);
@@ -888,15 +1106,23 @@ function stepEcology(): void {
     const dd = Math.hypot(vg.x - live.pos.x, vg.z - live.pos.z);
     if (dd <= VIGNETTE_CATALOG_M) catalogueSpecies([vg.kind]);
   }
-  if (civicSpecies.length > 0) {
-    for (const sd of settlements) {
-      if (!sd.lit) continue;
-      const dd = Math.hypot(sd.x - live.pos.x, sd.z - live.pos.z);
-      if (dd <= CIVIC_CATALOG_M) {
-        catalogueSpecies(civicSpecies.map((s) => s.id));
-        break;
-      }
+  for (const sd of settlements) {
+    const dd = Math.hypot(sd.x - live.pos.x, sd.z - live.pos.z);
+    if (dd > CIVIC_CATALOG_M) continue;
+    // Walking into town is a civic fact whether or not the lights are on —
+    // a dark district notices visitors MORE (Phase 5). The civic species
+    // still need the lights; nothing nocturnal lives on a porch.
+    live.civicStood = true;
+    if (sd.lit && civicSpecies.length > 0) {
+      catalogueSpecies(civicSpecies.map((s) => s.id));
     }
+    break;
+  }
+  // Reached is reached: standing at a named place is Mobility's business.
+  for (const l of landmarks) {
+    if (live.landmarksStood.has(l.kind)) continue;
+    const dd = Math.hypot(l.x - live.pos.x, l.z - live.pos.z);
+    if (dd <= LANDMARK_REACH_M) live.landmarksStood.add(l.kind);
   }
 }
 
@@ -940,6 +1166,17 @@ function stepWeather(gameTimeMs: number): void {
   if (live.t - outlookAt > OUTLOOK_EVERY_S) {
     outlookAt = live.t;
     live.outlook = weatherOverride ? null : weatherOutlook(wSpec, gameTimeMs);
+  }
+
+  // Standing in it at strength is testimony (Phase 5) — the storm watch and
+  // the Mobility track both read what a stay actually weathered. Only while
+  // the boots (or the sled) are on the ground; the descent does not count.
+  if (
+    (live.phase === 'walk' || live.phase === 'skim')
+    && live.weather.kind !== 'clear'
+    && live.weather.intensity >= 0.5
+  ) {
+    live.weathered.add(live.weather.kind);
   }
 
   // The dust moved: buried seams stand for the rest of the stay. Sand is in
@@ -1062,6 +1299,8 @@ function stepWalk(dt: number): void {
   const tr = tiers!;
 
   // The descend key, repurposed: deploy at the runabout, mount at the sled.
+  // A Pathfinder (Mobility II) deploys wherever they stand — the sled comes
+  // to the certification, not the other way round.
   if (surfaceInput.deploy) {
     surfaceInput.deploy = false;
     if (live.skimRank >= 1) {
@@ -1069,12 +1308,13 @@ function stepWalk(dt: number): void {
       const sledD = live.skimmerAt
         ? Math.hypot(live.pos.x - live.skimmerAt.x, live.pos.z - live.skimmerAt.z)
         : Infinity;
+      const fieldDeploy = (session?.certs['mobility'] ?? 0) >= 2;
       if (live.skimmerAt && sledD < SKIM_MOUNT_RANGE) {
         live.skimmerAt = null;
         mountSkimmer();
         return;
       }
-      if (!live.skimmerAt && shipD < SKIM_DEPLOY_RANGE) {
+      if (!live.skimmerAt && (shipD < SKIM_DEPLOY_RANGE || fieldDeploy)) {
         mountSkimmer();
         return;
       }
@@ -1234,6 +1474,7 @@ function stepTierStreams(): void {
       for (const l of landmarks) l.y = heightAt(p, tr, l.x, l.z);
       for (const sd of settlements) sd.y = heightAt(p, tr, sd.x, sd.z);
       for (const vg of vignettes) vg.y = heightAt(p, tr, vg.x, vg.z);
+      for (const rm of regionMarks) rm.y = heightAt(p, tr, rm.x, rm.z);
       // A standing walker stays standing: where near detail arrives under
       // your boots the floor can step, and a step is worn as a step — not
       // as two seconds of surprised freefall (or a burial). Jumps keep
@@ -1469,16 +1710,7 @@ function stepSkimWork(dt: number): void {
     live.scanCharge += dt / FIELD_SCAN_SECONDS;
     if (live.scanCharge >= 1) {
       live.scanCharge = 0;
-      const r2 = live.scanRangeNow * live.scanRangeNow;
-      for (const d of allSites) {
-        if (d.buried && !live.buriedRevealed) continue;
-        const dx = d.x - live.pos.x;
-        const dz = d.z - live.pos.z;
-        if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
-      }
-      pulseEcology(live.scanRangeNow);
-      live.scanNonce++;
-      audio.subEthaBlip(true);
+      firePulse();
     }
   } else {
     live.scanning = false;
@@ -1500,6 +1732,7 @@ function stepFootsteps(dt: number, planar: number): void {
 /** Carry one completed extraction into the suit's ledgers. */
 function collectYield(d: DepositSpec, verb: MiningVerb): void {
   const live = surfaceLive;
+  if (d.buried && verb !== 'prospect') live.buriedWorked = true;
   const n = verbYield(verb, d.richness);
   const method: SampleHaul['method'] =
     verb === 'core' ? 'core' : verb === 'prospect' ? 'prospect' : 'quick';
@@ -1535,6 +1768,10 @@ function stepWork(dt: number): void {
       Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z) < SKIM_DEPLOY_RANGE
     ) {
       live.skimPrompt = 'deploy the survey skimmer';
+    } else if ((session?.certs['mobility'] ?? 0) >= 2) {
+      // A Pathfinder's sled deploys in the field. Quietly offered — the
+      // line would otherwise never stop being true.
+      live.skimPrompt = 'field-deploy the skimmer';
     }
   }
 
@@ -1575,6 +1812,41 @@ function stepWork(dt: number): void {
     live.scanning = false;
     if (surfaceInput.engage) beginTakeoff();
     return;
+  }
+
+  // The resonator outranks everything but the ship: a lead's question,
+  // standing right there, humming (engine/leads.ts).
+  if (live.leadAt && !live.leadDone) {
+    const dd = Math.hypot(live.leadAt.x - live.pos.x, live.leadAt.z - live.pos.z);
+    if (dd <= RESONATOR_RANGE) {
+      live.prompt = { verb: 'scan', label: 'read the resonance' };
+      live.swinging = false;
+      live.swing = Math.max(0, live.swing - dt * 2.6);
+      live.mineProgress = 0;
+      live.scanning = false;
+      if (surfaceInput.engage) {
+        live.scanCharge += dt / RESONATOR_READ_SECONDS;
+        if (live.scanCharge >= 1) {
+          live.scanCharge = 0;
+          live.leadDone = true;
+          live.leadNonce++;
+          audio.subEthaBlip(true);
+          useUiBus.getState().addToast({
+            kind: 'info',
+            kicker: 'FIELD READING',
+            title: 'The resonance answers',
+            body:
+              live.leadStage === 1
+                ? 'Four notes, patient, and definitely aimed. The full analysis will be ready when the runabout files the reading.'
+                : 'The other half of the conversation, mid-sentence. Board the runabout to file the reading — the Guide is waiting with the folder open.',
+            ttlMs: 6000,
+          });
+        }
+      } else {
+        live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+      }
+      return;
+    }
   }
 
   if (best) {
@@ -1666,32 +1938,147 @@ function stepWork(dt: number): void {
   live.mineProgress = 0;
   live.prompt = null;
 
-  // Nothing in reach: the engage key charges the field pulse instead. One
-  // held breath and every site within range reports to the compass. The
-  // range is the weather's to bend — dust chokes it, storms feed it — and
-  // buried seams answer no pulse until the dust has moved them into the sun.
-  // The biologger rides the same pulse: ambient life answers wherever it
-  // lives, vignettes answer from inside the radius.
+  // Nothing in reach: the engage key belongs to the FIELD KIT. The wheel
+  // chooses — the pulse always, and whichever marks certification has
+  // opened (Phase 5). A refusal note holds the line for a couple of
+  // seconds, exactly like the sled's.
+  const kit = fieldVerbs();
+  if (live.fieldIdx >= kit.length) live.fieldIdx = 0; // repair walked out of reach
+  const fieldVerb = kit[live.fieldIdx] ?? 'pulse';
+
+  if (fieldVerb !== 'pulse') {
+    live.prompt =
+      live.t < live.fieldNoteUntil && live.fieldNote
+        ? { verb: 'scan', label: live.fieldNote, blocked: live.fieldNote }
+        : {
+            verb: 'scan',
+            label:
+              fieldVerb === 'beacon'
+                ? 'raise a beacon here'
+                : fieldVerb === 'station'
+                  ? 'raise a survey station here'
+                  : fieldVerb === 'shelter'
+                    ? 'make camp — raise a shelter here'
+                    : 'make the repair — the settlement is watching',
+          };
+    if (surfaceInput.engage && !(live.t < live.fieldNoteUntil)) {
+      live.scanning = false;
+      live.scanCharge += dt / MARK_PLANT_SECONDS;
+      if (live.scanCharge >= 1) {
+        live.scanCharge = 0;
+        plantMark(fieldVerb);
+      }
+    } else {
+      live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+    }
+    return;
+  }
+
+  // The pulse: one held breath and every site within range reports to the
+  // compass. The range is the weather's to bend — dust chokes it, storms
+  // feed it — and buried seams answer no pulse until the dust has moved
+  // them into the sun (or an Assayer reads the sand — Geology II). The
+  // biologger rides the same pulse.
   if (surfaceInput.engage) {
     live.scanning = true;
     live.scanCharge += dt / FIELD_SCAN_SECONDS;
     if (live.scanCharge >= 1) {
       live.scanCharge = 0;
-      const r2 = live.scanRangeNow * live.scanRangeNow;
-      for (const d of allSites) {
-        if (d.buried && !live.buriedRevealed) continue;
-        const dx = d.x - live.pos.x;
-        const dz = d.z - live.pos.z;
-        if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
-      }
-      pulseEcology(live.scanRangeNow);
-      live.scanNonce++;
-      audio.subEthaBlip(true);
+      firePulse();
     }
   } else {
     live.scanning = false;
     live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
   }
+}
+
+/** One field pulse, wherever it fires from — boots or the mast. */
+function firePulse(): void {
+  const live = surfaceLive;
+  // Geology II — reading the sand: the pulse raises the buried seams the
+  // weather was hoarding, once, for the rest of the stay.
+  if (
+    !live.buriedRevealed
+    && (session?.certs['geology'] ?? 0) >= 2
+    && allSites.some((d) => d.buried)
+  ) {
+    live.buriedRevealed = true;
+    rebuildWorkableField();
+    live.revealNonce++;
+    useUiBus.getState().addToast({
+      kind: 'info',
+      kicker: 'FIELD REPORT',
+      title: 'The sand has no secrets from an Assayer',
+      body: 'The pulse reads straight through the drift. Buried seams stand on the rail for the rest of the stay.',
+      ttlMs: 5600,
+    });
+  }
+  const r2 = live.scanRangeNow * live.scanRangeNow;
+  for (const d of allSites) {
+    if (d.buried && !live.buriedRevealed) continue;
+    const dx = d.x - live.pos.x;
+    const dz = d.z - live.pos.z;
+    if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
+  }
+  pulseEcology(live.scanRangeNow);
+  live.scanNonce++;
+  audio.subEthaBlip(true);
+}
+
+/**
+ * Plant the selected mark at the walker's feet. The engine will judge it
+ * again at banking (it trusts nobody), but the preflight here uses the SAME
+ * validator, so a refusal is immediate and worded identically.
+ */
+function plantMark(kind: GroundMark['kind']): void {
+  const live = surfaceLive;
+  const p = params;
+  const s = session;
+  if (!p || !s) return;
+  const st = useGame.getState().s;
+  const facts = markWorldFacts(st, s.worldKey);
+  if (!facts) return;
+
+  localToDir(p, live.pos.x, live.pos.z, DRY_DIR);
+  const dir: [number, number, number] = [DRY_DIR.x, DRY_DIR.y, DRY_DIR.z];
+  const existing: GroundMark[] = [
+    ...(st.expedition.groundWorlds[s.worldKey]?.marks ?? []),
+    ...live.marksPlaced.map((m) => ({ kind: m.kind, dir: m.dir, atMs: 0 })),
+  ];
+  const verdict = validateMark(s.certs, existing, facts, { kind, dir });
+  if (!verdict.ok) {
+    live.fieldNote = verdict.why;
+    live.fieldNoteUntil = live.t + 2.4;
+    return;
+  }
+
+  live.marksPlaced.push({ kind, dir, x: live.pos.x, z: live.pos.z });
+  regionMarks.push({
+    kind,
+    x: live.pos.x,
+    y: heightAt(p, tiers!, live.pos.x, live.pos.z),
+    z: live.pos.z,
+    fresh: true,
+  });
+  live.markNonce++;
+  audio.sampleChime();
+  useUiBus.getState().addToast({
+    kind: 'info',
+    kicker: 'FIELD WORKS',
+    title:
+      kind === 'beacon'
+        ? 'Beacon raised'
+        : kind === 'station'
+          ? 'Survey station raised'
+          : kind === 'shelter'
+            ? 'Camp made'
+            : 'Repair made',
+    body:
+      kind === 'repair'
+        ? 'Mended where it stood. The record is filed when you board — the town has already noticed.'
+        : 'It will be here, exactly here, every time you come back. The record is filed when you board.',
+    ttlMs: 5200,
+  });
 }
 
 // ————— Camera —————
@@ -1842,6 +2229,21 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       tierCenters: tiers
         ? { near: [tiers.near.cx, tiers.near.cz], far: [tiers.far.cx, tiers.far.cz] }
         : null,
+      // — Phase 5 —
+      marks: regionMarks.map((m) => ({ ...m })),
+      fieldVerbs: fieldVerbs(),
+      fieldVerb: fieldVerbs()[surfaceLive.fieldIdx] ?? 'pulse',
+      fieldNote: surfaceLive.fieldNote,
+      landmarksStood: [...surfaceLive.landmarksStood],
+      weathered: [...surfaceLive.weathered],
+      civicStood: surfaceLive.civicStood,
+      certs: session ? { ...session.certs } : {},
+      lead: {
+        stage: surfaceLive.leadStage,
+        at: surfaceLive.leadAt ? { ...surfaceLive.leadAt } : null,
+        done: surfaceLive.leadDone,
+      },
+      openRequests: session?.openRequests ?? [],
     }),
     /** Pin the sky to a kind ('clear' resets, null clears the pin). */
     setWeather: (kind: string | null) => {
@@ -1931,6 +2333,40 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
         tryDismount();
       }
       return surfaceLive.phase;
+    },
+    /** DEV: write cert ranks straight into the expedition AND the session. */
+    grantCert: (track: string, rank: number) => {
+      const st = useGame.getState().s;
+      st.expedition.certs[track] = Math.max(0, Math.min(3, rank | 0));
+      if (session) {
+        session = { ...session, certs: { ...st.expedition.certs } };
+        useUiBus.getState().setGroundfall(session);
+      }
+      return st.expedition.certs[track];
+    },
+    /** DEV: plant a mark at the boots, through the same validator. */
+    mark: (kind: GroundMark['kind']) => {
+      const before = surfaceLive.marksPlaced.length;
+      plantMark(kind);
+      return surfaceLive.marksPlaced.length > before
+        ? { ...surfaceLive.marksPlaced[surfaceLive.marksPlaced.length - 1]! }
+        : { refused: surfaceLive.fieldNote };
+    },
+    /** DEV: read the resonator without walking to it. */
+    readLead: () => {
+      if (!surfaceLive.leadAt || surfaceLive.leadStage === 0) return false;
+      surfaceLive.leadDone = true;
+      surfaceLive.leadNonce++;
+      return true;
+    },
+    /** DEV: stand a resonator in THIS region regardless of the flags. */
+    forceLead: () => {
+      surfaceLive.leadStage = 1;
+      placeResonator();
+      // The real flow places the resonator before the scene mounts; this
+      // dev path arrives after, so nudge the scene to re-read it.
+      surfaceLive.markNonce++;
+      return surfaceLive.leadAt ? { ...surfaceLive.leadAt } : null;
     },
     detach: () => detachInput?.(),
   };

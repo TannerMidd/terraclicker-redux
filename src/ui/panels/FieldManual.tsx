@@ -5,6 +5,7 @@ import { CARGO_CAPACITY, RIG_LIMIT } from '../../content/refit';
 import { SEAMS } from '../../content/freight';
 import { MEGAPROJECTS } from '../../content/megaprojects';
 import { STANDING_FLOOR } from '../../engine/situations';
+import { GROUND_MISSION_SALVAGE } from '../../engine/bridge';
 
 /**
  * The Guide's practical entry on playing the game. Every number is read from
@@ -225,6 +226,46 @@ export function FieldManual() {
             career — the universe is large and the company recommends trying more of
             it. Walk back to the runabout and press <kbd>e</kbd> to leave. The ship
             handles the ascent; the universe is where you parked it.
+          </p>
+        </Entry>
+
+        <Entry title="Fieldwork: missions, certifications, marks">
+          <p>
+            Some requests carry a line in amber: <b>the real answer is on the
+            ground</b>. A survey walked, a species counted, a storm stood in, a
+            museum&rsquo;s own dirt collected by hand — fly there, do the thing, and
+            the request settles itself the moment you board: the desk&rsquo;s best
+            standing, {GROUND_MISSION_SALVAGE} salvage, and a line in the
+            world&rsquo;s history that says you came. Merely parking in orbit no
+            longer counts for these; orbit is the queue, not the answer.
+          </p>
+          <p>
+            <b>Field Certifications</b> advance on <i>firsts</i> — first landing on
+            a world, first whiteout stood in, first substance catalogued anywhere —
+            in four tracks: Mobility, Survey, Geology, Liaison. Each first counts
+            once, forever, and ranks unlock verbs rather than percentages: the{' '}
+            <b>beacon</b> (Mobility I), the <b>station</b> (Survey I), the{' '}
+            <b>repair</b> (Liaison I), the <b>shelter</b> (Mobility II), and a
+            handful of trained habits — an Assayer&rsquo;s pulse reads buried seams
+            without waiting for the dust; a Cartographer&rsquo;s stations keep the
+            charts between visits; a Consul&rsquo;s visit to a town lifts its
+            standing. Progress lives in the refit bay, in the one column salvage
+            cannot buy.
+          </p>
+          <p>
+            <b>Marks are real.</b> With nothing in reach, the wheel now chooses the
+            field kit — the pulse, or a mark to plant. A planted beacon stands on
+            that exact ground every later landing, rides the compass through a
+            whiteout, and shows from orbit as a pin of amber light. Repairs belong
+            to settlements: mend the tall thing in person and the town&rsquo;s
+            standing rises where everyone can see it. Each world holds a limited
+            number of marks, which the Guide describes as &ldquo;a courtesy to the
+            next visitor, and to the planet&rsquo;s sense of composition&rdquo;.
+          </p>
+          <p>
+            And occasionally the Sub-Etha names a world whose ground is <i>humming</i>.
+            Rumour, orbit, landing, another world, a Guide entry — in that order.
+            The Guide files these under leads, and recommends them.
           </p>
         </Entry>
 

@@ -4,7 +4,7 @@ import { buildCircular, type CircularItem } from '../engine/circular';
 import type { StandingOrders } from '../engine/standingOrders';
 import { deserialize, exportSave, importSave, serialize } from '../engine/save/codec';
 import type { Decimal } from '../engine/num';
-import { ASPECTS, type AspectId, type Derived, type GameState, type GroundSiteOutcome, type Input, type SampleHaul, type SimEffect, type SystemSpecialty } from '../engine/types';
+import { ASPECTS, type AspectId, type Derived, type GameState, type GroundEvidence, type GroundSiteOutcome, type Input, type SampleHaul, type SimEffect, type SystemSpecialty } from '../engine/types';
 import { C } from '../content/constants';
 
 const SAVE_KEY = 'terraclicker2.save';
@@ -285,7 +285,8 @@ export const actions = {
     haul: SampleHaul[],
     sites: Record<string, GroundSiteOutcome>,
     species: string[] = [],
-  ) => dispatch({ type: 'bankGroundSamples', worldKey, worldName, haul, sites, species }),
+    evidence: GroundEvidence = {},
+  ) => dispatch({ type: 'bankGroundSamples', worldKey, worldName, haul, sites, species, evidence }),
   acceptDossier: (id: string) => dispatch({ type: 'acceptDossier', id }),
   declineDossier: () => dispatch({ type: 'declineDossier' }),
   signCharter: (systemIndex: number, id: string) => dispatch({ type: 'signCharter', systemIndex, id }),

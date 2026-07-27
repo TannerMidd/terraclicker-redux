@@ -60,6 +60,34 @@ export interface SituationOptionDef {
   outcome: SituationOutcome;
 }
 
+/**
+ * The ways boots can answer a request (Phase 5). Every kind is verifiable
+ * from what one stay banks — the engine never takes the scene's word for
+ * anything it can check itself.
+ */
+export type GroundObjectiveKind =
+  | 'survey' // bank n survey credit there in one stay
+  | 'species' // catalogue n species there in one stay
+  | 'sample' // bring aboard n of a named kind (`what`)
+  | 'landmark' // stand at a named landmark kind (`what`), or any if unset
+  | 'civic' // walk into a settlement's heart
+  | 'weather' // stand in a named weather kind (`what`) at strength
+  | 'repair' // mend a facility where it stands (Liaison I)
+  | 'beacon' // raise a beacon there (Mobility I)
+  | 'logistics'; // fly any freight job to this world's docks
+
+export interface GroundObjectiveDef {
+  kind: GroundObjectiveKind;
+  /** Threshold, where counting applies. */
+  n?: number;
+  /** The named thing: sample kind id, weather kind, landmark kind. */
+  what?: string;
+  /** One line for the desk and the suit: what the boots must do. */
+  brief: string;
+  /** The Guide's report when it is done in person. `{world}` substituted. */
+  text: string;
+}
+
 export interface SituationDef {
   id: string;
   name: string;
@@ -75,6 +103,13 @@ export interface SituationDef {
   options: readonly SituationOptionDef[];
   /** What happens when the window closes with no answer. */
   ignored: SituationOutcome;
+  /**
+   * The surface resolution (Phase 5): do THIS on the world's own ground and
+   * the request settles itself — desk-best standing, mission salvage, and a
+   * line in the history, per the bridge's law. Requests carrying one of
+   * these are never auto-filed by merely arriving in orbit.
+   */
+  ground?: GroundObjectiveDef;
 }
 
 export const SITUATIONS: readonly SituationDef[] = [
@@ -432,6 +467,46 @@ export const SITUATIONS: readonly SituationDef[] = [
     ignored: {
       text: 'Nobody replied. The message has been repeated twice, then stopped. {world} has drawn its own conclusions.',
       standing: -0.18,
+    },
+  },
+  {
+    id: 'storm-watch',
+    name: 'The Standing Front',
+    text: 'A weather front has parked itself over {world} and is making a statement. The meteorological service would like a qualified observer standing under it before it finishes.',
+    emoji: '⛈️',
+    weight: 6,
+    severity: 'nuisance',
+    targeted: true,
+    windowMs: 600_000,
+    ground: {
+      kind: 'weather',
+      brief: 'land there and stand in the weather while it holds',
+      text: 'An observer stood under the front over {world} for the full statement, which the report describes as "emphatic, with hail". The meteorological service is satisfied; the suit is in the wash.',
+    },
+    options: [
+      {
+        id: 'balloon',
+        label: 'Send instrument balloons',
+        detail: 'They go up. Most of them come down.',
+        costSeconds: 30,
+        outcome: {
+          text: 'The balloons over {world} recorded the front faithfully until it noticed them. The data ends mid-sentence, which the service has published as-is.',
+          standing: 0.07,
+        },
+      },
+      {
+        id: 'wait',
+        label: 'Let it blow itself out',
+        detail: 'Weather usually stops. Usually.',
+        outcome: {
+          text: 'The front over {world} eventually left of its own accord, unobserved, which the meteorological service has logged as "a draw".',
+          standing: 0.02,
+        },
+      },
+    ],
+    ignored: {
+      text: 'The front over {world} finished its statement to an empty gallery and left. The meteorological service has filed the silence.',
+      standing: -0.06,
     },
   },
 ];

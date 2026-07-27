@@ -248,6 +248,37 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
     cond: (s) => s.lifetime.rigsPlaced >= 1,
   },
 
+  // — The ground (Phase 5) —
+  {
+    id: 'cert-1',
+    name: 'Field Qualified',
+    guide:
+      'Earned a Field Certification rank. It cost nothing and cannot be bought, which is why the frame is the expensive part.',
+    cond: (s) => Object.values(s.expedition.certs).some((r) => r >= 1),
+  },
+  {
+    id: 'cert-master',
+    name: 'Long Service',
+    guide:
+      'Reached the third rank of a certification track. The title is honorary. The mileage was not.',
+    cond: (s) => Object.values(s.expedition.certs).some((r) => r >= 3),
+  },
+  {
+    id: 'mark-1',
+    name: 'Left Standing',
+    guide:
+      'Raised a mark on a world — something that will be there, exactly there, every time anyone comes back.',
+    cond: (s) => Object.values(s.expedition.groundWorlds).some((w) => w.marks.length >= 1),
+  },
+  {
+    id: 'lead-closed',
+    name: 'Mostly Harmonic',
+    guide:
+      'Followed a rumour into the ground of one world and out of the ground of another. The Guide has filed the pair, and hums it occasionally.',
+    hidden: true,
+    cond: (s) => Number(s.flags['leadsResolved'] ?? 0) >= 1,
+  },
+
   // — Towel —
   {
     id: 'towel',

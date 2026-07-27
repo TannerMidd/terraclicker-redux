@@ -26,18 +26,19 @@
 import { Vector3 } from 'three/webgpu';
 import { createNoise3D, type NoiseFunction3D } from 'simplex-noise';
 import { mulberry } from '../../../engine/rng';
+import { PLANET_RADIUS_BY_SIZE } from '../../../engine/groundMarks';
 import type { PlanetType } from '../../../engine/types';
 import type { WorldSize } from '../universeLayout';
 
 // ————— Scale —————
 
-/** Physical radius of a landed world, by catalogue size (metres). */
-export const PLANET_RADIUS_M: Record<WorldSize, number> = {
-  small: 260_000,
-  medium: 320_000,
-  large: 380_000,
-  huge: 440_000,
-};
+/**
+ * Physical radius of a landed world, by catalogue size (metres). The table
+ * itself lives with the engine now (mark spacing and repair reach are ledger
+ * questions — see engine/groundMarks.ts); this remains the renderer's name
+ * for it.
+ */
+export const PLANET_RADIUS_M: Record<WorldSize, number> = PLANET_RADIUS_BY_SIZE;
 
 /** Surface gravity, by size. Small worlds are a spring in your step. */
 export const GRAVITY_M_S2: Record<WorldSize, number> = {
@@ -341,6 +342,20 @@ export function dirToLocal(
   out.x = (p.radiusM * dir.dot(p.east)) / w;
   out.z = (-p.radiusM * dir.dot(p.north)) / w;
   return out;
+}
+
+/**
+ * The inverse: where the walker stands, as a planet direction. This is how a
+ * mark planted at local (x, z) becomes something every later landing can
+ * find — the gnomonic frame runs both ways, and the ways agree to 1e-6 at
+ * anything a stay can walk.
+ */
+export function localToDir(p: SurfaceParams, x: number, z: number, out: Vector3): Vector3 {
+  out
+    .copy(p.up)
+    .addScaledVector(p.east, x / p.radiusM)
+    .addScaledVector(p.north, -z / p.radiusM);
+  return out.normalize();
 }
 
 /** FBM helper over the site-local detail noise. */

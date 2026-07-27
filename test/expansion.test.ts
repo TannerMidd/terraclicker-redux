@@ -14,7 +14,7 @@ import {
 import { buildProgress, isBuilt, megaprojectEffects } from '../src/engine/megaprojects';
 import { MEGAPROJECTS } from '../src/content/megaprojects';
 import { SEAMS, SEAM_BY_ID, FREIGHT_BY_ID } from '../src/content/freight';
-import { PETITIONS } from '../src/content/petitions';
+import { ALL_PETITIONS, PETITION_BY_ID } from '../src/content/petitions';
 import { BUILDINGS } from '../src/content/buildings';
 import type { GameState } from '../src/engine/types';
 
@@ -364,10 +364,12 @@ describe('megaprojects', () => {
 
 describe('petitions', () => {
   it('every petition names its world and offers a way out', () => {
-    for (const def of PETITIONS) {
+    // Ground petitions included: every request keeps at least two desk
+    // options, because the surface path is an addition, never a hostage.
+    for (const def of ALL_PETITIONS) {
       expect(def.text).toContain('{world}');
       expect(def.options.length).toBeGreaterThanOrEqual(2);
-      expect(def.severity).toBe('opportunity');
+      expect(['opportunity', 'nuisance']).toContain(def.severity);
       expect(def.windowMs).toBeGreaterThanOrEqual(10 * 60_000);
     }
   });
@@ -385,7 +387,7 @@ describe('petitions', () => {
     for (let i = 0; i < 20 && s.run.petitions.length === 0; i++) step(s, 6 * 60_000, [], OPTS);
     const p = s.run.petitions[0];
     if (!p) return;
-    const def = PETITIONS.find((x) => x.id === p.id)!;
+    const def = PETITION_BY_ID[p.id]!;
     const free = def.options.find((o) => !o.costSeconds && !o.costScienceSeconds) ?? def.options[0]!;
     step(s, 0, [{ type: 'answerSituation', uid: p.uid, optionId: free.id }], OPTS);
     expect(s.run.petitions.some((x) => x.uid === p.uid)).toBe(false);

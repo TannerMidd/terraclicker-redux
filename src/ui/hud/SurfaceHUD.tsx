@@ -13,17 +13,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useUiBus, type GroundfallSession } from '../fx/uiBus';
 import {
+  fieldVerbs,
   MINING_VERBS,
+  SEAM_SENSE_M,
   SHIP_PARK,
   surfaceDeposits,
   surfaceLandmarkList,
   surfaceLive,
+  surfaceMarks,
   surfaceProspects,
   surfaceSeamCensus,
   surfaceSettlementList,
   surfaceVignetteList,
+  type FieldVerb,
   type MiningVerb,
 } from '../scene/surface/surfaceControl';
+import { requestDef } from '../../engine/bridge';
+import type { GroundObjectiveDef } from '../../content/situations';
 import { LANDMARK_SIGHT_M } from '../scene/surface/surfaceLandmarks';
 import { SETTLEMENT_SIGHT_M } from '../scene/surface/surfaceSettlements';
 import {
@@ -68,13 +74,90 @@ const VERB_LABELS: Record<MiningVerb, string> = {
   preserve: 'preserve',
 };
 
+const FIELD_LABELS: Record<FieldVerb, string> = {
+  pulse: 'field scan',
+  beacon: 'beacon',
+  station: 'station',
+  shelter: 'shelter',
+  repair: 'repair',
+};
+
+/**
+ * One open request's live progress, read from the stay so far. `null` means
+ * the objective has no counter worth drawing (logistics is flown, not walked).
+ */
+function objectiveProgress(g: GroundObjectiveDef): { done: boolean; note: string | null } {
+  const live = surfaceLive;
+  switch (g.kind) {
+    case 'survey': {
+      const need = g.n ?? C.GROUND_SURVEY_SAMPLES;
+      return { done: live.surveyCredit >= need, note: `${Math.min(need, live.surveyCredit)}/${need} credit` };
+    }
+    case 'species': {
+      const need = g.n ?? 1;
+      return { done: live.speciesSeen.size >= need, note: `${Math.min(need, live.speciesSeen.size)}/${need} recorded` };
+    }
+    case 'sample': {
+      const need = g.n ?? 1;
+      let have = 0;
+      for (const h of live.haul) if (h.kind === g.what) have += h.n;
+      return { done: have >= need, note: `${Math.min(need, have)}/${need} aboard` };
+    }
+    case 'landmark': {
+      const done = g.what ? live.landmarksStood.has(g.what) : live.landmarksStood.size > 0;
+      return { done, note: done ? 'stood at it' : null };
+    }
+    case 'civic':
+      return { done: live.civicStood, note: live.civicStood ? 'call paid' : null };
+    case 'weather': {
+      const done = g.what ? live.weathered.has(g.what) : live.weathered.size > 0;
+      return { done, note: done ? 'stood in it' : null };
+    }
+    case 'repair': {
+      const done = live.marksPlaced.some((m) => m.kind === 'repair');
+      return { done, note: done ? 'mended' : null };
+    }
+    case 'beacon': {
+      const done = live.marksPlaced.some((m) => m.kind === 'beacon');
+      return { done, note: done ? 'standing' : null };
+    }
+    case 'logistics':
+      return { done: false, note: 'flown, not walked — bring freight' };
+  }
+}
+
+/** The stay's open field work, resolved to briefs the suit can show. */
+function openGroundWork(
+  session: GroundfallSession,
+): { uid: number; name: string; brief: string; done: boolean; note: string | null }[] {
+  const out: { uid: number; name: string; brief: string; done: boolean; note: string | null }[] = [];
+  for (const req of session.openRequests) {
+    const def = requestDef(req.id);
+    if (!def?.ground) continue;
+    const p = objectiveProgress(def.ground);
+    out.push({ uid: req.uid, name: def.name, brief: def.ground.brief, done: p.done, note: p.note });
+  }
+  return out;
+}
+
 /** A compass marker: something with a bearing worth carrying. */
 interface CompassMark {
   key: string;
   /** World bearing, degrees, 0 = north. */
   deg: number;
   distM: number;
-  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal' | 'skimmer' | 'settlement' | 'life';
+  kind:
+    | 'ship'
+    | 'site'
+    | 'prospect'
+    | 'landmark'
+    | 'thermal'
+    | 'skimmer'
+    | 'settlement'
+    | 'life'
+    | 'beacon'
+    | 'mark'
+    | 'sense';
 }
 
 /** Bearing (deg, 0=N, 90=E) from the walker to a ground point. */
@@ -94,7 +177,7 @@ function distTo(x: number, z: number): number {
  * shows: seams close enough to trace, and the runabout's engines while they
  * are still warm enough to find. Getting home becomes navigation.
  */
-function compassMarks(): CompassMark[] {
+function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
   const live = surfaceLive;
 
   // A rank-two skimmer's mast holds the rail through the whiteout — that is
@@ -116,6 +199,18 @@ function compassMarks(): CompassMark[] {
       const dd = distTo(d.x, d.z);
       if (dd <= THERMAL_TRAIL_RANGE_M) {
         out.push({ key: `t:${d.id}`, deg: bearingTo(d.x, d.z), distM: dd, kind: 'thermal' });
+      }
+    }
+    for (const m of surfaceMarks()) {
+      // A beacon broadcasts — the snow cannot eat it. A shelter is warm, and
+      // heat is exactly what a whiteout leaves visible.
+      if (m.kind === 'beacon') {
+        out.push({ key: `mk:${m.x}:${m.z}`, deg: bearingTo(m.x, m.z), distM: distTo(m.x, m.z), kind: 'beacon' });
+      } else if (m.kind === 'shelter') {
+        const dd = distTo(m.x, m.z);
+        if (dd <= THERMAL_SHIP_RANGE_M) {
+          out.push({ key: `mk:${m.x}:${m.z}`, deg: bearingTo(m.x, m.z), distM: dd, kind: 'thermal' });
+        }
       }
     }
     return out;
@@ -159,6 +254,28 @@ function compassMarks(): CompassMark[] {
     const dd = distTo(vg.x, vg.z);
     if (dd <= LANDMARK_SIGHT_M) {
       out.push({ key: vg.id, deg: bearingTo(vg.x, vg.z), distM: dd, kind: 'life' });
+    }
+  }
+  // The marks you left: beacons carry from anywhere in the region, the rest
+  // ride the rail like the working sites they are.
+  for (const m of surfaceMarks()) {
+    if (m.kind === 'repair') continue; // a repair is the town's, not the rail's
+    out.push({
+      key: `mk:${m.x.toFixed(0)}:${m.z.toFixed(0)}`,
+      deg: bearingTo(m.x, m.z),
+      distM: distTo(m.x, m.z),
+      kind: m.kind === 'beacon' ? 'beacon' : 'mark',
+    });
+  }
+  // Geology I — seam sense: unscanned ground close enough to feel stands on
+  // the rail unlabelled. A hunch, drawn as a hunch.
+  if ((certs['geology'] ?? 0) >= 1) {
+    for (const d of surfaceDeposits()) {
+      if (live.scanned.has(d.id) || live.mined.has(d.id)) continue;
+      const dd = distTo(d.x, d.z);
+      if (dd <= SEAM_SENSE_M) {
+        out.push({ key: `sn:${d.id}`, deg: bearingTo(d.x, d.z), distM: dd, kind: 'sense' });
+      }
     }
   }
   return out;
@@ -282,10 +399,13 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
 
   const wx = weatherLine();
   const lm = nearestLandmark();
+  const missions = openGroundWork(session);
+  const kit = fieldVerbs();
+  const kitOpen = !skimming && !target && kit.length > 1 && locked && !live.prompt?.blocked;
 
   return (
     <div className="sh-hud">
-      <Compass heading={heading} marks={compassMarks()} />
+      <Compass heading={heading} marks={compassMarks(session.certs)} />
       {(wx || lm) && (
         <div className="sh-conditions">
           {wx && <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>}
@@ -339,6 +459,17 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
         <em className="sh-world">{session.name} · {skimming ? 'skimming' : 'on foot'}</em>
       </div>
 
+      {missions.length > 0 && (
+        <div className="sh-missions" aria-label="open field work">
+          {missions.map((m) => (
+            <div key={m.uid} className={`sh-mission${m.done ? ' done' : ''}`}>
+              <b>{m.done ? '✓' : '✦'} {m.name}</b>
+              <em>{m.done ? 'done — settles when you board' : m.brief}{!m.done && m.note ? ` · ${m.note}` : ''}</em>
+            </div>
+          ))}
+        </div>
+      )}
+
       {targetScanned && targetKind && (
         <div className="sh-assay">
           <span className="sh-assay-kind">◈ {targetKind.name}</span>
@@ -351,6 +482,19 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
             ))}
           </div>
           <span className="sh-assay-hint">wheel — choose method</span>
+        </div>
+      )}
+
+      {kitOpen && (
+        <div className="sh-assay sh-fieldkit">
+          <div className="sh-verbs" role="radiogroup" aria-label="field kit">
+            {kit.map((v, i) => (
+              <span key={v} className={`sh-verb${i === live.fieldIdx ? ' on' : ''}`} aria-checked={i === live.fieldIdx} role="radio">
+                {FIELD_LABELS[v]}
+              </span>
+            ))}
+          </div>
+          <span className="sh-assay-hint">wheel — choose field work</span>
         </div>
       )}
 
@@ -406,6 +550,9 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
   skimmer: '▽',
   settlement: '⌂',
   life: '✳',
+  beacon: '✦',
+  mark: '▪',
+  sense: '·',
 };
 
 /**

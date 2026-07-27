@@ -24,6 +24,11 @@
  * gfspecies (log districts, vignettes, ambient species and the stay's catalogue) |
  * gfcatalog (catalogue everything the region offers — the biologger, hurried) |
  * gfboard (board the runabout and take off).
+ * Phase 5: gfcert:track,rank (write a Field Certification) |
+ * gfmark:kind (plant beacon/station/shelter/repair through the validator) |
+ * gfmarks (log the region's standing marks) |
+ * gfmission (log open field work + the stay's evidence) |
+ * gflead[:read] (log the lead; :read answers a standing resonator).
  * Prints console errors and the active render backend.
  */
 import './workspace-runtime.mjs';
@@ -43,6 +48,40 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: Number(w), height: Number(h) } });
 
 const errors = [];
+
+/**
+ * Hold engage until the groundfall actually commits (the surface session
+ * exists), then release. A fixed-length tap races the frame loop under
+ * headless software GL, and lost; and the target body keeps orbiting, so
+ * the park is refreshed every poll until the dive takes.
+ */
+async function holdEngageUntilCommitted(page, errs, bodyIndex = null, timeoutMs = 9000) {
+  const until = Date.now() + timeoutMs;
+  let committed = false;
+  while (Date.now() < until) {
+    committed = await page.evaluate((i) => {
+      if (window.__tcSurface?.state()?.phase != null) return true;
+      // Still at the helm: chase the body and keep the key down.
+      const all = window.__tcFlight.bodies();
+      const body = i == null ? all[0] : all.filter((b) => b.land)[Number(i)];
+      if (body) {
+        window.__tcFlight.pose(
+          body.pos[0],
+          body.pos[1] + body.radius + 0.22,
+          body.pos[2],
+          0,
+          -0.6,
+        );
+      }
+      window.__tcFlight.input.engage = true;
+      return false;
+    }, bodyIndex);
+    if (committed) break;
+    await page.waitForTimeout(150);
+  }
+  await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+  if (!committed) errs.push('gfland: the dive never committed');
+}
 page.on('console', (msg) => {
   if (msg.type() === 'error' || msg.type() === 'warning') errors.push(`${msg.type()}: ${msg.text()}`);
 });
@@ -245,9 +284,7 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     } else {
       console.log('gfland:', JSON.stringify(landed));
       await page.waitForTimeout(500);
-      await page.evaluate(() => { window.__tcFlight.input.engage = true; });
-      await page.waitForTimeout(200);
-      await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+      await holdEngageUntilCommitted(page, errors, arg);
     }
   } else if (kind === 'gfland') {
     // Park the runabout just off the hero world and press engage for real:
@@ -257,9 +294,7 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
       window.__tcFlight.pose(0, shell + 0.22, 0, 0, -0.6);
     });
     await page.waitForTimeout(500);
-    await page.evaluate(() => { window.__tcFlight.input.engage = true; });
-    await page.waitForTimeout(200);
-    await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+    await holdEngageUntilCommitted(page, errors);
   } else if (kind === 'gfwaitwalk') {
     // Bake time varies by machine; wait for boots on the ground, not a clock.
     const deadline = Date.now() + Number(arg || 40000);
@@ -401,6 +436,60 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     const seen = await page.evaluate(() => window.__tcSurface.catalogueAll());
     console.log('gfcatalog:', JSON.stringify(seen));
     await page.waitForTimeout(400);
+  } else if (kind === 'gfcert') {
+    // gfcert:track,rank — write a Field Certification rank (dev path).
+    const [track, rank] = String(arg || '').split(',');
+    const got = await page.evaluate(
+      ([t, r]) => window.__tcSurface.grantCert(t, Number(r)),
+      [track, rank ?? '1'],
+    );
+    console.log('gfcert:', track, got);
+  } else if (kind === 'gfmark') {
+    // gfmark:kind — plant a mark at the boots through the real validator.
+    const placed = await page.evaluate((k) => window.__tcSurface.mark(k), arg || 'beacon');
+    if (placed && placed.refused !== undefined) errors.push(`gfmark:${arg}: ${placed.refused}`);
+    else console.log('gfmark:', JSON.stringify(placed));
+    await page.waitForTimeout(400);
+  } else if (kind === 'gfmarks') {
+    const marks = await page.evaluate(() => window.__tcSurface.state()?.marks ?? []);
+    console.log('gfmarks:', JSON.stringify(marks));
+  } else if (kind === 'gfmission') {
+    // The stay's open field work and the evidence gathered so far.
+    const work = await page.evaluate(() => {
+      const st = window.__tcSurface.state();
+      return {
+        openRequests: st?.openRequests ?? [],
+        landmarksStood: st?.landmarksStood ?? [],
+        weathered: st?.weathered ?? [],
+        civicStood: st?.civicStood ?? false,
+        speciesSeen: st?.speciesSeen ?? [],
+        surveyCredit: st?.surveyCredit ?? 0,
+        certs: st?.certs ?? {},
+        fieldVerbs: st?.fieldVerbs ?? [],
+      };
+    });
+    console.log('gfmission:', JSON.stringify(work));
+  } else if (kind === 'gflead') {
+    // gflead — report the lead; :read answers a standing resonator; :force
+    // stands one in this region regardless of the flags (visual checks).
+    const lead = await page.evaluate((a) => {
+      const s = window.__tcSurface;
+      if (a === 'read') return { read: s.readLead(), ...s.state().lead };
+      if (a === 'force') {
+        const at = s.forceLead();
+        if (at) {
+          // Stand a photographer's fourteen metres back, facing it.
+          const st = s.state();
+          const ang = Math.atan2(at.x - st.pos[0], at.z - st.pos[2]);
+          s.teleport(at.x - Math.sin(ang) * 14, at.z - Math.cos(ang) * 14);
+          s.look(Math.atan2(-(at.x - s.state().pos[0]), -(at.z - s.state().pos[2])), 0.06);
+        }
+        return { forced: at, ...s.state().lead };
+      }
+      return s.state()?.lead ?? null;
+    }, arg || '');
+    console.log('gflead:', JSON.stringify(lead));
+    await page.waitForTimeout(200);
   } else if (kind === 'gfvisit') {
     // gfvisit[:i] — stand a photographer's distance from the i-th (default
     // nearest) landmark and face it.

@@ -289,6 +289,8 @@ export const saveSchema = z.object({
             'situationResolved',
             'visited',
             'charter',
+            'markPlaced',
+            'repairMade',
           ]),
           id: z.string(),
           atGameMs: z.number().min(0),

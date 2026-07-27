@@ -31,6 +31,7 @@ import { PETITION_BY_ID, petitionsFor } from '../content/petitions';
 import { C } from '../content/constants';
 import { recordWorldEvent } from './worldRecords';
 import { charterStandingFloor } from './charters';
+import { settlementRoster, settlementSpecOf } from './settlements';
 
 /** One situation, open and waiting for an answer. */
 export interface SituationInstance {
@@ -68,6 +69,16 @@ export function standingFactor(state: GameState): number {
   let sum = 0;
   for (const w of worlds) sum += standingOf(state, w.lifetimeIndex);
   return sum / worlds.length;
+}
+
+/**
+ * Raise a world's standing (never lowers; the ceiling clamps). The generous
+ * half of setStanding, exported for the paths where showing up is the deed —
+ * repairs, civic calls, requests answered on the ground (Phase 5).
+ */
+export function raiseStanding(state: GameState, lifetimeIndex: number, by: number): void {
+  if (by <= 0) return;
+  setStanding(state, lifetimeIndex, standingOf(state, lifetimeIndex) + by);
 }
 
 function setStanding(state: GameState, lifetimeIndex: number, value: number): void {
@@ -147,7 +158,12 @@ export function spawnSituation(
   let world = 0;
   let worldName = '';
   if (def.targeted) {
-    const worlds = state.run.completedPlanets;
+    // A situation whose answer is on the ground can only name ground that
+    // exists — a gas giant's weather is a statement nobody can stand under.
+    const worlds = def.ground
+      ? state.run.completedPlanets.filter((w) => w.type !== 'gasgiant')
+      : state.run.completedPlanets;
+    if (worlds.length === 0) return;
     // Weight toward worlds already in trouble — a neglected world is exactly
     // the one that keeps writing to you.
     const weighted = worlds.map((w) => ({
@@ -354,7 +370,25 @@ export function spawnPetition(state: GameState, effects: SimEffect[]): void {
     weight: 1 + (STANDING_CEIL - standingOf(state, w.lifetimeIndex)) * 3,
   }));
   const world = pickWeighted(state.rng, 'situations', weighted).w;
-  const pool = petitionsFor(world.bottleneck, world.quirks).filter(
+  const pool = petitionsFor({
+    type: world.type,
+    bottleneck: world.bottleneck,
+    quirks: world.quirks,
+    hasInstallations: world.installations.length > 0,
+    hasSettlements:
+      world.type !== 'gasgiant'
+      && settlementRoster(
+        settlementSpecOf({
+          seed: world.seed,
+          type: world.type,
+          size: world.size,
+          lifetimeIndex: world.lifetimeIndex,
+          installations: world.installations,
+          quirks: world.quirks,
+        }),
+      ).length > 0,
+    certs: state.expedition.certs,
+  }).filter(
     // Never ask the same world the same thing twice while it is still waiting.
     (p) => !state.run.petitions.some((q) => q.id === p.id && q.world === world.lifetimeIndex),
   );

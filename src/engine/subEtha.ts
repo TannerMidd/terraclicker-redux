@@ -29,6 +29,7 @@ import {
 } from '../content/subEtha';
 import { DEEP_FIELD_BY_ID } from '../content/deepField';
 import { deepFieldSites } from './deepField';
+import { LEAD_ODDS, maybeSpawnLead } from './leads';
 import { rand } from './rng';
 import type { GameState, SubEthaEntry, SubEthaState } from './types';
 
@@ -155,10 +156,16 @@ function eligible(state: GameState): BroadcastTemplate[] {
 /**
  * Choose and file one ambient broadcast. Rumours are rolled first and at a
  * decent rate — they are the reason to read the channel — but only while
- * there is still something unfound to point at.
+ * there is still something unfound to point at. Leads (Phase 5) roll ahead
+ * of them, rarely: a rumour names a place, a lead starts a story.
  */
 function broadcast(state: GameState): SubEthaEntry | null {
   const r = () => rand(state.rng, 'subetha');
+
+  if (r() < LEAD_ODDS) {
+    const lead = maybeSpawnLead(state, r);
+    if (lead) return fileBroadcast(state, 'rumour', lead);
+  }
 
   if (r() < C.SUBETHA_RUMOUR_ODDS) {
     const id = rumourCandidate(state, r);

@@ -139,6 +139,48 @@ export function SettlementLights({
           <primitive object={spot.cool ? coolMat : warmMat} attach="material" />
         </sprite>
       ))}
+      <MarkLights lifetimeIndex={record.lifetimeIndex} variant={variant} />
+    </>
+  );
+}
+
+/** Mark-light amber: the beacon's colour, seen from space. */
+const MARK_HEX = 0xffb347;
+
+/**
+ * The marks a walker left, visible from orbit (Expansion law 2): amber pins
+ * at the exact planet directions the boots planted them. Mounted inside the
+ * rotating mesh alongside the settlement lights, so a beacon turns with the
+ * ground it stands on — the same frame the landing knows. Repairs excepted:
+ * a repair's orbital signature is the settlement's own lights recovering.
+ */
+export function MarkLights({
+  lifetimeIndex,
+  variant,
+}: {
+  lifetimeIndex: number;
+  variant: CivilizationVariant;
+}) {
+  const marks = useGame((g) => g.s.expedition.groundWorlds[`w${lifetimeIndex}`]?.marks);
+  const spots = useMemo(
+    () =>
+      (marks ?? [])
+        .filter((m) => m.kind !== 'repair')
+        .map((m) => ({
+          pos: [m.dir[0] * 1.035, m.dir[1] * 1.035, m.dir[2] * 1.035] as [number, number, number],
+          scale: 0.05 * LIGHT_SCALE_MULT[variant],
+        })),
+    [marks, variant],
+  );
+  const mat = sharedGlowSprite(MARK_HEX, 0.9);
+  if (spots.length === 0) return null;
+  return (
+    <>
+      {spots.map((spot, i) => (
+        <sprite key={i} position={spot.pos} scale={[spot.scale, spot.scale, 1]} raycast={() => null}>
+          <primitive object={mat} attach="material" />
+        </sprite>
+      ))}
     </>
   );
 }
