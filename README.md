@@ -4,7 +4,6 @@
 
 <p>
   <a href="https://tannermidd.github.io/terraclicker-redux/play/"><img src="docs/brand/btn-play.svg" height="60" alt="Play it free in your browser"></a>
-  &nbsp;&nbsp;
   <a href="https://tannermidd.github.io/terraclicker-redux/"><img src="docs/brand/btn-guide.svg" height="60" alt="What is this?"></a>
 </p>
 
