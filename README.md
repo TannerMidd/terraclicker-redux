@@ -91,6 +91,7 @@ verification, which is why they look like the game rather than like a poster.*
 | **Improbability** | Heart of Gold drives raise the improbability level and improbable things start turning up: whales, petunias, bubbles worth clicking. |
 | **Weather that is arithmetic** | A pure function of world, place and clock — so the front you see turning from orbit is the dust you land in. |
 | **The Survey Skimmer** | A ground-effect sled that folds out of the runabout in three salvage-funded ranks; the last one makes open water something you cross. |
+| **Low flight** | Fit the Atmospheric Handling Package and boarding stops meaning "leave": the runabout lifts to a hover, flies the region at ninety metres a second, charts what it passes over, and sets down anywhere the gear approves of. Same landing, same ground — a landing becomes a region rather than a spot. |
 | **Six planet types, fourteen quirks** | One world refuses to terraform on Mondays. One has a pet asteroid, which has a name you are not told. Planet 42 is always Earth. |
 | **An actual ending** | There is a booking at a restaurant at the end of things. It turns out to have been made already. It pays no multiplier. |
 

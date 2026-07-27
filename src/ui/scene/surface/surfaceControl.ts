@@ -7,6 +7,8 @@
  *   entry    scripted dive through the atmosphere (flight scene, plasma up)
  *   descent  scripted glide from 3 km to the landing site (surface scene)
  *   walk     the player has legs; physics is a capsule on the height field
+ *   skim     the Survey Skimmer, a cushion on the same height field
+ *   fly      the runabout in air, low over the same landing's own ground
  *   takeoff  scripted ascent back to the swap altitude, then the helm
  *
  * Nothing here touches the save directly: samples ride in module state and
@@ -42,6 +44,11 @@ import {
   type SurfaceTiers,
   type TierStream,
 } from './terrainField';
+import {
+  findSetdownSite,
+  SETDOWN_REFUSAL_TEXT,
+  type SetdownRefusal,
+} from './terrainField';
 import { depositSites, SITE_FIELD_RADIUS_SKIM, type DepositSpec } from './surfaceSites';
 import { landmarkSites, type LandmarkSpec } from './surfaceLandmarks';
 import {
@@ -61,13 +68,27 @@ import {
   type GroundSpeciesDef,
 } from '../../../content/groundSpecies';
 import { SAMPLE_BY_ID } from '../../../content/groundSamples';
-import { skimmerRank, surfaceScanRange } from '../../../engine/deepField';
+import { atmoRank, skimmerRank, surfaceScanRange } from '../../../engine/deepField';
 import {
   SKIM_BOOST_M_S,
   SKIM_CRUISE_M_S,
   SKIM_STABILISED_RANK,
   SKIM_WATER_LIMIT_M,
 } from '../../../content/refit';
+import {
+  atmoEnvelope,
+  HOVER_ALT_M,
+  LIFT_SECONDS,
+  ORBIT_HOLD_SECONDS,
+  SETDOWN_ARM_M,
+  SETDOWN_DISTRICT_CLEAR_M,
+  SETDOWN_DIVERT_M,
+  SETDOWN_DRY_MARGIN_M,
+  SETDOWN_SECONDS,
+  sweepRadius,
+  type AtmoEnvelope,
+} from '../../../engine/atmoflight';
+import { handlingFor } from '../../../engine/handling';
 import { siteMinable } from '../../../engine/groundSites';
 import {
   markWorldFacts,
@@ -91,7 +112,7 @@ import * as audio from '../../audio/audio';
 export type { GroundfallSession };
 export type { DepositSpec };
 
-export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'skim' | 'takeoff';
+export type GroundfallPhase = 'entry' | 'descent' | 'walk' | 'skim' | 'fly' | 'takeoff';
 
 /**
  * What the pick can mean, once a seam has been scanned. `break` is the old
@@ -177,7 +198,14 @@ export function verbYield(verb: MiningVerb, richness: number): number {
   }
 }
 const BOARD_RANGE = 6.5;
-/** Where the runabout parks, metres from the touchdown point. */
+/**
+ * Where the runabout parks on ARRIVAL, metres from the touchdown point.
+ *
+ * From Phase 6 this is the first pad, not the only one: the live position
+ * lives in `surfaceLive.shipAt`, which a set-down moves. Everything that
+ * wants to know where the ship is must read that — this constant only says
+ * where a landing begins.
+ */
 export const SHIP_PARK: { x: number; z: number } = { x: 11, z: -7 };
 /**
  * Water deeper than this and the suit declines to continue. It is not a
@@ -205,6 +233,31 @@ const SKIM_CLIMB_MAX = 26;
 const SKIM_FALL_MAX = 13;
 /** Ground-normal Y below which the cushion sheds you down the fall line. */
 const SKIM_SLOPE_STAND = 0.5;
+
+// ————— Low flight (Phase 6) —————
+
+/**
+ * Height the cushion refuses to go below outside a committed set-down. There
+ * is no damage model in this game and there is not about to be one: the ship
+ * declines to arrive at the ground quickly, and says so.
+ */
+const FLY_FLOOR_M = 7;
+/** Velocity approach rate, 1/s. An airframe leans into speed even more slowly. */
+const FLY_ACCEL = 0.9;
+/** Climb and sink rates on the vertical keys, m/s. */
+const FLY_CLIMB_M_S = 34;
+const FLY_SINK_M_S = 26;
+/** Peak cosmetic bank, radians. Small on purpose — see flightBindings.ts. */
+const FLY_BANK = 0.12;
+/** Frame budget for the rolling re-bake while airborne, ms. */
+const FLY_STREAM_MS_BUDGET = 5;
+/** How long the descend key must be held over good ground before the flare. */
+const SETDOWN_HOLD_SECONDS = 0.4;
+/** Re-run the autoland's spiral at most this often, seconds. */
+const SETDOWN_POLL_SECONDS = 0.15;
+/** Where the walker steps out: metres behind the parked ship, and to one side. */
+const AIRLOCK_OFFSET_M = 10;
+const AIRLOCK_SIDE_M = 9.5;
 
 export const surfaceLive = {
   phase: 'entry' as GroundfallPhase,
@@ -354,6 +407,40 @@ export const surfaceLive = {
   /** Bumped when the read completes; FX and audio key off it. */
   leadNonce: 0,
 
+  // — the runabout in air (Phase 6) —
+  /** Atmospheric Handling rank, frozen at landing like the others. */
+  atmoRank: 0,
+  /** Where the ship stands right now, in landing-local metres. It moves. */
+  shipAt: { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: 0 },
+  /** Cosmetic bank while airborne; the canopy and the hull both read it. */
+  roll: 0,
+  /** Ground speed in the air, m/s — the cockpit's readout. */
+  airSpeed: 0,
+  /** Ceiling in force right now, metres above the ground underneath. */
+  ceilingM: 0,
+  /** Seconds engage has been held; ORBIT_HOLD_SECONDS of it means orbit. */
+  orbitHold: 0,
+  /** 0–1 through the scripted lift or flare, or null in free flight. */
+  flyScript: null as { kind: 'lift' | 'setdown'; k: number; fromY: number; fromX: number; fromZ: number; toX: number; toZ: number } | null,
+  /** The chase camera, swapped with the helm's own view key. */
+  chaseView: false,
+  /** Ids the belly sweep has charted this stay — seams, landmarks, districts. */
+  charted: new Set<string>(),
+  /** Bumped when the sweep charts something; the scene pings the ground. */
+  sweepNonce: 0,
+  /** Sweep radius on the ground this frame, metres (0 when it cannot resolve). */
+  sweepM: 0,
+  /** Furthest this stay has been from the pad it first touched down on, metres. */
+  rangeM: 0,
+  /** The ship left the ground under its own power this stay. */
+  flew: false,
+  /** Secondary landings made this stay — a second place, on the same visit. */
+  setdowns: 0,
+  /** What the gear would do if you kept holding descend, and where. */
+  setdown: null as { x: number; z: number; ok: boolean; divertM: number; refused: SetdownRefusal | null } | null,
+  /** The cockpit's second line: the set-down, the ceiling, or a refusal. */
+  flyPrompt: null as string | null,
+
   // — the rolling ground —
   /** Bumped when a tier re-centre commits; the scene re-seats and re-uploads. */
   terrainEpoch: 0,
@@ -369,6 +456,11 @@ export const surfaceInput = {
   engage: false,
   /** Tap of the helm's descend key: deploy, mount or dismount. Edge, consumed. */
   deploy: false,
+  /** Held state of the same two keys — in the air they are climb and sink. */
+  rise: false,
+  descend: false,
+  /** Tap of the helm's view key: canopy or chase. Edge, consumed. */
+  view: false,
 };
 
 let session: GroundfallSession | null = null;
@@ -669,6 +761,27 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.stabilised = false;
   live.skimPrompt = null;
   live.skimNoteUntil = 0;
+  live.atmoRank = atmoRank(st.expedition);
+  live.shipAt = { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: 0 };
+  live.roll = 0;
+  live.airSpeed = 0;
+  live.ceilingM = atmoEnvelope(live.atmoRank).ceiling;
+  live.orbitHold = 0;
+  live.flyScript = null;
+  live.chaseView = false;
+  live.charted.clear();
+  live.sweepNonce = 0;
+  live.sweepM = 0;
+  live.rangeM = 0;
+  live.flew = false;
+  live.setdowns = 0;
+  live.setdown = null;
+  live.flyPrompt = null;
+  flyPrevYaw = 0;
+  flyResponse = handlingFor(st.expedition).responseMult;
+  setdownHold = 0;
+  setdownPollAt = -1;
+  takeoffBaseAlt = 12;
   live.terrainEpoch = 0;
   nearStream = null;
   farStream = null;
@@ -679,6 +792,9 @@ export function beginGroundfall(s: GroundfallSession): void {
   surfaceInput.jump = false;
   surfaceInput.engage = false;
   surfaceInput.deploy = false;
+  surfaceInput.rise = false;
+  surfaceInput.descend = false;
+  surfaceInput.view = false;
 
   useUiBus.getState().setGroundfall(s);
   audio.entryRoarStart();
@@ -686,15 +802,69 @@ export function beginGroundfall(s: GroundfallSession): void {
 
 /** The walker boarded (or the world was delivered out from under them). */
 export function beginTakeoff(): void {
-  if (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim') return;
+  const live = surfaceLive;
+  if (live.phase !== 'walk' && live.phase !== 'skim' && live.phase !== 'fly') return;
   bankSamples();
   // The skimmer stows itself, wherever it stood. It has strong feelings
   // about being left behind and expresses them by not allowing it.
-  surfaceLive.skimmerAt = null;
-  surfaceLive.phase = 'takeoff';
-  surfaceLive.t = 0;
+  live.skimmerAt = null;
+  // Leaving from the air keeps the altitude it already had; the climb-out
+  // starts where the ship is, not where the pad was.
+  takeoffBaseAlt = live.phase === 'fly' ? Math.max(12, live.alt) : 12;
+  if (live.phase === 'fly') audio.flightHumStop();
+  live.flyScript = null;
+  live.orbitHold = 0;
+  live.phase = 'takeoff';
+  live.t = 0;
   releasePointer();
   audio.entryRoarStart();
+}
+
+/** Altitude the departure climbs from — the pad, or wherever it was hovering. */
+let takeoffBaseAlt = 12;
+
+/**
+ * Take her up, but not away: the package's whole point. The lift is two
+ * seconds and a hover, not a cinematic — a stay does not end because the
+ * wheels left the ground, so nothing banks here. The ledger still closes
+ * exactly once, when the ship leaves for orbit.
+ */
+export function beginLift(): void {
+  const live = surfaceLive;
+  if (live.phase !== 'walk' && live.phase !== 'skim') return;
+  if (live.atmoRank < 1 || !params || !tiers) return;
+  const ground = heightAt(params, tiers, live.shipAt.x, live.shipAt.z);
+  live.phase = 'fly';
+  live.t = 0;
+  live.skimmerAt = null; // the sled rides in the ship, as it always has
+  live.flyScript = {
+    kind: 'lift',
+    k: 0,
+    fromY: ground + 2,
+    fromX: live.shipAt.x,
+    fromZ: live.shipAt.z,
+    toX: live.shipAt.x,
+    toZ: live.shipAt.z,
+  };
+  live.pos.set(live.shipAt.x, ground + 2, live.shipAt.z);
+  live.vel.set(0, 0, 0);
+  chaseAt.copy(live.pos); // or the chase camera flies in from the origin
+  chaseAtT = 0;
+  live.yaw = live.shipAt.yaw;
+  live.pitch = 0;
+  live.roll = 0;
+  live.grounded = false;
+  live.target = null;
+  live.mineProgress = 0;
+  live.swinging = false;
+  live.scanning = false;
+  live.scanCharge = 0;
+  live.orbitHold = 0;
+  live.setdown = null;
+  live.ceilingM = atmoEnvelope(live.atmoRank).ceiling;
+  live.prompt = null;
+  live.skimPrompt = null;
+  audio.flightHumStart();
 }
 
 /**
@@ -714,6 +884,10 @@ function bankSamples(): void {
     marks: surfaceLive.marksPlaced.map((m) => ({ kind: m.kind, dir: m.dir })),
     buriedWorked: surfaceLive.buriedWorked,
     lead: surfaceLive.leadDone,
+    flew: surfaceLive.flew,
+    setdowns: surfaceLive.setdowns,
+    charted: surfaceLive.charted.size,
+    rangeM: Math.round(surfaceLive.rangeM),
   };
   actions.bankGroundSamples(
     s.worldKey,
@@ -734,6 +908,10 @@ function bankSamples(): void {
   surfaceLive.civicStood = false;
   surfaceLive.buriedWorked = false;
   surfaceLive.leadDone = false;
+  surfaceLive.flew = false;
+  surfaceLive.setdowns = 0;
+  surfaceLive.charted.clear();
+  surfaceLive.rangeM = 0;
 }
 
 /** Hard exit — takeoff finished, or the session must end now. */
@@ -757,6 +935,7 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   farStream = null;
   releasePointer();
   audio.entryRoarStop();
+  audio.flightHumStop();
   audio.surfaceWindStop();
   audio.weatherPrecipStop();
   audio.tremorRumbleStop();
@@ -905,6 +1084,12 @@ function releasePointer(): void {
 }
 
 /** Walk shares the helm's physical bindings: thrust is forward, and so on. */
+/** Phases where the pointer steers something: boots, sled or ship. */
+function underControl(): boolean {
+  const ph = surfaceLive.phase;
+  return ph === 'walk' || ph === 'skim' || ph === 'fly';
+}
+
 function bindingsHeld(keys: Set<string>) {
   const b = flightPrefs().bindings;
   const held = (action: keyof typeof b) => b[action].some((code) => keys.has(code));
@@ -915,8 +1100,11 @@ function bindingsHeld(keys: Set<string>) {
     jump: held('up'),
     engage: held('engage'),
     // The helm's descend key has nothing to descend on foot; down here it
-    // means the skimmer — deploy, mount, dismount.
+    // means the skimmer — deploy, mount, dismount. Back in the ship's seat
+    // (Phase 6) both vertical keys mean what they always meant at the helm,
+    // so the same two are read as edges AND as held.
     deploy: held('down'),
+    view: held('cameraView'),
   };
 }
 
@@ -924,6 +1112,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
   const keys = new Set<string>();
   let jumpHeld = false;
   let deployHeld = false;
+  let viewHeld = false;
 
   const apply = () => {
     const h = bindingsHeld(keys);
@@ -933,8 +1122,12 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     surfaceInput.engage = h.engage;
     if (h.jump && !jumpHeld) surfaceInput.jump = true;
     jumpHeld = h.jump;
+    surfaceInput.rise = h.jump;
     if (h.deploy && !deployHeld) surfaceInput.deploy = true;
     deployHeld = h.deploy;
+    surfaceInput.descend = h.deploy;
+    if (h.view && !viewHeld) surfaceInput.view = true;
+    viewHeld = h.view;
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -953,7 +1146,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     apply();
   };
   const onMouseMove = (e: MouseEvent) => {
-    if (!pointerLocked || (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim')) return;
+    if (!pointerLocked || !underControl()) return;
     const sens = 0.0021 * flightPrefs().sensitivity;
     surfaceLive.yaw -= e.movementX * sens;
     const invert = flightPrefs().invertPitch ? 1 : -1;
@@ -963,7 +1156,7 @@ export function attachSurfaceInput(canvas: HTMLElement): () => void {
     );
   };
   const onPointerDown = (e: PointerEvent) => {
-    if (surfaceLive.phase !== 'walk' && surfaceLive.phase !== 'skim') return;
+    if (!underControl()) return;
     const el = e.target as HTMLElement | null;
     if (el?.closest?.('.sh-hud, .modal, .modal-veil, .toast-stack')) return;
     if (!pointerLocked) canvas.requestPointerLock?.();
@@ -1211,7 +1404,7 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
   if (
     s.hero &&
     st.planet.lifetimeIndex !== heroLifetimeIndex &&
-    (live.phase === 'walk' || live.phase === 'skim')
+    (live.phase === 'walk' || live.phase === 'skim' || live.phase === 'fly')
   ) {
     useUiBus.getState().addToast({
       kind: 'info',
@@ -1275,9 +1468,15 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
       stepEcology();
       break;
     }
+    case 'fly': {
+      stepFly(dt);
+      stepTierStreams();
+      stepEcology();
+      break;
+    }
     case 'takeoff': {
       const k = smooth01(live.t / TAKEOFF_SECONDS);
-      live.alt = 12 + (TAKEOFF_TOP_ALT - 12) * k * k;
+      live.alt = takeoffBaseAlt + (TAKEOFF_TOP_ALT - takeoffBaseAlt) * k * k;
       live.plasma = smooth01((live.alt - 1400) / 1000);
       live.shake = 0.25 + live.plasma * 0.35;
       audio.surfaceWindSet(Math.max(0.1, 1 - k), live.sunUp);
@@ -1304,7 +1503,7 @@ function stepWalk(dt: number): void {
   if (surfaceInput.deploy) {
     surfaceInput.deploy = false;
     if (live.skimRank >= 1) {
-      const shipD = Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z);
+      const shipD = Math.hypot(live.pos.x - live.shipAt.x, live.pos.z - live.shipAt.z);
       const sledD = live.skimmerAt
         ? Math.hypot(live.pos.x - live.skimmerAt.x, live.pos.z - live.skimmerAt.z)
         : Infinity;
@@ -1465,9 +1664,14 @@ function stepTierStreams(): void {
   if (!nearStream || nearStream.tier !== tr.near) nearStream = makeTierStream(tr.near);
   if (!farStream || farStream.tier !== tr.far) farStream = makeTierStream(tr.far);
 
+  // The ship covers a near tier's chase threshold in eight seconds, so the
+  // bake gets a larger slice of the frame while it is airborne — there is
+  // no walker underfoot to trip over the extra millisecond, and the sled's
+  // budget was never chosen for something doing ninety metres a second.
+  const budget = live.phase === 'fly' ? FLY_STREAM_MS_BUDGET : STREAM_MS_BUDGET;
   const active = nearStream.active ? nearStream : farStream.active ? farStream : null;
   if (active) {
-    if (streamStep(active, p, STREAM_MS_BUDGET)) {
+    if (streamStep(active, p, budget)) {
       streamCommit(active);
       const which = active === nearStream ? 'near' : 'far';
       for (const d of allSites) d.y = heightAt(p, tr, d.x, d.z);
@@ -1492,7 +1696,10 @@ function stepTierStreams(): void {
     Math.max(Math.abs(live.pos.x - t.cx), Math.abs(live.pos.z - t.cz)) > (t.extent / 2) * frac;
   const arm = (stream: TierStream) => {
     const half = stream.tier.extent / 2;
-    const cap = half * 0.15;
+    // The lead is how far ahead of the traveller the new centre is placed.
+    // A walker never needs much; a ship at cruise will have eaten the old
+    // lead before the bake finishes, so it is allowed to aim further out.
+    const cap = half * (live.phase === 'fly' ? 0.34 : 0.15);
     const lx = Math.max(-cap, Math.min(cap, live.vel.x * STREAM_LEAD_S));
     const lz = Math.max(-cap, Math.min(cap, live.vel.z * STREAM_LEAD_S));
     streamBegin(stream, live.pos.x + lx, live.pos.z + lz);
@@ -1666,12 +1873,10 @@ function stepSkimWork(dt: number): void {
 
   // Boarding the runabout stows the sled in the same motion. Nobody has
   // ever wanted the extra step, so there is not one.
-  const shipD = Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z);
+  const shipD = Math.hypot(live.pos.x - live.shipAt.x, live.pos.z - live.shipAt.z);
   if (shipD < BOARD_RANGE + 2) {
-    const cargo = live.samples > 0 ? ` · bank ${live.samples} samples` : '';
-    live.prompt = { verb: 'board', label: `stow the skimmer · board the runabout${cargo}` };
     live.scanning = false;
-    if (surfaceInput.engage) beginTakeoff();
+    stepBoardChoice(dt, ' · stow the skimmer');
     return;
   }
 
@@ -1716,6 +1921,372 @@ function stepSkimWork(dt: number): void {
     live.scanning = false;
     live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
   }
+}
+
+// ————— The runabout, in air (Phase 6) —————
+
+/**
+ * The choice at the ramp, made with the key that was already there.
+ *
+ * Without the package, boarding is what it has always been: engage, and the
+ * ship leaves. With it fitted the same key carries both verbs — a tap takes
+ * her up to a hover, a HOLD breaks straight for orbit — so a pilot who only
+ * wanted to leave never has to learn there was a choice, and the one who
+ * wanted to go and look at that ridge does not need a new binding to say so.
+ */
+function stepBoardChoice(dt: number, extra: string): void {
+  const live = surfaceLive;
+  const cargo = live.samples > 0 ? ` · bank ${live.samples} samples` : '';
+  if (live.atmoRank < 1) {
+    live.prompt = { verb: 'board', label: `board the runabout${extra}${cargo}` };
+    if (surfaceInput.engage) beginTakeoff();
+    return;
+  }
+  if (surfaceInput.engage) {
+    live.orbitHold += dt;
+    live.prompt = {
+      verb: 'board',
+      label:
+        live.orbitHold > 0.22
+          ? 'breaking for orbit…'
+          : `board${extra}${cargo} · hold to break for orbit`,
+    };
+    if (live.orbitHold >= ORBIT_HOLD_SECONDS) beginTakeoff();
+    return;
+  }
+  if (live.orbitHold > 0) {
+    live.orbitHold = 0;
+    beginLift(); // released early: they wanted the ship, not the sky
+    return;
+  }
+  live.prompt = {
+    verb: 'board',
+    label: `take her up${extra} · hold to break for orbit`,
+  };
+}
+
+/** The envelope this stay is flying inside. */
+function flyEnvelope(): AtmoEnvelope {
+  return atmoEnvelope(surfaceLive.atmoRank);
+}
+
+/** The surface line the ship must stay above: ground, or the water on it. */
+function airSurfaceY(p: SurfaceParams, ground: number): number {
+  return p.relief.liquid === 'lava' || p.seaLevelM <= ground ? ground : p.seaLevelM;
+}
+
+/** Nobody sets a runabout down in somebody's plaza. */
+function districtBlocked(x: number, z: number): boolean {
+  for (const d of settlements) {
+    if (Math.hypot(d.x - x, d.z - z) < SETDOWN_DISTRICT_CLEAR_M) return true;
+  }
+  return false;
+}
+
+let setdownPollAt = -1;
+let setdownHold = 0;
+
+/** Where the gear would put the ship if asked right now. Polled, not per-frame. */
+function pollSetdown(force = false): void {
+  const live = surfaceLive;
+  if (!force && live.t - setdownPollAt < SETDOWN_POLL_SECONDS) return;
+  setdownPollAt = live.t;
+  live.setdown = findSetdownSite(params!, tiers!, live.pos.x, live.pos.z, {
+    normalY: flyEnvelope().setdownNormalY,
+    dryMarginM: SETDOWN_DRY_MARGIN_M,
+    divertM: SETDOWN_DIVERT_M,
+    blocked: districtBlocked,
+  });
+}
+
+/**
+ * Fly the runabout low over the ground it landed on.
+ *
+ * The frame never changes: this is the SAME landing, the same seeded local
+ * octaves, the same tiers rolling under a faster traveller (Phase 3 built
+ * the substrate for exactly this). Nothing re-generates because the ship
+ * moved, which is why a hill you walked past is the hill you fly back over.
+ */
+function stepFly(dt: number): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+  const env = flyEnvelope();
+
+  if (surfaceInput.view) {
+    surfaceInput.view = false;
+    live.chaseView = !live.chaseView;
+  }
+  surfaceInput.jump = false;
+  surfaceInput.deploy = false;
+
+  if (live.flyScript) {
+    stepFlyScript(dt);
+    return;
+  }
+
+  // Held engage means one thing up here, and it is the big one.
+  if (surfaceInput.engage) {
+    live.orbitHold += dt;
+    if (live.orbitHold >= ORBIT_HOLD_SECONDS) {
+      beginTakeoff();
+      return;
+    }
+  } else {
+    live.orbitHold = 0;
+  }
+
+  EUL.set(live.pitch, live.yaw, 0);
+  Q.setFromEuler(EUL);
+  FWD.set(0, 0, -1).applyQuaternion(Q);
+  RIGHT.set(1, 0, 0).applyQuaternion(Q);
+
+  WISH.set(0, 0, 0)
+    .addScaledVector(FWD, surfaceInput.fwd)
+    .addScaledVector(RIGHT, surfaceInput.strafe);
+  if (WISH.lengthSq() > 1) WISH.normalize();
+  WISH.multiplyScalar(surfaceInput.run ? env.boost : env.cruise);
+  // The vertical keys are the helm's own, doing the helm's own job.
+  if (surfaceInput.rise) WISH.y += FLY_CLIMB_M_S;
+  if (surfaceInput.descend) WISH.y -= FLY_SINK_M_S;
+
+  // A hold you have been told to be careful with is a hold you cannot hurry
+  // — the same law the helm flies by (engine/handling.ts).
+  const k = 1 - Math.exp(-dt * FLY_ACCEL * flyResponse);
+  live.vel.x += (WISH.x - live.vel.x) * k;
+  live.vel.y += (WISH.y - live.vel.y) * k * 2.2;
+  live.vel.z += (WISH.z - live.vel.z) * k;
+
+  // Weather, until the trim is rated for it. A front does not damage the
+  // ship; it argues with it, which is worse, because you can feel it.
+  if (!env.stormproof && live.weather.intensity > 0.15) {
+    const gust = live.weather.intensity * (live.weather.kind === 'storm' ? 1 : 0.55);
+    const ph = live.t * 0.9;
+    live.vel.x += Math.sin(ph * 1.7 + 1.3) * gust * 9 * dt;
+    live.vel.z += Math.cos(ph * 1.3) * gust * 9 * dt;
+    live.vel.y -= Math.max(0, Math.sin(ph * 0.7)) * gust * 7 * dt;
+  }
+
+  live.pos.addScaledVector(live.vel, dt);
+
+  // The floor and the ceiling. Neither is a wall you hit; both are a firm
+  // opinion the airframe holds and expresses by not going there.
+  const ground = heightAt(p, tr, live.pos.x, live.pos.z);
+  const line = airSurfaceY(p, ground);
+  const floorY = line + FLY_FLOOR_M;
+  if (live.pos.y < floorY) {
+    live.pos.y += (floorY - live.pos.y) * Math.min(1, dt * 9);
+    if (live.vel.y < 0) live.vel.y *= 0.2;
+  }
+  live.ceilingM = env.ceiling;
+  const ceilY = line + env.ceiling;
+  if (live.pos.y > ceilY) {
+    live.pos.y = ceilY;
+    if (live.vel.y > 0) live.vel.y = 0;
+  }
+
+  live.alt = live.pos.y - line;
+  live.airSpeed = Math.hypot(live.vel.x, live.vel.z);
+  live.grounded = false;
+
+  // Bank into the turn, gently, and never at all for a pilot who asked for
+  // a level horizon (flightBindings.ts owns that promise).
+  const wantRoll = flightPrefs().horizonLock
+    ? 0
+    : Math.max(-1, Math.min(1, -surfaceInput.strafe * 0.5 + (live.yaw - flyPrevYaw) / Math.max(dt, 1e-3) * 0.25)) * FLY_BANK;
+  flyPrevYaw = live.yaw;
+  live.roll += (wantRoll - live.roll) * Math.min(1, dt * 3.2);
+
+  stepSweep(dt);
+
+  // How far this stay has got from the pad it first stood on — the one
+  // number a region-crossing request can be settled against.
+  live.rangeM = Math.max(live.rangeM, Math.hypot(live.pos.x, live.pos.z));
+
+  // The set-down: hold descend low over ground the gear accepts, and it
+  // lands. Over ground it does not, the autoland says why — and, if you
+  // keep holding, takes the nearest shelf it does accept.
+  if (live.alt <= SETDOWN_ARM_M) {
+    pollSetdown();
+    const site = live.setdown;
+    if (surfaceInput.descend && site) {
+      setdownHold += dt;
+      if (setdownHold >= SETDOWN_HOLD_SECONDS && site.ok) commitSetdown(site);
+    } else {
+      setdownHold = 0;
+    }
+    live.flyPrompt = setdownLine(site);
+  } else {
+    setdownHold = 0;
+    live.setdown = null;
+    live.flyPrompt =
+      live.alt > env.ceiling - 25
+        ? `ceiling — the package is rated to ${env.ceiling} m`
+        : `descend below ${SETDOWN_ARM_M} m to set down`;
+  }
+
+  live.prompt = {
+    verb: 'board',
+    label: live.orbitHold > 0.12 ? 'breaking for orbit…' : 'hold engage to break for orbit',
+  };
+
+  audio.flightHumSet(
+    Math.min(1, live.airSpeed / Math.max(1, env.cruise)),
+    surfaceInput.run ? 1 : 0,
+  );
+  audio.surfaceWindSet(Math.min(1, 0.3 + 0.7 * (live.airSpeed / Math.max(1, env.boost))), live.sunUp);
+}
+
+let flyPrevYaw = 0;
+/** Response multiplier from the hold, frozen at landing. */
+let flyResponse = 1;
+
+/** The cockpit's second line while the gear is deciding. */
+function setdownLine(site: { ok: boolean; divertM: number; refused: SetdownRefusal | null } | null): string {
+  if (!site) return 'hold descend to set down';
+  if (site.ok && site.divertM === 0) return 'hold descend — the gear likes this ground';
+  if (site.ok) {
+    return `${SETDOWN_REFUSAL_TEXT[site.refused ?? 'water']} — autoland diverts ${Math.round(site.divertM)} m`;
+  }
+  return `nowhere to set down: ${SETDOWN_REFUSAL_TEXT[site.refused ?? 'slope']}`;
+}
+
+/** Commit the flare. From here the ship flies itself down; the keys wait. */
+function commitSetdown(site: { x: number; z: number }): void {
+  const live = surfaceLive;
+  setdownHold = 0;
+  live.flyScript = {
+    kind: 'setdown',
+    k: 0,
+    fromY: live.pos.y,
+    fromX: live.pos.x,
+    fromZ: live.pos.z,
+    toX: site.x,
+    toZ: site.z,
+  };
+  live.vel.set(0, 0, 0);
+  live.flyPrompt = 'setting down';
+}
+
+/** The lift and the flare: two seconds each, and the pilot's hands are off. */
+function stepFlyScript(dt: number): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+  const script = live.flyScript!;
+  const span = script.kind === 'lift' ? LIFT_SECONDS : SETDOWN_SECONDS;
+  script.k = Math.min(1, script.k + dt / span);
+  const e = smooth01(script.k);
+
+  const groundAt = (x: number, z: number) =>
+    airSurfaceY(p, heightAt(p, tr, x, z));
+
+  if (script.kind === 'lift') {
+    const base = groundAt(script.toX, script.toZ);
+    live.pos.set(script.fromX, script.fromY + (base + HOVER_ALT_M - script.fromY) * e, script.fromZ);
+    live.alt = live.pos.y - base;
+    live.roll = 0;
+    if (script.k >= 1) {
+      live.flyScript = null;
+      live.vel.set(0, 0, 0);
+      live.flew = true;
+    }
+    audio.surfaceWindSet(0.35 + e * 0.3, live.sunUp);
+    return;
+  }
+
+  const targetY = groundAt(script.toX, script.toZ) + 2;
+  live.pos.set(
+    script.fromX + (script.toX - script.fromX) * e,
+    script.fromY + (targetY - script.fromY) * e,
+    script.fromZ + (script.toZ - script.fromZ) * e,
+  );
+  live.roll *= 1 - Math.min(1, dt * 4);
+  live.alt = live.pos.y - groundAt(live.pos.x, live.pos.z);
+  if (script.k >= 1) finishSetdown(script.toX, script.toZ);
+}
+
+/** The gear takes the weight, the ramp comes down, the boots are outside. */
+function finishSetdown(x: number, z: number): void {
+  const live = surfaceLive;
+  const p = params!;
+  const tr = tiers!;
+  live.flyScript = null;
+  live.shipAt = { x, z, yaw: live.yaw };
+  live.phase = 'walk';
+  live.t = 0;
+  // Out of the airlock facing the ship, framed exactly as the first landing
+  // frames it: back along the hull AND off to one side, so the first thing
+  // in view is the whole runabout rather than a hull plate.
+  EUL.set(0, live.yaw, 0);
+  Q.setFromEuler(EUL);
+  FWD.set(0, 0, -1).applyQuaternion(Q);
+  RIGHT.set(1, 0, 0).applyQuaternion(Q);
+  const gx = x - FWD.x * AIRLOCK_OFFSET_M - RIGHT.x * AIRLOCK_SIDE_M;
+  const gz = z - FWD.z * AIRLOCK_OFFSET_M - RIGHT.z * AIRLOCK_SIDE_M;
+  live.pos.set(gx, heightAt(p, tr, gx, gz) + EYE, gz);
+  live.vel.set(0, 0, 0);
+  live.yaw = Math.atan2(-(x - gx), -(z - gz));
+  live.pitch = -0.06;
+  live.roll = 0;
+  live.grounded = true;
+  live.airSpeed = 0;
+  live.setdown = null;
+  live.flyPrompt = null;
+  live.touchdownNonce++;
+  live.terrainEpoch++; // the ship moved; everything seated to it re-seats
+  audio.flightHumStop();
+  audio.touchdownThud();
+  audio.surfaceWindSet(0.5, live.sunUp);
+  live.setdowns++;
+}
+
+/**
+ * Set down here and now, diverting if the gear insists, and run the flare
+ * out. Shared by the cockpit's own commit path and the headless harness.
+ */
+export function setDownNow(): { x: number; z: number; refused: SetdownRefusal | null } | null {
+  const live = surfaceLive;
+  if (live.phase !== 'fly' || !params || !tiers) return null;
+  pollSetdown(true);
+  const site = live.setdown;
+  if (!site?.ok) return site ? { x: site.x, z: site.z, refused: site.refused } : null;
+  commitSetdown(site);
+  for (let i = 0; i < 600 && live.flyScript; i++) stepSurface(1 / 60, i / 60);
+  return { x: live.shipAt.x, z: live.shipAt.z, refused: site.refused };
+}
+
+/**
+ * The belly sweep. The sensor looks DOWN through a cone, so altitude buys
+ * width and the air eventually takes it back (engine/atmoflight.ts owns the
+ * law). What it finds is PLACED, never read: a charted seam rides the rail
+ * as a hunch and stays unlabelled until somebody stands over it with the
+ * field kit. Flight finds work; it has never once done any.
+ */
+function stepSweep(dt: number): void {
+  const live = surfaceLive;
+  void dt;
+  const r = sweepRadius(live.alt, live.airSpeed);
+  live.sweepM = r;
+  if (r <= 0) return;
+  const r2 = r * r;
+  let found = 0;
+  const add = (id: string, x: number, z: number) => {
+    if (live.charted.has(id)) return;
+    const dx = x - live.pos.x;
+    const dz = z - live.pos.z;
+    if (dx * dx + dz * dz > r2) return;
+    live.charted.add(id);
+    found++;
+  };
+  for (const d of allSites) {
+    if (d.buried && !live.buriedRevealed) continue;
+    add(d.id, d.x, d.z);
+  }
+  for (const l of landmarks) add(l.id, l.x, l.z);
+  for (const sd of settlements) add(sd.id, sd.x, sd.z);
+  for (const vg of vignettes) add(vg.id, vg.x, vg.z);
+  if (found > 0) live.sweepNonce++;
 }
 
 let footAcc = 0;
@@ -1765,7 +2336,7 @@ function stepWork(dt: number): void {
       const sledD = Math.hypot(live.pos.x - live.skimmerAt.x, live.pos.z - live.skimmerAt.z);
       if (sledD < SKIM_MOUNT_RANGE) live.skimPrompt = 'mount the skimmer';
     } else if (
-      Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z) < SKIM_DEPLOY_RANGE
+      Math.hypot(live.pos.x - live.shipAt.x, live.pos.z - live.shipAt.z) < SKIM_DEPLOY_RANGE
     ) {
       live.skimPrompt = 'deploy the survey skimmer';
     } else if ((session?.certs['mobility'] ?? 0) >= 2) {
@@ -1803,14 +2374,12 @@ function stepWork(dt: number): void {
   live.target = best;
 
   // Boarding the runabout outranks a seam you happen to face through it.
-  const shipD = Math.hypot(live.pos.x - SHIP_PARK.x, live.pos.z - SHIP_PARK.z);
+  const shipD = Math.hypot(live.pos.x - live.shipAt.x, live.pos.z - live.shipAt.z);
   const boardable = shipD < BOARD_RANGE;
 
   if (boardable) {
-    const cargo = live.samples > 0 ? ` · bank ${live.samples} samples` : '';
-    live.prompt = { verb: 'board', label: `board the runabout${cargo}` };
     live.scanning = false;
-    if (surfaceInput.engage) beginTakeoff();
+    stepBoardChoice(dt, '');
     return;
   }
 
@@ -2084,6 +2653,10 @@ function plantMark(kind: GroundMark['kind']): void {
 // ————— Camera —————
 
 const CAM_EUL = new Euler(0, 0, 0, 'YXZ');
+/** Chase-camera seat, lagged behind the hull so the follow is not rigid. */
+const chaseAt = new Vector3();
+const CHASE_UP = new Vector3(0, 7, 0);
+let chaseAtT = 0;
 export const SURFACE_FOV = 62;
 const SURFACE_NEAR = 0.08;
 const SURFACE_FAR = 90_000;
@@ -2118,8 +2691,31 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
     camera.position.set(gx, Math.max(groundY + 16, alt), gz);
     const lookY = heightAt(p, tr, 0, 0);
     camera.up.set(0, 1, 0);
-    camera.lookAt(SHIP_PARK.x, lookY + 6 + alt * 0.04, SHIP_PARK.z);
+    camera.lookAt(live.shipAt.x, lookY + 6 + alt * 0.04, live.shipAt.z);
     camera.rotateZ(Math.sin(t * 1.7) * live.shake * 0.02);
+  } else if (live.phase === 'fly') {
+    // In the seat. The canopy is head-fixed (the frame the helm draws), so
+    // the roll is the ship's and the eye rides it — but only as far as the
+    // horizon-lock preference allows, which is sometimes nowhere at all.
+    CAM_EUL.set(live.pitch, live.yaw, live.roll);
+    camera.quaternion.setFromEuler(CAM_EUL);
+    camera.position.copy(live.pos);
+    if (live.chaseView) {
+      // Behind and above, on a lag, so the ship you paid for is a thing in
+      // the landscape rather than a rumour about where the camera is.
+      FWD.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      const back = 22 + Math.min(14, live.airSpeed * 0.14);
+      const lag = Math.min(0.12, Math.max(1 / 240, t - chaseAtT));
+      chaseAt.lerp(
+        TO_TARGET.copy(live.pos).addScaledVector(FWD, -back).add(CHASE_UP),
+        Math.min(1, 6 * lag),
+      );
+      chaseAtT = t;
+      const floor = heightAt(p, tr, chaseAt.x, chaseAt.z) + 3.5;
+      camera.position.set(chaseAt.x, Math.max(chaseAt.y, floor), chaseAt.z);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(live.pos.x, live.pos.y + 1.5, live.pos.z);
+    }
   } else {
     // The walker's eyes. The kick is the pick landing — a dip, not a shake.
     CAM_EUL.set(live.pitch - live.kick * 0.012, live.yaw, 0);
@@ -2244,6 +2840,21 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
         done: surfaceLive.leadDone,
       },
       openRequests: session?.openRequests ?? [],
+      // — Phase 6 —
+      atmoRank: surfaceLive.atmoRank,
+      shipAt: { ...surfaceLive.shipAt },
+      airSpeed: surfaceLive.airSpeed,
+      ceilingM: surfaceLive.ceilingM,
+      roll: surfaceLive.roll,
+      chaseView: surfaceLive.chaseView,
+      flyScript: surfaceLive.flyScript ? { ...surfaceLive.flyScript } : null,
+      flyPrompt: surfaceLive.flyPrompt,
+      setdown: surfaceLive.setdown ? { ...surfaceLive.setdown } : null,
+      sweepM: surfaceLive.sweepM,
+      charted: [...surfaceLive.charted],
+      rangeM: surfaceLive.rangeM,
+      flew: surfaceLive.flew,
+      setdowns: surfaceLive.setdowns,
     }),
     /** Pin the sky to a kind ('clear' resets, null clears the pin). */
     setWeather: (kind: string | null) => {
@@ -2286,6 +2897,56 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
     heightAt: (x: number, z: number) =>
       params && tiers ? heightAt(params, tiers, x, z) : null,
     board: () => beginTakeoff(),
+    /** Grant the Atmospheric Handling Package at a rank, live (0–3). */
+    setAtmo: (rank: number) => {
+      const r = Math.max(0, Math.min(3, rank | 0));
+      useGame.getState().s.expedition.refits['atmo'] = r;
+      surfaceLive.atmoRank = r;
+      surfaceLive.ceilingM = atmoEnvelope(r).ceiling;
+      return r;
+    },
+    /** Take her up (or bring her down where she stands). */
+    fly: (on: boolean) => {
+      if (on && (surfaceLive.phase === 'walk' || surfaceLive.phase === 'skim')) {
+        beginLift();
+        // The lift is scripted; run it out so the caller lands in free flight.
+        for (let i = 0; i < 240 && surfaceLive.flyScript; i++) stepSurface(1 / 60, i / 60);
+      } else if (!on && surfaceLive.phase === 'fly') {
+        setDownNow();
+      }
+      return surfaceLive.phase;
+    },
+    /** Commit a set-down here and run the flare out to boots on the ground. */
+    setDown: () => setDownNow(),
+    /** Ask the gear about the ground under any point, right now. */
+    probeSetdown: (x?: number, z?: number) => {
+      if (!params || !tiers) return null;
+      const px = x ?? surfaceLive.pos.x;
+      const pz = z ?? surfaceLive.pos.z;
+      return findSetdownSite(params, tiers, px, pz, {
+        normalY: atmoEnvelope(surfaceLive.atmoRank || 1).setdownNormalY,
+        dryMarginM: SETDOWN_DRY_MARGIN_M,
+        divertM: SETDOWN_DIVERT_M,
+        blocked: districtBlocked,
+      });
+    },
+    /** Canopy or chase, without asking the pilot to press anything. */
+    setView: (chase: boolean) => {
+      surfaceLive.chaseView = chase;
+      return surfaceLive.chaseView;
+    },
+    /** Put the ship anywhere in the region, at an altitude, in free flight. */
+    flyTo: (x: number, z: number, altM = 220) => {
+      if (surfaceLive.phase !== 'fly' || !params || !tiers) return null;
+      surfaceLive.flyScript = null;
+      const line = airSurfaceY(params, heightAt(params, tiers, x, z));
+      surfaceLive.pos.set(x, line + altM, z);
+      surfaceLive.vel.set(0, 0, 0);
+      surfaceLive.alt = altM;
+      chaseAt.copy(surfaceLive.pos);
+      stepSurface(1 / 60, 0);
+      return surfaceLive.pos.toArray();
+    },
     /** Teleport a photographer's distance from the i-th nearest settlement. */
     visitSettlement: (i = 0) => {
       if (!params || !tiers || settlements.length === 0) return null;

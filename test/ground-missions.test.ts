@@ -216,6 +216,7 @@ describe('eligibility', () => {
     hasInstallations: true,
     hasSettlements: true,
     certs: {} as Record<string, number>,
+    atmoRank: 0,
   };
 
   it('a gas giant files only desk-answerable mail', () => {

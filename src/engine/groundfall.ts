@@ -15,6 +15,7 @@ import {
   surveyCredit,
 } from './groundSites';
 import { resolveGroundRequests } from './bridge';
+import { atmoRank } from './deepField';
 import { certRank, recordCertFirst } from './certifications';
 import {
   CIVIC_CALL_STANDING,
@@ -175,6 +176,21 @@ export function bankGroundSamples(
   if (evidence.buriedWorked) recordCertFirst(state, effects, 'geology:buried');
   if (civic) recordCertFirst(state, effects, `liaison:call:${worldKey}`);
 
+  // — What the stay did in the air (Phase 6) —
+  //
+  // Verified the only way it can be: the package either is fitted or it is
+  // not, and nothing below is reachable without it. Each first pays once,
+  // ever, like the rest — flying is a thing you learn, not a thing you do
+  // repeatedly for credit.
+  const airborne = atmoRank(state.expedition) >= 1;
+  const charted = airborne ? Math.max(0, Math.floor(evidence.charted ?? 0)) : 0;
+  const rangeM = airborne ? Math.max(0, evidence.rangeM ?? 0) : 0;
+  if (airborne && evidence.flew) {
+    recordCertFirst(state, effects, 'mobility:airborne');
+    if ((evidence.setdowns ?? 0) > 0) recordCertFirst(state, effects, 'mobility:setdown');
+    if (charted > 0) recordCertFirst(state, effects, 'survey:overflight');
+  }
+
   // The civic call (Liaison II): attending in person lifts the town, once a
   // stay. Only where somebody actually lives, and only once certified —
   // before that, showing up is merely showing up.
@@ -198,6 +214,8 @@ export function bankGroundSamples(
       weathered,
       markKinds: marks.map((m) => m.kind),
       repaired,
+      charted,
+      rangeM,
     });
     if (evidence.lead) advanceLead(state, effects, facts.lifetimeIndex);
   }

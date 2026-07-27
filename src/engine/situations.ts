@@ -32,6 +32,7 @@ import { C } from '../content/constants';
 import { recordWorldEvent } from './worldRecords';
 import { charterStandingFloor } from './charters';
 import { settlementRoster, settlementSpecOf } from './settlements';
+import { atmoRank } from './deepField';
 
 /** One situation, open and waiting for an answer. */
 export interface SituationInstance {
@@ -388,6 +389,7 @@ export function spawnPetition(state: GameState, effects: SimEffect[]): void {
         }),
       ).length > 0,
     certs: state.expedition.certs,
+    atmoRank: atmoRank(state.expedition),
   }).filter(
     // Never ask the same world the same thing twice while it is still waiting.
     (p) => !state.run.petitions.some((q) => q.id === p.id && q.world === world.lifetimeIndex),

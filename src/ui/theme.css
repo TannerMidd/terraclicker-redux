@@ -2164,6 +2164,8 @@ button {
   filter: drop-shadow(0 0 24px rgba(0, 0, 0, 0.75));
   animation: fhIn 900ms ease;
 }
+/* Already seated: the frame is simply there (see Canopy's `steady`). */
+.fh-canopy.steady { animation: none; }
 
 .fh-glare {
   position: absolute;
@@ -4039,7 +4041,56 @@ button {
   color: var(--ink-faint);
 }
 
+/* — The cockpit at two hundred metres (Phase 6) — */
+.sh-fly {
+  position: absolute;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: calc(max(22px, env(safe-area-inset-bottom)) + 34px);
+  min-width: 178px;
+  padding: 9px 14px 10px;
+  border: 1px solid rgba(150, 182, 236, 0.16);
+  border-radius: 10px;
+  background: rgba(13, 16, 32, 0.55);
+  backdrop-filter: blur(10px);
+  font-size: 12px;
+  text-align: right;
+}
+.sh-fly-row { display: flex; align-items: baseline; justify-content: flex-end; gap: 5px; color: var(--ink-dim); }
+.sh-fly-row b {
+  font-size: 21px;
+  color: var(--improbable);
+  font-variant-numeric: tabular-nums;
+}
+.sh-fly-row em {
+  font-style: normal;
+  margin-left: 8px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+/* Ceiling: how much of the package's rating is spent. */
+.sh-fly-ceiling {
+  margin: 7px 0 5px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(150, 182, 236, 0.14);
+  overflow: hidden;
+}
+.sh-fly-ceiling i {
+  display: block;
+  height: 100%;
+  background: var(--improbable);
+  transition: width 140ms linear;
+}
+.sh-fly-ceiling.at-limit i { background: #e0a24a; }
+.sh-fly-sub { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-dim); }
+.sh-sweep.dim { color: var(--ink-faint); }
+/* Airborne, the prompt carries two lines: the way out, and the way down. */
+.sh-prompt.fly { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.sh-prompt.fly span { font-size: 11px; color: var(--ink-dim); text-transform: none; letter-spacing: 0.04em; }
+.sh-prompt.fly span.blocked { color: #e0a24a; }
+
 @media (max-width: 900px) {
   .sh-compass-window { width: 240px; }
   .sh-hint { display: none; }
+  .sh-fly { min-width: 140px; padding: 7px 10px 8px; }
 }

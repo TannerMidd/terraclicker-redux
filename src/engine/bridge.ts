@@ -35,6 +35,7 @@ import { PETITION_BY_ID } from '../content/petitions';
 import { recordWorldEvent } from './worldRecords';
 import { waypointId } from './waypoints';
 import { recordCertFirst } from './certifications';
+import { REGION_CROSSING_M } from './atmoflight';
 import { C } from '../content/constants';
 import type { GameState, SampleHaul, SimEffect } from './types';
 
@@ -175,6 +176,10 @@ export interface GroundWorkEvidence {
   markKinds: readonly string[];
   repaired: boolean;
   delivered?: boolean;
+  /** Sites, landmarks and towns the belly sweep charted from the air. */
+  charted?: number;
+  /** Furthest the stay got from its first pad, metres. */
+  rangeM?: number;
 }
 
 /** Evidence for the freight path: a manifest arrived at this world's docks. */
@@ -221,6 +226,10 @@ export function groundObjectiveMet(
       return ev.markKinds.includes('beacon');
     case 'logistics':
       return ev.delivered === true;
+    case 'overflight':
+      return (ev.charted ?? 0) >= (def.n ?? 12);
+    case 'range':
+      return (ev.rangeM ?? 0) >= (def.n ?? REGION_CROSSING_M);
   }
 }
 

@@ -367,10 +367,15 @@ const WINDOW_PATH =
   'M 74,44 C 312,-8 688,-8 926,44 C 968,182 968,388 926,528 C 688,584 312,584 74,528 C 32,388 32,182 74,44 Z';
 const OUTER_PATH = 'M -40,-40 H 1040 V 640 H -40 Z';
 
-export function Canopy() {
+/**
+ * `steady` drops the fade-in. An arrival earns an entrance; swapping back
+ * from the chase camera is a change of seat, and a frame that fades up
+ * every time you press the view key reads as a fault in the glass.
+ */
+export function Canopy({ steady = false }: { steady?: boolean }) {
   return (
     <svg
-      className="fh-canopy"
+      className={`fh-canopy${steady ? ' steady' : ''}`}
       viewBox="0 0 1000 600"
       preserveAspectRatio="xMidYMid slice"
       aria-hidden

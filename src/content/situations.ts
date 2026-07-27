@@ -74,7 +74,9 @@ export type GroundObjectiveKind =
   | 'weather' // stand in a named weather kind (`what`) at strength
   | 'repair' // mend a facility where it stands (Liaison I)
   | 'beacon' // raise a beacon there (Mobility I)
-  | 'logistics'; // fly any freight job to this world's docks
+  | 'logistics' // fly any freight job to this world's docks
+  | 'overflight' // chart n things from the air in one stay (Phase 6)
+  | 'range'; // get n metres from the pad you first touched down on
 
 export interface GroundObjectiveDef {
   kind: GroundObjectiveKind;

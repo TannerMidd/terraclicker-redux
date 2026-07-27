@@ -309,6 +309,14 @@ export interface GroundEvidence {
   buriedWorked?: boolean;
   /** The stay answered a lead's question (engine/leads.ts). */
   lead?: boolean;
+  /** The runabout flew in atmosphere this stay (Phase 6). */
+  flew?: boolean;
+  /** Secondary landings made without leaving for orbit first. */
+  setdowns?: number;
+  /** Things the belly sweep charted from the air this stay. */
+  charted?: number;
+  /** Furthest the stay got from the pad it first touched down on, metres. */
+  rangeM?: number;
 }
 
 /** Samples of one kind carried aboard, and how they left the ground. */

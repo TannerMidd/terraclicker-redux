@@ -15,6 +15,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
   Color,
+  Euler,
   Fog,
   Group,
   InstancedMesh,
@@ -82,6 +83,10 @@ const Q1 = new Quaternion();
 const M1 = new Matrix4();
 const SEAT = new Object3D();
 const UP = new Vector3(0, 1, 0);
+/** The ship's own pose scratch — airborne attitude, or the pad it sits on. */
+const SHIP_EUL = new Euler(0, 0, 0, 'YXZ');
+const SHIP_Q = new Quaternion();
+const SHIP_YAW_Q = new Quaternion();
 
 /** Sun elevation → daylight factor shared by lights, fog and cloud tint. */
 function dayOf(sunY: number): number {
@@ -118,8 +123,13 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   const dustRing = useRef<Mesh>(null);
   const crystals = useRef<InstancedMesh>(null);
   const shipGroup = useRef<Group>(null);
+  const sweepRing = useRef<Mesh>(null);
+  const sweepBornAt = useRef(-10);
+  const lastSweep = useRef(surfaceLive.sweepNonce);
   const dustBornAt = useRef(-10);
   const lastTouchdown = useRef(surfaceLive.touchdownNonce);
+  /** Ground pose of the parked ship, recomputed only when the pad moves. */
+  const padKey = useRef('');
   const warmed = useRef(false);
   const fogRef = useRef<Fog | null>(null);
   /** Slow diurnal drift: the sun crawls, shadows live. */
@@ -462,17 +472,30 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     terrain.current?.position.set(camera.position.x, 0, camera.position.z);
     liquid.current?.position.set(camera.position.x, built.p.seaLevelM, camera.position.z);
 
-    // Suit lamp: the night makes it earn its place on the pool.
-    V2.copy(camera.position);
-    V3.set(0, 0, -1).applyQuaternion(camera.quaternion);
-    V2.addScaledVector(V3, 2.2);
-    V2.y += 0.4;
-    suitLamp.set(
-      V2,
-      LAMP_WARM,
-      Math.max(0, 1 - day * 1.5) * 30 * (live.phase === 'walk' || live.phase === 'skim' ? 1 : 0),
-      34,
-    );
+    // Suit lamp: the night makes it earn its place on the pool. Airborne in
+    // the chase seat it changes jobs and becomes a hull flood — the scene is
+    // lit for a landscape, and a dark ship in front of one is a silhouette
+    // with a canopy, which is not what anybody bought.
+    if (live.phase === 'fly' && live.chaseView) {
+      // Above and behind, on the camera's side of the hull — the sun is
+      // wherever the sun is, and the flank you are looking at is usually
+      // the one it is not on.
+      V3.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      V2.copy(live.pos).addScaledVector(V3, -7);
+      V2.y += 4.5;
+      suitLamp.set(V2, LAMP_WARM, 95, 30);
+    } else {
+      V2.copy(camera.position);
+      V3.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      V2.addScaledVector(V3, 2.2);
+      V2.y += 0.4;
+      suitLamp.set(
+        V2,
+        LAMP_WARM,
+        Math.max(0, 1 - day * 1.5) * 30 * (live.phase === 'walk' || live.phase === 'skim' ? 1 : 0),
+        34,
+      );
+    }
 
     // The nearest live seam glows on the lamp pool; a landing pick spikes it.
     hitFlash.current *= Math.exp(-dt * 9);
@@ -546,12 +569,14 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       }
     }
 
-    // Touchdown dust.
+    // Touchdown dust — at whichever pad the gear last took the weight on.
     if (live.touchdownNonce !== lastTouchdown.current) {
       lastTouchdown.current = live.touchdownNonce;
       dustBornAt.current = t;
       if (dustRing.current) {
-        dustRing.current.position.set(SHIP_PARK.x, heightAt(built.p, built.tiers, SHIP_PARK.x, SHIP_PARK.z) + 0.6, SHIP_PARK.z);
+        const px = live.shipAt.x;
+        const pz = live.shipAt.z;
+        dustRing.current.position.set(px, heightAt(built.p, built.tiers, px, pz) + 0.6, pz);
       }
     }
     const dustAge = t - dustBornAt.current;
@@ -566,24 +591,58 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       }
     }
 
-    // The ship's beacon breathes; its floods come on for the night.
+    // The belly sweep's ping: a ring on the ground where the sensor resolved
+    // something. Rides the dust material, because it is the same idea — a
+    // circle of ground briefly having opinions about you.
+    if (live.sweepNonce !== lastSweep.current) {
+      lastSweep.current = live.sweepNonce;
+      sweepBornAt.current = t;
+      if (sweepRing.current) {
+        sweepRing.current.position.set(
+          live.pos.x,
+          heightAt(built.p, built.tiers, live.pos.x, live.pos.z) + 1.2,
+          live.pos.z,
+        );
+        sweepRing.current.scale.setScalar(Math.max(8, live.sweepM));
+      }
+    }
+    if (sweepRing.current) {
+      const age = t - sweepBornAt.current;
+      sweepRing.current.visible = age < 0.9 && live.phase === 'fly';
+    }
+
+    // The ship: parked on its pad, or the thing the chase camera is behind.
     const ship = shipGroup.current;
     if (ship) {
+      if (live.phase === 'fly') {
+        // In the seat you are inside it, so it is not drawn; from the chase
+        // seat it is the only reason the landscape has a scale at all.
+        ship.visible = live.chaseView;
+        if (ship.visible) {
+          ship.position.copy(live.pos);
+          SHIP_EUL.set(live.pitch * 0.5, live.yaw, live.roll);
+          ship.quaternion.setFromEuler(SHIP_EUL);
+          padKey.current = ''; // force a re-seat when it lands again
+        }
+      } else {
+        ship.visible = true;
+        const key = `${live.shipAt.x.toFixed(1)}:${live.shipAt.z.toFixed(1)}:${epoch}`;
+        if (key !== padKey.current) {
+          padKey.current = key;
+          const px = live.shipAt.x;
+          const pz = live.shipAt.z;
+          ship.position.set(px, heightAt(built.p, built.tiers, px, pz), pz);
+          groundNormalAt(built.p, built.tiers, px, pz, V1);
+          SHIP_Q.setFromUnitVectors(UP, V1.lerp(UP, 0.6).normalize());
+          SHIP_YAW_Q.setFromAxisAngle(UP, live.shipAt.yaw);
+          ship.quaternion.copy(SHIP_Q).multiply(SHIP_YAW_Q);
+        }
+      }
       const beacon = ship.getObjectByName('gf-beacon') as Mesh | null;
       const mat = beacon?.material as MeshBasicMaterial | undefined;
       if (mat) mat.opacity = 0.55 + Math.sin(t * 2.6) * 0.45;
     }
   });
-
-  // ————— Static composition —————
-  const shipPose = useMemo(() => {
-    if (!built) return null;
-    void epoch; // the ground under the pad can re-bake; the pose follows it
-    const y = heightAt(built.p, built.tiers, SHIP_PARK.x, SHIP_PARK.z);
-    groundNormalAt(built.p, built.tiers, SHIP_PARK.x, SHIP_PARK.z, V1);
-    const q = new Quaternion().setFromUnitVectors(UP, V1.clone().lerp(UP, 0.6).normalize());
-    return { y, q };
-  }, [built, epoch]);
 
   return (
     <>
@@ -626,6 +685,9 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             <mesh ref={dustRing} visible={false} material={built.dustB.mat} rotation={[-Math.PI / 2, 0, 0]}>
               <planeGeometry args={[2, 2]} />
             </mesh>
+            <mesh ref={sweepRing} visible={false} material={built.dustB.mat} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[2, 2]} />
+            </mesh>
 
             <Pickaxe />
             <SkimmerDash />
@@ -637,11 +699,10 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             <Ecology p={built.p} tiers={built.tiers} palette={palette} bio={session.aspects.bio} epoch={epoch} />
             <Marks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} nonce={markSeat} />
 
-            {shipPose && (
-              <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>
-                <LandedRunabout />
-              </group>
-            )}
+            {/* Posed by the frame loop: the pad moves now (Phase 6). */}
+            <group ref={shipGroup} position={[SHIP_PARK.x, 0, SHIP_PARK.z]}>
+              <LandedRunabout />
+            </group>
           </>
         )}
       </group>

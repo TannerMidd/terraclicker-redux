@@ -20,6 +20,7 @@
  * request costs the same slice of an afternoon at every stage of the game.
  */
 import type { AspectId, PlanetType } from '../engine/types';
+import { REGION_CROSSING_M } from '../engine/atmoflight';
 import type { SituationDef } from './situations';
 
 /** A petition keyed to the bottleneck the world was delivered against. */
@@ -569,6 +570,91 @@ const GROUND_PETITIONS: readonly PetitionDef[] = [
       standing: -0.06,
     },
   },
+  // — Air work (Phase 6): asked only of a ship with the package fitted —
+  {
+    id: 'ground-overflight',
+    bottleneck: null,
+    name: 'The Line On The Map',
+    text: 'The survey office of {world} has a map with a firm line down the middle of it, drawn by somebody who had not been to the right-hand side. They would like the right-hand side flown over by an instrument that is switched on.',
+    emoji: '🛩️',
+    weight: 8,
+    severity: 'opportunity',
+    targeted: true,
+    windowMs: GROUND_WINDOW,
+    ground: {
+      kind: 'overflight',
+      n: 14,
+      brief: 'fly low over its ground and chart 14 features in one stay',
+      text: 'Fourteen features of {world} have been charted from the air and added to the map, which now has two sides and a line down the middle that has been demoted to a river. The survey office is delighted and slightly defensive.',
+    },
+    options: [
+      {
+        id: 'orbital',
+        label: 'Buy an orbital mosaic',
+        detail: 'Sharp, complete, and taken from very far away.',
+        costSeconds: 32,
+        outcome: {
+          text: 'The orbital mosaic of {world} is beautiful and correct. The survey office has hung it in the corridor, where people walk past it.',
+          standing: 0.08,
+        },
+      },
+      {
+        id: 'defer',
+        label: 'Endorse the existing map',
+        detail: 'Free. The line stays. So does the argument.',
+        outcome: {
+          text: 'The map of {world} has been endorsed as-is. The line remains, and has begun to appear in local idiom as a way of saying "not my problem".',
+          standing: 0.02,
+        },
+      },
+    ],
+    ignored: {
+      text: 'Nobody flew the far side of {world}. The survey office has started labelling it with the names of people who said they would.',
+      standing: -0.07,
+    },
+  },
+  {
+    id: 'ground-range',
+    bottleneck: null,
+    name: 'The Far Shore',
+    text: 'A settlement on {world} maintains that there is another settlement on {world}, roughly a day\'s flight out, which nobody has visited and which sends occasional and increasingly formal postcards. They would like somebody to go and see.',
+    emoji: '🧭',
+    weight: 7,
+    severity: 'opportunity',
+    targeted: true,
+    windowMs: GROUND_WINDOW,
+    ground: {
+      kind: 'range',
+      n: REGION_CROSSING_M,
+      brief: `land there and get ${Math.round(REGION_CROSSING_M / 1000)} km from your pad in one stay`,
+      text: 'The far side of {world} has been reached, looked at, and confirmed to contain ground of the usual kind. The postcards have stopped, which everyone agrees is either resolution or escalation.',
+    },
+    options: [
+      {
+        id: 'relay',
+        label: 'Put a relay between them',
+        detail: 'They can now argue at the speed of light.',
+        costSeconds: 28,
+        outcome: {
+          text: 'A relay now links the two settlements of {world}. They have exchanged greetings, then schedules, then opinions, in that order and within an hour.',
+          standing: 0.09,
+        },
+      },
+      {
+        id: 'defer',
+        label: 'Suggest they write back',
+        detail: 'Free. Postcards are a technology too.',
+        outcome: {
+          text: 'The settlements of {world} are now in correspondence. Both have complained about the other\'s handwriting, which is the first thing they have agreed on.',
+          standing: 0.03,
+        },
+      },
+    ],
+    ignored: {
+      text: 'Nobody crossed {world}. The postcards have become formal enough to be read aloud at meetings, which is how a world starts having two of everything.',
+      standing: -0.06,
+    },
+  },
   // — The weather watch: one per sky that can actually produce it —
   ...([
     {
@@ -716,6 +802,8 @@ export interface PetitionWorldFacts {
   hasSettlements: boolean;
   /** Field Certification ranks — a request for a verb you lack is just spite. */
   certs: Readonly<Record<string, number>>;
+  /** Atmospheric Handling rank: nobody asks for air work from a ship that cannot. */
+  atmoRank: number;
 }
 
 /** Petitions a given world could plausibly file. */
@@ -737,6 +825,13 @@ export function petitionsFor(facts: PetitionWorldFacts): PetitionDef[] {
           break;
         case 'beacon':
           if ((facts.certs['mobility'] ?? 0) < 1) return false;
+          break;
+        // Air work is asked of ships that can fly in air. Before the package
+        // is fitted these requests do not exist, because from the ground
+        // they would read as a world asking you to sprout wings.
+        case 'overflight':
+        case 'range':
+          if (facts.atmoRank < 1) return false;
           break;
         default:
           break;

@@ -219,6 +219,11 @@ export function skimmerRank(expedition: ExpeditionState): number {
   return rankOf(expedition, 'skimmer');
 }
 
+/** Atmospheric Handling rank: 0 none, 1 low flight, 2 stormworthy, 3 terrain hold. */
+export function atmoRank(expedition: ExpeditionState): number {
+  return rankOf(expedition, 'atmo');
+}
+
 /** Speed-cap multiplier applied on top of the range-based cap. */
 export function thrustMult(expedition: ExpeditionState): number {
   return THRUST_MULT[rankOf(expedition, 'thrusters')] ?? 1;

@@ -276,11 +276,65 @@ near tier judges water analytically or the rolling bake will embarrass it.
   goes cold at prestige (`clearLead` in `doPrestige`), because the worlds
   it named left the sky.
 
-## Phase 6 — low-altitude runabout flight
+## Phase 6 — low-altitude runabout flight (SHIPPED)
 
-Last on purpose: it needs Phase 3's chunked generation (now built). An Atmospheric
-Handling Package refit, arbitrary landing validation (generalised
-`findDrySite`), secondary landings without the full entry cinematic.
+Last on purpose: it needed Phase 3's chunked generation, and it is built on
+it exactly. **A landing is now a region rather than a spot.** The frame never
+changes — same landing, same seeded local octaves, same tiers rolling under a
+faster traveller — so the hill you walked past is the hill you fly back over.
+
+- **The refit** (`atmo`, salvage 14/30/60) and its envelope
+  (`engine/atmoflight.ts`, kept free of three.js so the numbers are testable
+  without a canvas): rank 1 flies low (400 m ceiling, 58–92 m/s) and the
+  weather shoves it; rank 2 is **stormworthy trim** (900 m, 76–124) and the
+  front stops arguing with the airframe; rank 3 adds **terrain hold and
+  rough-field gear** (1800 m, 96–160) — the rank that will set you down on a
+  hillside. There is no damage model and there is not about to be one: the
+  floor and the ceiling are firm opinions the airframe expresses by not going
+  there. A hold you were told to be careful with is still a hold you cannot
+  hurry (`engine/handling.ts` feeds the response rate).
+- **One key, two verbs.** Boarding with the package fitted lifts to a hover
+  and the stay stays open; HOLDING engage — at the ramp or anywhere in the
+  air — breaks for orbit exactly as it always did. A pilot who only wanted to
+  leave never learns there was a choice. Nothing banks on a lift: the ledger
+  closes once, when the ship leaves for orbit, which is why a hop does not
+  inflate a world's visit count. Aloft, the helm keys do their own jobs again
+  (thrust/slide, rise/descend, `V` swaps canopy for a chase seat behind your
+  own hull — the one view that gives the landscape a scale).
+- **Set down anywhere the gear accepts** (`findSetdownSite`, the generalised
+  `findDrySite`): hold descend below 42 m and dry, level, unoccupied ground
+  takes the weight — a second landing on the same visit, no plasma, no
+  cinematic. Water, lava, slope past the gear's rating and other people's
+  plazas are refusals **with a reason**, and the autoland spirals (golden
+  angle, as it always has) to the nearest shelf that will hold. The ship is
+  a live object from here on: `surfaceLive.shipAt` moves, the compass follows
+  it, the sled deploys from it, and the walker steps out framed exactly as
+  an arrival frames it. A law worth recording beside Phase 3's: **a set-down
+  reads the TIERS, not the analytic field** — the opposite of the census
+  law, and deliberately so, because a census places things kilometres away
+  while a set-down puts a ship and then a walker on ground both of them are
+  standing on this second.
+- **The belly sweep** charts what it flies over — seams, landmarks, towns,
+  colonies — onto the compass as HUNCHES. The sensor is a cone, so altitude
+  buys width (`alt × 1.45`, capped at 900 m) and the air takes it back above
+  1250 m, and speed past 150 m/s smears it. The sweep PLACES; it has never
+  once read anything. Nothing airborne mints a unit of anything: the seal
+  holds, the yield cap holds, and boots with a field kit are still the only
+  way to know what a seam is.
+- **Air work** (two new `GroundObjectiveKind`s, verified from the banked
+  stay like everything else): `overflight` counts charts, `range` counts
+  metres from the pad you first touched down on. Two authored petitions
+  carry them, and both are invisible until the package is fitted — from the
+  ground they would read as a world asking you to sprout wings. Three
+  once-ever certification firsts: `mobility:airborne`, `mobility:setdown`,
+  `survey:overflight`, each believed only from a ship that could have done
+  it.
+
+Measured with the ground rolling under a boosted ship: 30 s of flight never
+leaves the near tier's cover, epochs commit, the height under the hull stays
+a real number (`test/atmo-flight.test.ts`). The stream gets a larger frame
+budget while airborne and aims its new centres further ahead, because the
+sled's numbers were never chosen for something doing ninety metres a second.
 
 ## The vertical slice
 
@@ -295,16 +349,30 @@ read the same number.)*
 ## Verification conventions
 
 `npm test` (groundfall + ground-sites + weather + ground-landmarks + skimmer
-+ settlements + settlements-ground + certifications + ground-missions suites
-hold the promises above), `npm run build`, `npm run balance` after economy
-changes. Visual verification is headless: `scripts/shot.mjs` with the
-`__tcSurface` hooks (`gfscanall`, `gfverb:i`, `gfmine`, `gfstate`,
-`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`, Phase 3's
-`gfskimmer:rank` + `gfskim:on|off`, Phase 4's `gfland:i` — land on the i-th
-landable body, settled worlds included — `gfsettle[:i]`, `gfspecies`,
-`gfcatalog`, and Phase 5's `gfcert:track,rank`, `gfmark:kind`, `gfmarks`,
-`gfmission`, `gflead[:read|:force]`) — the Browser pane cannot composite
-this scene. Extend the hook object as each phase lands. Harness law learned
-in Phase 5: a fixed-length engage tap races the headless frame loop and the
-target body keeps orbiting, so `gfland` now re-parks and HOLDS engage until
-the surface session exists — never trust a timed tap to commit a dive.
++ settlements + settlements-ground + certifications + ground-missions +
+atmo-flight suites hold the promises above), `npm run build`, `npm run
+balance` after economy changes. Visual verification is headless:
+`scripts/shot.mjs` with the `__tcSurface` hooks (`gfscanall`, `gfverb:i`,
+`gfmine`, `gfstate`, `gfweather:kind`, `gfvisit`, `gfshore[:look]`,
+`gflandmarks`, Phase 3's `gfskimmer:rank` + `gfskim:on|off`, Phase 4's
+`gfland:i` — land on the i-th landable body, settled worlds included —
+`gfsettle[:i]`, `gfspecies`, `gfcatalog`, Phase 5's `gfcert:track,rank`,
+`gfmark:kind`, `gfmarks`, `gfmission`, `gflead[:read|:force]`, and Phase 6's
+`gfatmo:rank`, `gffly:on|off`, `gfflyto:x,z[,alt]`, `gfsetdown`,
+`gfview:chase|cockpit`, `gfair`, `gfprobe[:x,z]`, `gfwet`) — the Browser
+pane cannot composite this scene. Extend the hook object as each phase
+lands. Every headless run starts with `flight:on` before `gfland`: with no
+helm there are no bodies to park over.
+
+Two harness laws, learned the hard way. **Phase 5:** a fixed-length engage
+tap races the frame loop and the target body keeps orbiting, so `gfland`
+re-parks and HOLDS engage until the surface session exists — never trust a
+timed tap to commit a dive. **Phase 6:** this page stops being given frames
+after roughly a dozen seconds of headless life (an on-foot control run
+freezes at the same frame count, so it is the browser, not the scene). Two
+consequences: anything you want to photograph must be reached EARLY in the
+run, and anything polled on a live clock — the set-down verdict, a CSS
+entrance animation — will read stale. `gfprobe`/`gfwet` therefore ask the
+validator directly rather than through the frame loop, and the fly-phase
+canopy is drawn `steady` (no fade-in) because a frame that fades up on
+every view swap reads as a fault in the glass anyway.

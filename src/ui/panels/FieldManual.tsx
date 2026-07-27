@@ -1,11 +1,18 @@
 import type { ReactNode } from 'react';
 import { C } from '../../content/constants';
 import { FACTION_META } from '../../content/contracts';
-import { CARGO_CAPACITY, RIG_LIMIT } from '../../content/refit';
+import {
+  ATMO_BOOST_M_S,
+  ATMO_CEILING_M,
+  ATMO_CRUISE_M_S,
+  CARGO_CAPACITY,
+  RIG_LIMIT,
+} from '../../content/refit';
 import { SEAMS } from '../../content/freight';
 import { MEGAPROJECTS } from '../../content/megaprojects';
 import { STANDING_FLOOR } from '../../engine/situations';
 import { GROUND_MISSION_SALVAGE } from '../../engine/bridge';
+import { SETDOWN_ARM_M } from '../../engine/atmoflight';
 
 /**
  * The Guide's practical entry on playing the game. Every number is read from
@@ -266,6 +273,44 @@ export function FieldManual() {
             And occasionally the Sub-Etha names a world whose ground is <i>humming</i>.
             Rumour, orbit, landing, another world, a Guide entry — in that order.
             The Guide files these under leads, and recommends them.
+          </p>
+        </Entry>
+
+        <Entry title="Low flight: a landing is a region, not a spot">
+          <p>
+            Fit the <b>Atmospheric Handling Package</b> and boarding stops meaning
+            &ldquo;leave&rdquo;. Tap <kbd>e</kbd> at the ramp and the runabout lifts to
+            a hover with the stay still open; <i>hold</i> <kbd>e</kbd> — at the ramp or
+            anywhere in the air — and it breaks for orbit exactly as it always did.
+            Aloft, the helm keys do their own jobs again: thrust and slide, rise and
+            descend, <kbd>v</kbd> to swap between the canopy and a chase seat behind
+            your own hull.
+          </p>
+          <p>
+            The package is a ceiling and a set of manners. Rank one flies low —{' '}
+            {ATMO_CEILING_M[1]} m above the ground underneath, {ATMO_CRUISE_M_S[1]}–
+            {ATMO_BOOST_M_S[1]} m/s — and weather shoves it about. Rank two is{' '}
+            <b>stormworthy trim</b>: the front stops arguing with the airframe. Rank
+            three adds <b>terrain hold and rough-field gear</b>, which is the rank that
+            will put you down on a hillside. Nothing crashes at any rank; the ship
+            simply declines to arrive at the ground quickly, and says so.
+          </p>
+          <p>
+            Hold <kbd>c</kbd> below {SETDOWN_ARM_M} m and the gear looks at what is
+            underneath. Dry, level, unoccupied ground takes the weight and the ramp
+            comes down — a <b>second landing on the same visit</b>, no plasma, no
+            cinematic, the ship now parked wherever you left it and on your compass
+            where it belongs. Standing water, lava, a slope beyond the gear, or
+            somebody&rsquo;s plaza and the autoland says which, then diverts to the
+            nearest shelf that will hold.
+          </p>
+          <p>
+            And the belly sensor is looking down the whole time. Height buys width and
+            speed takes it away, so flying low and unhurried <b>charts</b> the seams,
+            landmarks, towns and colonies you pass — onto the compass, as hunches. The
+            sweep places things; it has never once read one. The field kit and a pair
+            of boots are still the only way to know what a seam is, and the ledger
+            still only pays for work.
           </p>
         </Entry>
 

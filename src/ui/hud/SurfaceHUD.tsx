@@ -16,7 +16,6 @@ import {
   fieldVerbs,
   MINING_VERBS,
   SEAM_SENSE_M,
-  SHIP_PARK,
   surfaceDeposits,
   surfaceLandmarkList,
   surfaceLive,
@@ -29,6 +28,7 @@ import {
   type MiningVerb,
 } from '../scene/surface/surfaceControl';
 import { requestDef } from '../../engine/bridge';
+import { REGION_CROSSING_M, SETDOWN_ARM_M } from '../../engine/atmoflight';
 import type { GroundObjectiveDef } from '../../content/situations';
 import { LANDMARK_SIGHT_M } from '../scene/surface/surfaceLandmarks';
 import { SETTLEMENT_SIGHT_M } from '../scene/surface/surfaceSettlements';
@@ -123,6 +123,19 @@ function objectiveProgress(g: GroundObjectiveDef): { done: boolean; note: string
     }
     case 'logistics':
       return { done: false, note: 'flown, not walked — bring freight' };
+    case 'overflight': {
+      const need = g.n ?? 12;
+      const have = live.charted.size;
+      return { done: have >= need, note: `${Math.min(need, have)}/${need} charted` };
+    }
+    case 'range': {
+      const need = g.n ?? REGION_CROSSING_M;
+      const have = live.rangeM;
+      return {
+        done: have >= need,
+        note: `${(Math.min(need, have) / 1000).toFixed(1)}/${(need / 1000).toFixed(0)} km out`,
+      };
+    }
   }
 }
 
@@ -184,9 +197,10 @@ function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
   // the entire meaning of the rank, and it only holds while you are ON it.
   if (live.weather.markersCut && !live.stabilised) {
     const out: CompassMark[] = [];
-    const shipD = distTo(SHIP_PARK.x, SHIP_PARK.z);
+    const ship = surfaceLive.shipAt;
+    const shipD = distTo(ship.x, ship.z);
     if (shipD <= THERMAL_SHIP_RANGE_M) {
-      out.push({ key: 'ship', deg: bearingTo(SHIP_PARK.x, SHIP_PARK.z), distM: shipD, kind: 'thermal' });
+      out.push({ key: 'ship', deg: bearingTo(ship.x, ship.z), distM: shipD, kind: 'thermal' });
     }
     if (live.skimmerAt) {
       const sd = distTo(live.skimmerAt.x, live.skimmerAt.z);
@@ -219,8 +233,8 @@ function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
   const out: CompassMark[] = [
     {
       key: 'ship',
-      deg: bearingTo(SHIP_PARK.x, SHIP_PARK.z),
-      distM: distTo(SHIP_PARK.x, SHIP_PARK.z),
+      deg: bearingTo(live.shipAt.x, live.shipAt.z),
+      distM: distTo(live.shipAt.x, live.shipAt.z),
       kind: 'ship',
     },
   ];
@@ -241,7 +255,8 @@ function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
   }
   for (const l of surfaceLandmarkList()) {
     const dd = distTo(l.x, l.z);
-    if (dd <= LANDMARK_SIGHT_M) {
+    // Charted from the air, or close enough to see for yourself.
+    if (dd <= LANDMARK_SIGHT_M || live.charted.has(l.id)) {
       out.push({ key: l.id, deg: bearingTo(l.x, l.z), distM: dd, kind: 'landmark' });
     }
   }
@@ -252,7 +267,7 @@ function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
   // Vignette life in sight — the biologger's marks.
   for (const vg of surfaceVignetteList()) {
     const dd = distTo(vg.x, vg.z);
-    if (dd <= LANDMARK_SIGHT_M) {
+    if (dd <= LANDMARK_SIGHT_M || live.charted.has(vg.id)) {
       out.push({ key: vg.id, deg: bearingTo(vg.x, vg.z), distM: dd, kind: 'life' });
     }
   }
@@ -276,6 +291,17 @@ function compassMarks(certs: Readonly<Record<string, number>>): CompassMark[] {
       if (dd <= SEAM_SENSE_M) {
         out.push({ key: `sn:${d.id}`, deg: bearingTo(d.x, d.z), distM: dd, kind: 'sense' });
       }
+    }
+  }
+  // Charted from the air (Phase 6): a seam the sweep found rides the rail at
+  // any range, and stays a HUNCH — the sweep places things, it never reads
+  // them. Walking over it with the field kit is still the only way to know.
+  if (live.charted.size > 0) {
+    for (const d of surfaceDeposits()) {
+      if (!live.charted.has(d.id) || live.scanned.has(d.id) || live.mined.has(d.id)) continue;
+      const dd = distTo(d.x, d.z);
+      if (dd <= SEAM_SENSE_M && (certs['geology'] ?? 0) >= 1) continue; // already on
+      out.push({ key: `ch:${d.id}`, deg: bearingTo(d.x, d.z), distM: dd, kind: 'sense' });
     }
   }
   return out;
@@ -376,6 +402,8 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
       </div>
     );
   }
+
+  if (live.phase === 'fly') return <FlyingHUD session={session} />;
 
   // ————— On foot, or on the sled —————
   const skimming = live.phase === 'skim';
@@ -560,6 +588,93 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
  * marker layer riding under the tape — the runabout always, every site the
  * scanner has resolved, every prospect stake standing.
  */
+/**
+ * The cockpit, at two hundred metres (Phase 6).
+ *
+ * Deliberately the same furniture as the walk — the compass rail, the
+ * conditions line, the open requests — because it is the same stay and the
+ * same region, seen from higher up. What is new is what a pilot actually
+ * needs: height above the ground, speed over it, how much ceiling the
+ * package has left, and what the gear thinks of the ground below.
+ */
+function FlyingHUD({ session }: { session: GroundfallSession }) {
+  const live = surfaceLive;
+  const heading = ((-live.yaw * 180) / Math.PI % 360 + 360) % 360;
+  const wx = weatherLine();
+  const missions = openGroundWork(session);
+  const script = live.flyScript;
+  const ceilK = live.ceilingM > 0 ? Math.min(1, live.alt / live.ceilingM) : 0;
+  const sweeping = live.sweepM > 0;
+  const setdown = live.setdown;
+  return (
+    <div className="sh-hud">
+      {!live.chaseView && <Canopy steady />}
+      <Compass heading={heading} marks={compassMarks(session.certs)} />
+      {wx && (
+        <div className="sh-conditions">
+          <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>
+        </div>
+      )}
+
+      <div className="sh-fly" aria-label={`altitude ${Math.round(live.alt)} metres, ${Math.round(live.airSpeed)} metres per second`}>
+        <div className="sh-fly-row">
+          <b>{Math.round(live.alt).toLocaleString()}</b> m AGL
+          <em>{Math.round(live.airSpeed)} m/s</em>
+        </div>
+        <div className={`sh-fly-ceiling${ceilK > 0.94 ? ' at-limit' : ''}`} role="progressbar" aria-valuenow={Math.round(ceilK * 100)}>
+          <i style={{ width: `${Math.round(ceilK * 100)}%` }} />
+        </div>
+        <div className="sh-fly-sub">
+          {sweeping ? (
+            <span className="sh-sweep">
+              ◎ sweep {Math.round(live.sweepM)} m · {live.charted.size} charted
+            </span>
+          ) : (
+            <span className="sh-sweep dim">◎ too high to resolve ground</span>
+          )}
+        </div>
+      </div>
+
+      {missions.length > 0 && (
+        <div className="sh-missions">
+          {missions.map((m) => (
+            <div key={m.uid} className={`sh-mission${m.done ? ' done' : ''}`}>
+              <b>{m.name}</b>
+              <span>{m.brief}</span>
+              {m.note && <em>{m.note}</em>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="sh-prompt fly" aria-live="polite">
+        {script ? (
+          <b>{script.kind === 'lift' ? 'lifting…' : 'setting down…'}</b>
+        ) : (
+          <>
+            <b>
+              {live.orbitHold > 0.12
+                ? 'breaking for orbit…'
+                : `hold ${engageKey()} to break for orbit`}
+            </b>
+            <span className={setdown && !setdown.ok ? 'blocked' : undefined}>
+              {live.flyPrompt ?? `hold ${deployKey()} below ${SETDOWN_ARM_M} m to set down`}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="sh-hint">
+        thrust · slide · rise / descend · {viewKey()} swaps the view — the helm keys, in air
+      </div>
+    </div>
+  );
+}
+
+/** The helm's camera key, which does its own job again up here. */
+function viewKey(): string {
+  return keyLabel(flightPrefs().bindings.cameraView[0] ?? 'KeyV').toUpperCase();
+}
+
 function Compass({ heading, marks }: { heading: number; marks: CompassMark[] }) {
   const ticks = useMemo(() => {
     const out: { deg: number; label: string | null }[] = [];

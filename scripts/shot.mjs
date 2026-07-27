@@ -29,6 +29,12 @@
  * gfmarks (log the region's standing marks) |
  * gfmission (log open field work + the stay's evidence) |
  * gflead[:read] (log the lead; :read answers a standing resonator).
+ * Phase 6: gfatmo:rank (grant the Atmospheric Handling Package) |
+ * gffly:on|off (take her up to a hover / set down where she hovers) |
+ * gfflyto:x,z[,alt] (put the ship over a point of the region) |
+ * gfsetdown (commit a set-down through the real validator) |
+ * gfview:chase|cockpit (swap the airborne camera) |
+ * gfair (log altitude, speed, ceiling, sweep, charts and the pad).
  * Prints console errors and the active render backend.
  */
 import './workspace-runtime.mjs';
@@ -527,6 +533,78 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     // gfskim:on|off — mount the sled where the walker stands / park it.
     const phase = await page.evaluate((v) => window.__tcSurface.skim(v === 'on'), arg);
     console.log('gfskim:', phase);
+    await page.waitForTimeout(250);
+  } else if (kind === 'gfatmo') {
+    // gfatmo:rank — DEV-grant the Atmospheric Handling Package (0–3).
+    const rank = await page.evaluate((n) => window.__tcSurface.setAtmo(n), Number(arg || 1));
+    console.log('gfatmo: rank', rank);
+  } else if (kind === 'gffly') {
+    // gffly:on|off — take her up to a hover / set down where she hovers.
+    const phase = await page.evaluate((v) => window.__tcSurface.fly(v !== 'off'), arg);
+    console.log('gffly:', phase);
+    await page.waitForTimeout(700);
+  } else if (kind === 'gfflyto') {
+    // gfflyto:x,z[,alt] — put the ship over a point of the region, in air.
+    const [x, z, alt] = String(arg || '0,0').split(',').map(Number);
+    const at = await page.evaluate(
+      ([px, pz, pa]) => window.__tcSurface.flyTo(px, pz, pa),
+      [x || 0, z || 0, Number.isFinite(alt) ? alt : 220],
+    );
+    if (!at) errors.push('gfflyto: not airborne (gffly:on first)');
+    else console.log('gfflyto:', JSON.stringify(at));
+    await page.waitForTimeout(400);
+  } else if (kind === 'gfsetdown') {
+    // gfsetdown — commit a set-down here, through the real validator.
+    const landed = await page.evaluate(() => window.__tcSurface.setDown());
+    if (!landed) errors.push('gfsetdown: nothing to set down (not airborne)');
+    else if (landed.refused) console.log('gfsetdown (diverted):', JSON.stringify(landed));
+    else console.log('gfsetdown:', JSON.stringify(landed));
+    await page.waitForTimeout(400);
+  } else if (kind === 'gfprobe') {
+    // gfprobe[:x,z] — ask the gear about ground, without waiting for a frame.
+    const [px, pz] = String(arg || '').split(',').map(Number);
+    const verdict = await page.evaluate(
+      ([x, z]) => window.__tcSurface.probeSetdown(Number.isFinite(x) ? x : undefined, Number.isFinite(z) ? z : undefined),
+      [px, pz],
+    );
+    console.log('gfprobe:', JSON.stringify(verdict));
+  } else if (kind === 'gfwet') {
+    // gfwet — find the nearest ground the gear refuses, and say why.
+    const wet = await page.evaluate(() => {
+      for (let r = 120; r <= 2400; r += 120) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+          const x = Math.cos(a) * r;
+          const z = Math.sin(a) * r;
+          const v = window.__tcSurface.probeSetdown(x, z);
+          if (v && v.refused) return { x: Math.round(x), z: Math.round(z), ...v };
+        }
+      }
+      return null;
+    });
+    if (!wet) console.log('gfwet: the gear likes everything within 2.4 km');
+    else console.log('gfwet:', JSON.stringify(wet));
+  } else if (kind === 'gfair') {
+    // gfair — log what the air layer is doing right now.
+    const air = await page.evaluate(() => {
+      const s = window.__tcSurface.state();
+      return {
+        phase: s.phase, atmoRank: s.atmoRank, alt: Math.round(s.alt),
+        airSpeed: Math.round(s.airSpeed), ceilingM: s.ceilingM,
+        sweepM: Math.round(s.sweepM), charted: s.charted.length,
+        rangeM: Math.round(s.rangeM), setdowns: s.setdowns, flew: s.flew,
+        shipAt: s.shipAt, chaseView: s.chaseView, flyPrompt: s.flyPrompt,
+        setdown: s.setdown,
+      };
+    });
+    console.log('gfair:', JSON.stringify(air));
+  } else if (kind === 'gfview') {
+    // gfview:chase|cockpit — swap the airborne camera.
+    const chase = await page.evaluate((v) => {
+      const st = window.__tcSurface.state();
+      void st;
+      return window.__tcSurface.setView(v === 'chase');
+    }, arg);
+    console.log('gfview:', chase ? 'chase' : 'cockpit');
     await page.waitForTimeout(250);
   }
 }

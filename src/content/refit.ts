@@ -38,6 +38,26 @@ export const SKIM_BOOST_M_S = 29;
 export const SKIM_WATER_LIMIT_M = [0, 3, 3, Infinity] as const;
 /** Rank at which the mast holds the scanner and the rail through weather. */
 export const SKIM_STABILISED_RANK = 2;
+/**
+ * The Atmospheric Handling Package, by rank (Phase 6). A runabout in vacuum
+ * is a competent machine; a runabout in air is a brick with opinions, and
+ * these are the numbers that decide how strongly it holds them.
+ *
+ * Cruise and boost are ground speeds in metres/second — deliberately a few
+ * times the sled's, never the helm's, because the region is the thing being
+ * made reachable and a blur is not a place. The ceiling is metres above the
+ * ground underneath: a package rated low keeps you in the landscape rather
+ * than above it. Slope is the shallowest ground normal the gear will set
+ * down on; rank 3 is rough-field gear and says yes to a hillside.
+ */
+export const ATMO_CRUISE_M_S = [0, 58, 76, 96] as const;
+export const ATMO_BOOST_M_S = [0, 92, 124, 160] as const;
+export const ATMO_CEILING_M = [0, 400, 900, 1800] as const;
+export const ATMO_SETDOWN_NORMAL_Y = [1, 0.9, 0.84, 0.72] as const;
+/** Rank at which weather stops shoving the airframe around. */
+export const ATMO_STORMPROOF_RANK = 2;
+/** Rank at which the altimeter flies the terrain for you. */
+export const ATMO_TERRAIN_HOLD_RANK = 3;
 /** Scan rate multiplier by analysis rank (higher finishes sooner). */
 export const ANALYSIS_RATE = [1, 1.5, 2.25, 3.4] as const;
 /** Speed-cap multiplier by nacelle rank. */
@@ -137,6 +157,22 @@ export const REFITS: readonly RefitDef[] = [
           ? 'stabilised mast — the scanner and the rail hold in dust and whiteout'
           : rank >= 1
             ? `deploys from the runabout · ${SKIM_CRUISE_M_S}–${SKIM_BOOST_M_S} m/s`
+            : 'not fitted',
+  },
+  {
+    id: 'atmo',
+    name: 'Atmospheric Handling Package',
+    guide:
+      'Trim, intakes and an altimeter that believes in the ground, so the runabout can fly somewhere on a world instead of merely at one. The fitter notes that the ship was always capable of atmospheric flight, in the sense that anything is capable of falling.',
+    maxRank: 3,
+    costs: [14, 30, 60],
+    effect: (rank) =>
+      rank >= 3
+        ? `terrain hold and rough-field gear · ${ATMO_CEILING_M[3]} m ceiling`
+        : rank >= 2
+          ? `stormworthy trim · ${ATMO_CEILING_M[2]} m ceiling · ${ATMO_CRUISE_M_S[2]}–${ATMO_BOOST_M_S[2]} m/s`
+          : rank >= 1
+            ? `low flight · ${ATMO_CEILING_M[1]} m ceiling · ${ATMO_CRUISE_M_S[1]}–${ATMO_BOOST_M_S[1]} m/s`
             : 'not fitted',
   },
   {

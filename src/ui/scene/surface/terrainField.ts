@@ -473,6 +473,99 @@ export function findDrySite(spec: SurfaceSpec, out: Vector3): Vector3 {
   return out;
 }
 
+// ————— Setting down anywhere (Phase 6) —————
+
+/** Why the gear said no. Ordered by how loudly it says it. */
+export type SetdownRefusal = 'lava' | 'water' | 'slope' | 'occupied';
+
+export interface SetdownOptions {
+  /** Shallowest ground normal the gear accepts (1 = dead flat). */
+  normalY: number;
+  /** Clearance demanded above the liquid line, metres. */
+  dryMarginM: number;
+  /** How far the autoland may spiral looking for better ground, metres. */
+  divertM: number;
+  /** Anything else that owns this ground — a plaza, a facility, a mast. */
+  blocked?: (x: number, z: number) => boolean;
+}
+
+export interface SetdownSite {
+  x: number;
+  z: number;
+  /** True when this point will take the weight. */
+  ok: boolean;
+  /** Metres the autoland had to move to find it. */
+  divertM: number;
+  /** What was wrong with the point that was ASKED for, if anything. */
+  refused: SetdownRefusal | null;
+}
+
+/**
+ * Is this exact ground landable? Reads the TIERS, not the analytic field —
+ * the opposite of the census law in Phase 3, and deliberately so. A census
+ * places things kilometres away where only the analytic field is honest; a
+ * set-down puts a ship, and then a walker, on ground both of them will be
+ * standing on this second. The tier array is what they will stand on, so
+ * the tier array is what gets to refuse.
+ */
+const SETDOWN_N = new Vector3();
+
+export function setdownRefusal(
+  p: SurfaceParams,
+  tiers: SurfaceTiers,
+  x: number,
+  z: number,
+  opts: SetdownOptions,
+): SetdownRefusal | null {
+  const ground = heightAt(p, tiers, x, z);
+  if (ground < p.seaLevelM + opts.dryMarginM) {
+    return p.relief.liquid === 'lava' ? 'lava' : 'water';
+  }
+  if (opts.blocked?.(x, z)) return 'occupied';
+  groundNormalAt(p, tiers, x, z, SETDOWN_N);
+  if (SETDOWN_N.y < opts.normalY) return 'slope';
+  return null;
+}
+
+/**
+ * The autoland's divert, generalised off the approach vector and onto any
+ * point of a landing's own ground. Same instinct as `findDrySite` up at the
+ * planet scale — golden angle, widening spiral, first acceptable ground
+ * wins — so a pilot who asks to be put down in a lake gets a beach and a
+ * sentence explaining why, rather than a swim.
+ */
+export function findSetdownSite(
+  p: SurfaceParams,
+  tiers: SurfaceTiers,
+  x: number,
+  z: number,
+  opts: SetdownOptions,
+): SetdownSite {
+  const refused = setdownRefusal(p, tiers, x, z, opts);
+  if (!refused) return { x, z, ok: true, divertM: 0, refused: null };
+
+  const golden = 2.39996;
+  const steps = 72;
+  for (let i = 1; i <= steps; i++) {
+    const r = opts.divertM * (i / steps);
+    const a = i * golden;
+    const px = x + Math.cos(a) * r;
+    const pz = z + Math.sin(a) * r;
+    if (!setdownRefusal(p, tiers, px, pz, opts)) {
+      return { x: px, z: pz, ok: true, divertM: r, refused };
+    }
+  }
+  return { x, z, ok: false, divertM: 0, refused };
+}
+
+/** The Guide's one-line reason, for the cockpit. */
+export const SETDOWN_REFUSAL_TEXT: Record<SetdownRefusal, string> = {
+  lava: 'the gear declines to melt',
+  water: 'standing water under the gear',
+  slope: 'too steep to take the weight',
+  occupied: 'somebody lives exactly there',
+};
+
 /**
  * Bake rows of a tier. Chunked so the entry cinematic can generate the world
  * behind the plasma without a single long stall — call with slices of rows.
