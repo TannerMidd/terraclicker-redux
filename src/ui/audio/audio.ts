@@ -416,6 +416,130 @@ export function surfaceWindStop(): void {
   windGain = null;
 }
 
+// ————— Weather: the sky, audibly —————
+
+let rainSrc: AudioBufferSourceNode | null = null;
+let rainFilter: BiquadFilterNode | null = null;
+let rainGain: GainNode | null = null;
+
+/**
+ * Precipitation bed: filtered noise above the wind's register. Strength 0
+ * parks it silent; the loop starts lazily and survives kind changes (snow
+ * and ash are the same hiss, further down the filter).
+ */
+export function weatherPrecipSet(strength: number, hiss: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  if (!rainGain) {
+    rainSrc = c.createBufferSource();
+    rainSrc.buffer = noiseBuffer(c);
+    rainSrc.loop = true;
+    rainFilter = c.createBiquadFilter();
+    rainFilter.type = 'bandpass';
+    rainFilter.frequency.value = 1600;
+    rainFilter.Q.value = 0.35;
+    rainGain = c.createGain();
+    rainGain.gain.value = 0.0001;
+    rainSrc.connect(rainFilter).connect(rainGain).connect(master);
+    rainSrc.start();
+  }
+  const t = c.currentTime;
+  const k = Math.max(0, Math.min(1, strength));
+  rainGain.gain.setTargetAtTime(k * 0.055, t, 0.9);
+  rainFilter!.frequency.setTargetAtTime(700 + hiss * 1900, t, 1.1);
+}
+
+export function weatherPrecipStop(): void {
+  if (!ctx || !rainGain) return;
+  const t = ctx.currentTime;
+  rainGain.gain.setTargetAtTime(0.0001, t, 0.5);
+  rainSrc?.stop(t + 2);
+  rainSrc = null;
+  rainFilter = null;
+  rainGain = null;
+}
+
+/** Thunder, arriving late the way thunder does. Call at the flash. */
+export function thunder(delayS: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime + Math.max(0.1, delayS);
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c);
+  const f = c.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.setValueAtTime(340, t);
+  f.frequency.exponentialRampToValueAtTime(70, t + 2.2);
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.16, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.6);
+  src.connect(f).connect(g).connect(master);
+  src.start(t);
+  src.stop(t + 2.8);
+  // The sub-bass body under the crack.
+  const o = c.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(52, t);
+  o.frequency.exponentialRampToValueAtTime(30, t + 1.4);
+  const og = c.createGain();
+  og.gain.setValueAtTime(0.1, t);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);
+  o.connect(og).connect(master);
+  o.start(t);
+  o.stop(t + 1.7);
+}
+
+let rumbleOsc: OscillatorNode | null = null;
+let rumbleGain: GainNode | null = null;
+
+/** Tremor rumble follows the ground-shake envelope. 0 parks it silent. */
+export function tremorRumbleSet(k: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  if (!rumbleGain) {
+    rumbleOsc = c.createOscillator();
+    rumbleOsc.type = 'sawtooth';
+    rumbleOsc.frequency.value = 27;
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 70;
+    rumbleGain = c.createGain();
+    rumbleGain.gain.value = 0.0001;
+    rumbleOsc.connect(f).connect(rumbleGain).connect(master);
+    rumbleOsc.start();
+  }
+  rumbleGain.gain.setTargetAtTime(Math.max(0, Math.min(1, k)) * 0.12, c.currentTime, 0.14);
+}
+
+export function tremorRumbleStop(): void {
+  if (!ctx || !rumbleGain) return;
+  const t = ctx.currentTime;
+  rumbleGain.gain.setTargetAtTime(0.0001, t, 0.3);
+  rumbleOsc?.stop(t + 1.4);
+  rumbleOsc = null;
+  rumbleGain = null;
+}
+
+/** A boot in shallow water. Depth 0–1 picks how much sea objects. */
+export function wadeSplash(depth: number): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c);
+  const f = c.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.value = 640 + Math.random() * 400;
+  f.Q.value = 0.6;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0.03 + depth * 0.05, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16 + depth * 0.12);
+  src.connect(f).connect(g).connect(master);
+  src.start(t);
+  src.stop(t + 0.35);
+}
+
 /** One boot on regolith. `heavy` for landings rather than strides. */
 export function footstep(heavy: boolean): void {
   const c = ensure();

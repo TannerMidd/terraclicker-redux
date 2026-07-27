@@ -16,10 +16,18 @@ import {
   MINING_VERBS,
   SHIP_PARK,
   surfaceDeposits,
+  surfaceLandmarkList,
   surfaceLive,
   surfaceProspects,
+  surfaceSeamCensus,
   type MiningVerb,
 } from '../scene/surface/surfaceControl';
+import { LANDMARK_SIGHT_M } from '../scene/surface/surfaceLandmarks';
+import {
+  THERMAL_SHIP_RANGE_M,
+  THERMAL_TRAIL_RANGE_M,
+  WEATHER_LABEL,
+} from '../../engine/weather';
 import { SAMPLE_BY_ID } from '../../content/groundSamples';
 import { flightPrefs, keyLabel } from '../scene/flightBindings';
 import { useGame } from '../../state/store';
@@ -56,7 +64,7 @@ interface CompassMark {
   /** World bearing, degrees, 0 = north. */
   deg: number;
   distM: number;
-  kind: 'ship' | 'site' | 'prospect';
+  kind: 'ship' | 'site' | 'prospect' | 'landmark' | 'thermal';
 }
 
 /** Bearing (deg, 0=N, 90=E) from the walker to a ground point. */
@@ -66,35 +74,88 @@ function bearingTo(x: number, z: number): number {
   return ((Math.atan2(dx, -dz) * 180) / Math.PI + 360) % 360;
 }
 
-/** Everything the compass should be carrying right now. */
+function distTo(x: number, z: number): number {
+  return Math.hypot(x - surfaceLive.pos.x, z - surfaceLive.pos.z);
+}
+
+/**
+ * Everything the compass should be carrying right now. In a whiteout the
+ * marker rail is gone — snow does not carry a signal — and heat is all that
+ * shows: seams close enough to trace, and the runabout's engines while they
+ * are still warm enough to find. Getting home becomes navigation.
+ */
 function compassMarks(): CompassMark[] {
   const live = surfaceLive;
+
+  if (live.weather.markersCut) {
+    const out: CompassMark[] = [];
+    const shipD = distTo(SHIP_PARK.x, SHIP_PARK.z);
+    if (shipD <= THERMAL_SHIP_RANGE_M) {
+      out.push({ key: 'ship', deg: bearingTo(SHIP_PARK.x, SHIP_PARK.z), distM: shipD, kind: 'thermal' });
+    }
+    for (const d of surfaceSeamCensus()) {
+      if (live.mined.has(d.id) || (d.buried && !live.buriedRevealed)) continue;
+      const dd = distTo(d.x, d.z);
+      if (dd <= THERMAL_TRAIL_RANGE_M) {
+        out.push({ key: `t:${d.id}`, deg: bearingTo(d.x, d.z), distM: dd, kind: 'thermal' });
+      }
+    }
+    return out;
+  }
+
   const out: CompassMark[] = [
     {
       key: 'ship',
       deg: bearingTo(SHIP_PARK.x, SHIP_PARK.z),
-      distM: Math.hypot(SHIP_PARK.x - live.pos.x, SHIP_PARK.z - live.pos.z),
+      distM: distTo(SHIP_PARK.x, SHIP_PARK.z),
       kind: 'ship',
     },
   ];
   for (const d of surfaceDeposits()) {
     if (!live.scanned.has(d.id) || live.mined.has(d.id)) continue;
-    out.push({
-      key: d.id,
-      deg: bearingTo(d.x, d.z),
-      distM: Math.hypot(d.x - live.pos.x, d.z - live.pos.z),
-      kind: 'site',
-    });
+    out.push({ key: d.id, deg: bearingTo(d.x, d.z), distM: distTo(d.x, d.z), kind: 'site' });
   }
   for (const d of surfaceProspects()) {
-    out.push({
-      key: `p:${d.id}`,
-      deg: bearingTo(d.x, d.z),
-      distM: Math.hypot(d.x - live.pos.x, d.z - live.pos.z),
-      kind: 'prospect',
-    });
+    out.push({ key: `p:${d.id}`, deg: bearingTo(d.x, d.z), distM: distTo(d.x, d.z), kind: 'prospect' });
+  }
+  for (const l of surfaceLandmarkList()) {
+    const dd = distTo(l.x, l.z);
+    if (dd <= LANDMARK_SIGHT_M) {
+      out.push({ key: l.id, deg: bearingTo(l.x, l.z), distM: dd, kind: 'landmark' });
+    }
   }
   return out;
+}
+
+/** The nearest named place in sight, for the line under the compass. */
+function nearestLandmark(): { name: string; distM: number } | null {
+  let best: { name: string; distM: number } | null = null;
+  for (const l of surfaceLandmarkList()) {
+    const dd = distTo(l.x, l.z);
+    if (dd <= LANDMARK_SIGHT_M && (!best || dd < best.distM)) best = { name: l.name, distM: dd };
+  }
+  return best;
+}
+
+/** The weather, in one honest line. */
+function weatherLine(): string | null {
+  const w = surfaceLive.weather;
+  const o = surfaceLive.outlook;
+  const mins = (ms: number) => {
+    const m = Math.max(1, Math.round(ms / 60_000));
+    return `~${m} min`;
+  };
+  if (w.kind === 'clear') {
+    if (o && o.kind !== 'clear') return `clear · ${WEATHER_LABEL[o.kind]} in ${mins(o.inMs)}`;
+    return null; // clear skies with no news are not a headline
+  }
+  const grade = w.intensity < 0.35 ? 'light' : w.intensity < 0.7 ? 'steady' : 'heavy';
+  let line = `${WEATHER_LABEL[w.kind]} · ${grade}`;
+  if (o) line += o.kind === 'clear' ? ` · clearing in ${mins(o.inMs)}` : ` · ${WEATHER_LABEL[o.kind]} in ${mins(o.inMs)}`;
+  if (w.markersCut) line += ' · markers lost, thermal trace only';
+  else if (w.buriedRevealed) line += ' · the sand has moved';
+  else if (w.scanRangeMult > 1.1) line += ' · the pulse carries further';
+  return line;
 }
 
 export function SurfaceHUD() {
@@ -172,9 +233,22 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
   const targetKind = targetScanned ? SAMPLE_BY_ID[target.kind] : undefined;
   const ringProgress = scanning ? live.scanCharge : live.mineProgress;
 
+  const wx = weatherLine();
+  const lm = nearestLandmark();
+
   return (
     <div className="sh-hud">
       <Compass heading={heading} marks={compassMarks()} />
+      {(wx || lm) && (
+        <div className="sh-conditions">
+          {wx && <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>}
+          {lm && !live.weather.markersCut && (
+            <span className="sh-landmark">
+              ⌖ {lm.name} · {lm.distM >= 950 ? `${(lm.distM / 1000).toFixed(1)} km` : `${Math.round(lm.distM)} m`}
+            </span>
+          )}
+        </div>
+      )}
 
       <div className={`sh-reticle${mining || scanning ? ' working' : ''}${scanning ? ' scanning' : ''}`} aria-hidden>
         <svg viewBox="0 0 48 48">
@@ -228,9 +302,17 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
           {prompt.blocked ?? `${prompt.verb === 'board' ? 'press' : 'hold'} ${engageKey()} — ${prompt.label}`}
         </div>
       )}
-      {!prompt && !locked && <div className="sh-prompt dim">click to look around</div>}
-      {!prompt && locked && !scanning && (
-        <div className="sh-prompt dim">hold {engageKey()} — field scan · {Math.round(live.scanRange)} m</div>
+      {!prompt && live.wadeRefused && (
+        <div className="sh-prompt blocked">
+          the suit declines to swim — a skimmer remains, for now, a rumour
+        </div>
+      )}
+      {!prompt && !live.wadeRefused && !locked && <div className="sh-prompt dim">click to look around</div>}
+      {!prompt && !live.wadeRefused && locked && !scanning && (
+        <div className="sh-prompt dim">
+          hold {engageKey()} — field scan · {Math.round(live.scanRangeNow)} m
+          {live.scanRangeNow < live.scanRange * 0.9 ? ' (the dust is eating it)' : ''}
+        </div>
       )}
       {scanning && !prompt && <div className="sh-prompt">field scan charging…</div>}
 
@@ -251,6 +333,8 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
   ship: '▲',
   site: '◆',
   prospect: '▮',
+  landmark: '⌖',
+  thermal: '◉',
 };
 
 /**

@@ -23,6 +23,7 @@ import {
   heightAt,
   macroNormAt,
   makeTier,
+  type SurfaceSpec,
   type SurfaceTiers,
 } from '../src/ui/scene/surface/terrainField';
 import { depositSites } from '../src/ui/scene/surface/surfaceSites';
@@ -39,11 +40,13 @@ import {
   surfaceLive,
   surfaceParams,
   surfaceProspects,
+  surfaceSeamCensus,
   surfaceTiers,
   SWING_SECONDS,
   TAKEOFF_SECONDS,
   type GroundfallPhase,
 } from '../src/ui/scene/surface/surfaceControl';
+import { weatherAt } from '../src/engine/weather';
 import {
   beginFlightAt,
   endFlight,
@@ -65,7 +68,7 @@ const TEST_SPEC = {
 };
 
 /** A small, fast pair of tiers over the spec — the same math, less of it. */
-function bakeSmall(spec = TEST_SPEC): { p: ReturnType<typeof buildSurfaceParams>; tiers: SurfaceTiers } {
+function bakeSmall(spec: SurfaceSpec = TEST_SPEC): { p: ReturnType<typeof buildSurfaceParams>; tiers: SurfaceTiers } {
   const p = buildSurfaceParams(spec);
   const tiers: SurfaceTiers = {
     near: makeTier({ texels: 64, extent: 4096 }),
@@ -242,6 +245,52 @@ describe('the terrain field', () => {
       worst = Math.max(worst, Math.abs(macroNormAt(p, v) - elev.getX(i)));
     }
     expect(worst).toBeLessThan(0.06);
+  });
+
+  it('agrees about the continents on fjord worlds too — the quirk crinkles both', () => {
+    // planetGeometry boosts the coast band for award-winning-fjords; the
+    // transcription must boost identically or the landing breaks the law.
+    const spec = { ...TEST_SPEC, fjords: 1 };
+    const p = buildSurfaceParams(spec);
+    // Detail 5 — the crinkled coast band is higher-frequency, so a coarser
+    // icosphere under-samples its extremes and the normalisation spans
+    // genuinely differ (same story as detail 2 in the plain test above).
+    // 5 is also the detail the hero world actually renders at on high tier.
+    const geo = createPlanetGeometry(TEST_SPEC.seed, TEST_SPEC.type, 5, 1);
+    const pos = geo.getAttribute('position');
+    const elev = geo.getAttribute('elevation');
+    const v = new Vector3();
+    let worst = 0;
+    for (let i = 0; i < pos.count; i += 7) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+      worst = Math.max(worst, Math.abs(macroNormAt(p, v) - elev.getX(i)));
+    }
+    expect(worst).toBeLessThan(0.06);
+    // And the boost is real: a fjord world is not the plain world.
+    const plain = buildSurfaceParams(TEST_SPEC);
+    expect(p.macro0).not.toBe(plain.macro0);
+  });
+
+  it('deserts bury seams the dust can uncover; nobody else does', () => {
+    const desert = bakeSmall({ ...TEST_SPEC, type: 'desert' });
+    const open = depositSites(desert.p, desert.tiers);
+    const withBuried = depositSites(desert.p, desert.tiers, [], undefined, { buried: true });
+    // The open census is untouched — a buried band cannot move a seam.
+    expect(withBuried.filter((d) => !d.buried)).toEqual(open);
+    const buried = withBuried.filter((d) => d.buried);
+    expect(buried.length).toBeGreaterThan(0);
+    const openIds = new Set(open.map((d) => d.id));
+    for (const d of buried) {
+      expect(openIds.has(d.id)).toBe(false);
+      expect(d.richness).toBeGreaterThanOrEqual(3); // the sand kept it safe
+      expect(d.richness).toBeLessThanOrEqual(5);
+    }
+    // Determinism, twice over.
+    expect(depositSites(desert.p, desert.tiers, [], undefined, { buried: true })).toEqual(withBuried);
+    // Ice worlds asked the same question get nothing back.
+    const ice = bakeSmall({ ...TEST_SPEC, type: 'ice' });
+    const iceSites = depositSites(ice.p, ice.tiers, [], undefined, { buried: true });
+    expect(iceSites.some((d) => d.buried)).toBe(false);
   });
 
   it('blends the near tier into the far tier without a step underfoot', () => {
@@ -527,6 +576,97 @@ describe('the walk (control layer, driven like the frame loop)', () => {
     for (let i = 0; i < 60; i++) stepSurface(1 / 60, (t += 1 / 60));
     expect(surfaceLive.swing).toBe(0);
     expect(surfaceLive.hits.get(seam.id)).toBe(1);
+  });
+
+  it('a dust front mid-stay uncovers the buried seams, and they stay up', () => {
+    const st = useGame.getState().s;
+    st.planet.type = 'desert';
+    // Dust needs air to carry it: a commission with an empty Atmo gauge gets
+    // meteor showers, which move no sand. Give the world its sky first.
+    st.planet.gauges.atmo = st.planet.targets.atmo;
+    commitOverHero();
+    bakeAndLand();
+    const session = useUiBus.getState().groundfall!;
+    expect(surfaceLive.weather).toBeDefined();
+
+    const buriedIds = surfaceSeamCensus().filter((d) => d.buried).map((d) => d.id);
+    const before = new Set(surfaceDeposits().map((d) => d.id));
+    for (const id of buriedIds) expect(before.has(id)).toBe(false);
+
+    // Find a real moment when a hard dust front stands over this landing —
+    // weather is pure, so the test can simply ask the sky's schedule.
+    const wSpec = { seed: session.seed, type: session.type, aspects: session.aspects, dir: session.dir };
+    let when = -1;
+    for (let t = 0; t < 200 * 3_600_000; t += 60_000) {
+      if (weatherAt(wSpec, t).buriedRevealed) {
+        when = t;
+        break;
+      }
+    }
+    expect(when).toBeGreaterThanOrEqual(0);
+    useGame.getState().s.gameTimeMs = when;
+    let t = 30000;
+    stepSurface(1 / 60, (t += 1 / 60));
+    expect(surfaceLive.weather.kind).toBe('dust');
+    expect(surfaceLive.buriedRevealed).toBe(true);
+    expect(surfaceLive.scanRangeNow).toBeLessThan(surfaceLive.scanRange * 0.75);
+    const after = new Set(surfaceDeposits().map((d) => d.id));
+    for (const id of buriedIds) expect(after.has(id)).toBe(true);
+
+    // The front passes; the seams it raised do not sink back mid-stay.
+    useGame.getState().s.gameTimeMs = 0;
+    for (let i = 0; i < 8; i++) stepSurface(1 / 60, (t += 1 / 60));
+    expect(surfaceLive.buriedRevealed).toBe(true);
+    const later = new Set(surfaceDeposits().map((d) => d.id));
+    for (const id of buriedIds) expect(later.has(id)).toBe(true);
+  });
+
+  it('water is graded now: wade at knee depth, a firm refusal past the line', () => {
+    const st = useGame.getState().s;
+    st.planet.type = 'ocean';
+    st.planet.gauges.hydro = st.planet.targets.hydro; // a full sea to walk into
+    commitOverHero();
+    bakeAndLand();
+    const p = surfaceParams()!;
+    const tiers = surfaceTiers()!;
+
+    // The shore is where the ground crosses the waterline; scan outward for
+    // a wading shelf and a properly deep shelf.
+    let wadeSpot: { x: number; z: number } | null = null;
+    let deepSpot: { x: number; z: number } | null = null;
+    for (let r = 40; r < 2400 && (!wadeSpot || !deepSpot); r += 16) {
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 24) {
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        const depth = p.seaLevelM - heightAt(p, tiers, x, z);
+        if (!wadeSpot && depth > 0.35 && depth < 0.85) wadeSpot = { x, z };
+        if (!deepSpot && depth > 3) deepSpot = { x, z };
+      }
+    }
+    expect(wadeSpot).not.toBeNull();
+    expect(deepSpot).not.toBeNull();
+
+    // Knee-deep: the walker wades — slower, but permitted and standing.
+    let t = 50000;
+    surfaceLive.pos.set(wadeSpot!.x, heightAt(p, tiers, wadeSpot!.x, wadeSpot!.z) + EYE, wadeSpot!.z);
+    surfaceLive.vel.set(0, 0, 0);
+    for (let i = 0; i < 30; i++) stepSurface(1 / 60, (t += 1 / 60));
+    expect(surfaceLive.wade).toBeGreaterThan(0.2);
+    expect(surfaceLive.wadeRefused).toBe(false);
+    expect(surfaceLive.grounded).toBe(true);
+
+    // Past the line: the suit declines and walks you back up the seabed.
+    surfaceLive.pos.set(deepSpot!.x, heightAt(p, tiers, deepSpot!.x, deepSpot!.z) + EYE, deepSpot!.z);
+    surfaceLive.vel.set(0, 0, 0);
+    let refused = false;
+    for (let i = 0; i < 240; i++) {
+      stepSurface(1 / 60, (t += 1 / 60));
+      refused = refused || surfaceLive.wadeRefused;
+    }
+    expect(refused).toBe(true);
+    const endDepth = p.seaLevelM - heightAt(p, tiers, surfaceLive.pos.x, surfaceLive.pos.z);
+    const startDepth = p.seaLevelM - heightAt(p, tiers, deepSpot!.x, deepSpot!.z);
+    expect(endDepth).toBeLessThan(startDepth); // measurably shallower
   });
 
   it('flies the entry itself when the pilot commits to a dive', () => {

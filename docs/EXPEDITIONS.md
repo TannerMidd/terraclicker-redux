@@ -69,17 +69,48 @@ missions that span the two scales of the game.
   `GROUND_WORLD_YIELD_CAP` salvage across a career. Farming one world is a
   plan the ledger declines; the universe is large on purpose.
 
-## Phase 2 — weather, water that participates, landmarks
+## Phase 2 — weather, water that participates, landmarks (SHIPPED)
 
-`weatherAt(spec, gameTimeMs)` per spine §4, quantised into fronts with smooth
-interpolation. Per type: dust fronts that shrink scanner range but uncover
-buried sites; whiteouts that erase markers and reveal thermal trails; rain,
-fog, electrical storms; ashfall and tremors; meteor showers on thin-atmosphere
-worlds. Weather changes decisions, never drains a health bar. Water goes from
-hard wall to graded depth (wade / refuse-until-skimmer), with shore breaks and
-mist. A landmark grammar — two to four authored kinds per planet type on the
-coarse lattice, including the award-winning fjords where the quirk holds —
-gives every region three memorable places instead of more rocks.
+- **The sky is arithmetic** (`engine/weather.ts`): `weatherAt(spec,
+  gameTimeMs)` per spine §4 — six front slots on hashed cycles, born at
+  hashed points, drifting on great circles, with smooth grow/fade envelopes.
+  Kinds come from the planet type's table, gated by the gauges: no Atmo, no
+  rain — thin skies get meteor showers instead, and a world grows weather as
+  it grows air. Both scenes call the same function: the hero world's cloud
+  shell paints the strongest fronts (counter-rotated into the visual spin so
+  a storm stays over the ground it is actually on), the landing offer names
+  what is standing below (`· dust front below`), and the surface stands
+  inside it. The outlook (`weatherOutlook`) is pure too, so the forecast is
+  always right, which the Guide considers the least forecasting can do.
+- **Decisions, never damage.** Dust chokes the field pulse and uncovers the
+  buried desert seams (a second presence band on the lattice, one richness
+  richer, revealed for the rest of the stay once the front peaks); whiteouts
+  erase the marker rail and leave thermal traces only — seams inside 46 m,
+  the runabout's warm engines inside 320 m — so getting home becomes
+  navigation; electrical storms feed the pulse half again; hard tremors
+  shake one swing loose. Lightning and tremor pulses are hashed schedules
+  every observer agrees on (`stormFlash`, `tremorPulse`).
+- **Water participates**: wall → graded depth. Wade to 1.2 m at falling
+  speed and a damped jump; past the line a buoyant shove walks you back up
+  the seabed gradient ("refuse-until-skimmer" — Phase 3 renegotiates). Lava
+  refuses at the ankle. Shore breaks march toward the beach and mist sits on
+  the waterline, both in the liquid shader.
+- **The landmark grammar runs on the coarse lattice**
+  (`surfaceLandmarks.ts`, ~1.9 km cells; `content/groundLandmarks.ts`): two
+  to four authored kinds per type — standing rings, arches, hoodoo courts,
+  ice organs, pressure ridges, basalt choirs, cinder cones, fumaroles, sea
+  stacks, tide arches, blowholes — named on the compass inside 2.6 km, a
+  whole region drawn in seven instanced calls. The award-winning fjords
+  appear where the quirk holds (a cairn and a modest plaque), and the quirk
+  now crinkles `terrainField`'s coast band exactly as `planetGeometry`'s, so
+  fjord worlds keep the continent law they were quietly breaking.
+
+Two renderer laws Phase 2 paid for, recorded so no later phase pays again:
+scene fog must exist BEFORE the warm-up compiles the surface pipelines (the
+node renderer bakes fog support in at build time — a material warmed fogless
+ignores weather forever), and on instanced meshes the node system folds the
+instance matrix into `positionLocal`, so per-particle shape masks belong in
+UV space.
 
 ## Phase 3 — the Survey Skimmer, and ground that extends to meet it
 
@@ -129,8 +160,9 @@ orbit. Prove the whole shape on one world before generalising.
 
 ## Verification conventions
 
-`npm test` (groundfall + ground-sites suites hold the promises above),
-`npm run build`, `npm run balance` after economy changes. Visual verification
-is headless: `scripts/shot.mjs` with the `__tcSurface` hooks (`gfscanall`,
-`gfverb:i`, `gfmine`, `gfstate`) — the Browser pane cannot composite this
-scene. Extend the hook object as each phase lands.
+`npm test` (groundfall + ground-sites + weather + ground-landmarks suites
+hold the promises above), `npm run build`, `npm run balance` after economy
+changes. Visual verification is headless: `scripts/shot.mjs` with the
+`__tcSurface` hooks (`gfscanall`, `gfverb:i`, `gfmine`, `gfstate`,
+`gfweather:kind`, `gfvisit`, `gfshore[:look]`, `gflandmarks`) — the Browser
+pane cannot composite this scene. Extend the hook object as each phase lands.

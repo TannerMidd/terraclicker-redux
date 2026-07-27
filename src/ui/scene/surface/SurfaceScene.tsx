@@ -37,11 +37,14 @@ import {
   surfaceLive,
   surfaceParams,
   surfaceProspects,
+  surfaceSeamCensus,
   surfaceTiers,
-  verbHits,
+  verbHitsNow,
   SHIP_PARK,
   SWING_IMPACT,
 } from './surfaceControl';
+import { SurfaceWeather } from './WeatherFX';
+import { Landmarks } from './Landmarks';
 import {
   buildTierTextures,
   createCloudDeckMaterial,
@@ -71,6 +74,11 @@ const UP = new Vector3(0, 1, 0);
 /** Sun elevation → daylight factor shared by lights, fog and cloud tint. */
 function dayOf(sunY: number): number {
   return Math.max(0, Math.min(1, sunY * 1.6 + 0.12));
+}
+
+function smooth01Blend(x: number): number {
+  const k = Math.max(0, Math.min(1, x));
+  return k * k * (3 - 2 * k);
 }
 
 /** Prospect stakes the instance pool can seat. A region rarely grows ten. */
@@ -153,11 +161,11 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     (skyB.uniforms.density as { value: number }).value = 0.12 + a.atmo * 0.88;
     (skyB.uniforms.sunTint as { value: Color }).value = new Color(session.starHex);
     // No air, no weather: the deck only exists once the Atmo gauge does.
-    (cloudsB.uniforms.coverage as { value: number }).value =
-      Math.min(0.85, a.atmo * (0.3 + a.hydro * 0.55));
+    const baseCoverage = Math.min(0.85, a.atmo * (0.3 + a.hydro * 0.55));
+    (cloudsB.uniforms.coverage as { value: number }).value = baseCoverage;
     (cloudsB.uniforms.sunTint as { value: Color }).value = new Color(session.starHex);
 
-    return { p, tiers, tex, terrainB, liquidB, skyB, cloudsB, crystalB, dustB };
+    return { p, tiers, tex, terrainB, liquidB, skyB, cloudsB, crystalB, dustB, baseCoverage };
   }, [ready, palette, session]);
 
   // Bake progress → React exactly once.
@@ -171,6 +179,17 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     if (!canvas) return;
     return attachSurfaceInput(canvas);
   }, [gl]);
+
+  // Fog must exist BEFORE the warm-up compiles a single pipeline: the node
+  // renderer bakes fog support into the shader graph at build time, so a
+  // material warmed against a fogless scene ignores scene.fog forever after
+  // — measured as a dust front with 400 m visibility and a crisp horizon.
+  // Declared above the warm-up effect on purpose; React runs them in order.
+  useEffect(() => {
+    if (!built) return;
+    if (!fogRef.current) fogRef.current = new Fog(0x000000, 400, 24_000);
+    scene.fog = fogRef.current;
+  }, [built, scene]);
 
   // Warm every surface pipeline while the plasma still owns the screen.
   useEffect(() => {
@@ -221,11 +240,14 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   }, [built, session]);
 
   // Site ids are planet-fixed strings; instances are numbered seats. The slot
-  // map is the bridge, built once per landing from the deposit order.
-  const seamSlots = useMemo(() => {
-    if (!built) return new Map<string, number>();
-    return new Map(surfaceDeposits().map((d, i) => [d.id, i]));
-  }, [built]);
+  // map is the bridge, built once per landing from the CENSUS order — the
+  // census includes buried seams, so a dust front can raise them into seats
+  // that already exist instead of anybody reallocating an instance buffer.
+  const seams = useMemo(() => (built ? surfaceSeamCensus() : []), [built]);
+  const seamSlots = useMemo(
+    () => new Map(seams.map((d, i) => [d.id, i])),
+    [seams],
+  );
 
   // Crystal instance seats (4 shards per seam). `crack` 0–1 tilts and sinks
   // the shards as the pick works them — the seam visibly losing the argument.
@@ -249,17 +271,28 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   useEffect(() => {
     const mesh = crystals.current;
     if (!mesh || !built) return;
-    const seams = surfaceDeposits();
-    seams.forEach((d, i) => writeSeamMatrices(mesh, d, i, 0));
+    seams.forEach((d, i) => {
+      if (d.buried && !surfaceLive.buriedRevealed) {
+        for (let s = 0; s < 4; s++) {
+          M1.makeScale(0, 0, 0);
+          mesh.setMatrixAt(i * 4 + s, M1);
+        }
+      } else {
+        writeSeamMatrices(mesh, d, i, 0);
+      }
+    });
     mesh.count = seams.length * 4;
     mesh.instanceMatrix.needsUpdate = true;
-    // The effect writes by deposit slot, so the count must cover the last one.
+    // The effect writes by census slot, so the count must cover the last one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [built]);
+  }, [built, seams]);
 
   const minedShown = useRef(new Set<string>());
   const lastHitShown = useRef(surfaceLive.hitNonce);
   const hitFlash = useRef(0);
+  const lastReveal = useRef(surfaceLive.revealNonce);
+  /** Smoothed weather visibility so a front arrives instead of switching on. */
+  const visSmooth = useRef(1);
   /** Prospect stakes standing (prior landings + this stay). */
   const stakes = useRef<InstancedMesh>(null);
   const stakesShown = useRef(-1);
@@ -305,13 +338,21 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const day = dayOf(V1.y);
     live.sunUp = V1.y;
 
-    // The borrowed global lights.
+    // The weather standing over the walk, smoothed so fronts ARRIVE.
+    const wx = live.weather;
+    visSmooth.current += (wx.visibility - visSmooth.current) * Math.min(1, dt * 0.9);
+    const vis = visSmooth.current;
+    const gloom = Math.min(1, (1 - vis) * 1.15);
+
+    // The borrowed global lights. A front eats the sun; lightning gives some
+    // of it back for a frame or two.
     lightRig.override = true;
     lightRig.sunPos.copy(V1).multiplyScalar(80_000);
     lightRig.sunColor.set(session.starHex).lerp(new Color(0xff7a3d), Math.max(0, 1 - day) * 0.55);
-    lightRig.sunIntensity = 0.1 + day * 3.4;
+    lightRig.sunIntensity = (0.1 + day * 3.4) * (1 - gloom * 0.55);
     lightRig.ambientColor.set(palette.atmosphere).lerp(new Color(0x1c2438), 1 - day * 0.72);
-    lightRig.ambientIntensity = 0.1 + day * 0.42 * (0.35 + session.aspects.atmo * 0.65);
+    lightRig.ambientIntensity =
+      0.1 + day * 0.42 * (0.35 + session.aspects.atmo * 0.65) + live.skyFlash * 1.7;
     lightRig.fillPos.copy(V1).multiplyScalar(-40_000).setY(20_000);
     lightRig.fillColor.set(palette.atmosphere);
     lightRig.fillIntensity = 0.1 + day * 0.16;
@@ -319,7 +360,8 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     // Fog breathes with daylight and AIR — the whole point of the Atmo gauge
     // down here. A world without an atmosphere has nothing to scatter: the
     // horizon stays knife-sharp and space-dark. A thick one closes visibility
-    // to a proper planetary haze.
+    // to a proper planetary haze. Weather closes it further: a whiteout is
+    // the fog doing exactly what the word says.
     if (!fogRef.current) {
       fogRef.current = new Fog(0x000000, 400, 24_000);
       scene.fog = fogRef.current;
@@ -330,14 +372,59 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       .set(palette.atmosphere)
       .multiplyScalar((0.24 + day * 0.62) * (0.2 + density * 0.8))
       .lerp(FOG_NIGHT, 1 - day * 0.9);
+    if (gloom > 0.01) {
+      const tint =
+        wx.kind === 'dust'
+          ? FOG_SCRATCH.copy(palette.low).multiplyScalar(0.55 + day * 0.5)
+          : WEATHER_FOG[wx.kind];
+      if (tint) fog.color.lerp(tint, gloom * 0.8);
+    }
     const hazyRange = 7_000 + day * 9_000;
-    fog.far = 90_000 - (90_000 - hazyRange) * density;
-    fog.near = Math.max(180, fog.far * 0.05);
+    let far = 90_000 - (90_000 - hazyRange) * density;
+    if (gloom > 0.01) {
+      // Weather imposes an ABSOLUTE ceiling, not a multiplier: an airless
+      // world's fog is nearly infinite and a fraction of infinite is still
+      // no dust front. A hard front closes to a few hundred metres; clear
+      // skies on the same world keep their knife-sharp horizon untouched.
+      const cap = 120 + 9_000 * vis * vis * vis;
+      const bite = smooth01Blend(gloom / 0.5);
+      far += (Math.min(far, cap) - far) * bite;
+    }
+    fog.far = far;
+    fog.near = Math.max(24, far * (0.012 + 0.04 * vis));
 
-    // Sky + cloud uniforms.
+    // Sky + cloud uniforms. The dome wears the same tint as the fog, so the
+    // haze on the ground and the ceiling overhead are one weather system.
     (built.skyB.uniforms.sunDir as { value: Vector3 }).value.copy(V1);
+    (built.skyB.uniforms.flash as { value: number }).value = live.skyFlash;
+    (built.skyB.uniforms.gloom as { value: number }).value = gloom;
+    if (gloom > 0.01) {
+      const gt = built.skyB.uniforms.gloomTint as { value: Color };
+      gt.value.copy(fog.color);
+      // The fog colour already carries day; brighten a touch so the dome
+      // reads as lit cloud rather than a lid of the same mud as the ground.
+      gt.value.multiplyScalar(1.25);
+    }
     (built.cloudsB.uniforms.day as { value: number }).value = day;
+    const stormy =
+      wx.kind === 'rain' || wx.kind === 'storm' || wx.kind === 'ash' || wx.kind === 'whiteout';
+    (built.cloudsB.uniforms.coverage as { value: number }).value = Math.min(
+      0.92,
+      built.baseCoverage + (stormy ? wx.intensity * 0.4 : 0),
+    );
     (built.crystalB.uniforms.night as { value: number }).value = 1 - day;
+
+    // A dust front has moved the sand: seat the seams it uncovered.
+    if (live.revealNonce !== lastReveal.current) {
+      lastReveal.current = live.revealNonce;
+      const mesh0 = crystals.current;
+      if (mesh0) {
+        seams.forEach((d, i) => {
+          if (d.buried && !live.mined.has(d.id)) writeSeamMatrices(mesh0, d, i, 0);
+        });
+        mesh0.instanceMatrix.needsUpdate = true;
+      }
+    }
 
     // Domes follow the walker; the ground plane of the sky stays put.
     skyDome.current?.position.set(camera.position.x, 0, camera.position.z);
@@ -385,7 +472,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       const slot = worked ? seamSlots.get(worked.id) : undefined;
       if (mesh2 && worked && slot !== undefined && !live.mined.has(worked.id)) {
         const verb = MINING_VERBS[live.verbIdx] ?? 'break';
-        const crack = (live.hits.get(worked.id) ?? 0) / verbHits(verb, worked.richness);
+        const crack = (live.hits.get(worked.id) ?? 0) / verbHitsNow(verb, worked.richness);
         writeSeamMatrices(mesh2, worked, slot, Math.min(1, crack));
         mesh2.instanceMatrix.needsUpdate = true;
       }
@@ -491,7 +578,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
 
             <instancedMesh
               ref={crystals}
-              args={[undefined, undefined, surfaceDeposits().length * 4]}
+              args={[undefined, undefined, seams.length * 4]}
               material={built.crystalB.mat}
               frustumCulled={false}
             >
@@ -510,6 +597,8 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
 
             <Pickaxe />
             <ImpactShards gravity={built.p.gravity} />
+            <SurfaceWeather session={session} palette={palette} />
+            <Landmarks p={built.p} tiers={built.tiers} palette={palette} />
 
             {shipPose && (
               <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>
@@ -527,6 +616,15 @@ const LAMP_WARM = new Color(0xffe8c4);
 const LAMP_SEAM = new Color(0x6fe0ff);
 const PLASMA_HOT = new Color(0xff7a33);
 const FOG_NIGHT = new Color(0x05060a);
+const FOG_SCRATCH = new Color();
+/** What each front does to the air's colour. Dust is palette-derived. */
+const WEATHER_FOG: Record<string, Color | undefined> = {
+  rain: new Color(0x5a6570),
+  storm: new Color(0x424c58),
+  fog: new Color(0x9aa4ac),
+  whiteout: new Color(0xdde4ea),
+  ash: new Color(0x33343a),
+};
 
 // ————— Props —————
 

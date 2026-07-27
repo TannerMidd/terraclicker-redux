@@ -5,15 +5,18 @@ import {
   MeshBasicNodeMaterial,
   MeshStandardNodeMaterial,
   Vector3,
+  Vector4,
 } from 'three/webgpu';
 import {
   abs,
   attribute,
   cameraPosition,
   clamp,
+  cos,
   cross,
   dot,
   float,
+  length,
   mix,
   mx_fractal_noise_float,
   normalize,
@@ -362,9 +365,24 @@ export function createAtmosphereMaterial(pal: PlanetPalette) {
   return { mat, atmo };
 }
 
-/** Scrolling noise cloud shell; coverage rides Atmo + Hydro. */
+/**
+ * Scrolling noise cloud shell; coverage rides Atmo + Hydro.
+ *
+ * Weather fronts (engine/weather.ts) ride three vec4 slots: xyz is the
+ * front's centre in the shell's LOCAL frame with the angular radius encoded
+ * as the vector's length, w is its strength. The tint says what kind of
+ * front is passing — dust is sand-coloured, a storm is a bruise that
+ * flickers when it fires. All uniforms, so every world still shares the one
+ * cloud shader and a quiet world simply uploads zeros.
+ */
 export function createCloudMaterial(seed: number) {
   const coverage = uniform(0);
+  const front0 = uniform(new Vector4(0, 1, 0, 0));
+  const front1 = uniform(new Vector4(0, 1, 0, 0));
+  const front2 = uniform(new Vector4(0, 1, 0, 0));
+  const tint0 = uniform(new Color(0x8895a4));
+  const tint1 = uniform(new Color(0x8895a4));
+  const tint2 = uniform(new Color(0x8895a4));
   const mat = new MeshStandardNodeMaterial();
   const seedOff = uniform((seed % 613) * 0.29);
   const n = mx_fractal_noise_float(
@@ -377,10 +395,31 @@ export function createCloudMaterial(seed: number) {
     .mul(0.5)
     .add(0.5);
   const cutoff = coverage.mul(-0.45).add(0.8);
-  mat.colorNode = vec3(1, 1, 1);
-  mat.opacityNode = smoothstep(cutoff, cutoff.add(0.12), n).mul(coverage.mul(0.5).add(0.04));
+  const baseAlpha = smoothstep(cutoff, cutoff.add(0.12), n).mul(coverage.mul(0.5).add(0.04));
+
+  // The shell is a unit-ish sphere in the spin group: normalising the local
+  // position recovers the direction the front centres are expressed in.
+  const dirL = normalize(positionLocal);
+  const cellOf = (f: ReturnType<typeof uniform>) => {
+    const fv = f as unknown as { xyz: ReturnType<typeof vec3>; w: ReturnType<typeof float> };
+    const rad = length(fv.xyz).max(0.05);
+    const d = dot(dirL, fv.xyz.div(rad));
+    // cos is monotone-decreasing: inside the core d exceeds cos(rad).
+    const inner = cos(rad.mul(0.55));
+    const outer = cos(rad.add(0.16));
+    return smoothstep(outer, inner, d).mul(fv.w);
+  };
+  const c0 = cellOf(front0);
+  const c1 = cellOf(front1);
+  const c2 = cellOf(front2);
+  const cellMask = clamp(c0.add(c1).add(c2), 0, 1);
+  const cellTexture = n.mul(0.5).add(0.62);
+  const tintMix = tint0.mul(c0).add(tint1.mul(c1)).add(tint2.mul(c2)).div(c0.add(c1).add(c2).max(0.001));
+
+  mat.colorNode = mix(vec3(1, 1, 1), tintMix, cellMask.mul(0.85));
+  mat.opacityNode = clamp(baseAlpha.add(cellMask.mul(cellTexture).mul(0.62)), 0, 0.95);
   mat.roughnessNode = float(1);
   mat.transparent = true;
   mat.depthWrite = false;
-  return { mat, coverage };
+  return { mat, coverage, fronts: [front0, front1, front2], tints: [tint0, tint1, tint2] };
 }

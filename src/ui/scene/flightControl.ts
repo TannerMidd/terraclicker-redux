@@ -87,6 +87,7 @@ import type { WorldSize } from './universeLayout';
 import { starColor } from './universeLayout';
 import { SUN_DIR } from './Planet';
 import { isLandableType, landingRefusal } from '../../engine/groundfall';
+import { weatherAt, WEATHER_LABEL } from '../../engine/weather';
 import { openRequestsAt } from '../../engine/bridge';
 import { standingOf } from '../../engine/situations';
 import { worldRecord, worldTraits } from '../../engine/worldRecords';
@@ -1114,6 +1115,27 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
         && f.altitude < landBody.radius * 0.5 + 0.25;
       entryArm = diving ? entryArm + dt : 0;
 
+      // The same weather function the ground runs, asked about the ground
+      // under the nose — a front over the site is worth a word on the offer,
+      // because a pilot who can see the storm can choose it.
+      const land = landBody.land;
+      const wAspects = land.hero
+        ? {
+            thermal: Math.min(1, st.planet.gauges.thermal.div(st.planet.targets.thermal).toNumber()),
+            atmo: Math.min(1, st.planet.gauges.atmo.div(st.planet.targets.atmo).toNumber()),
+            hydro: Math.min(1, st.planet.gauges.hydro.div(st.planet.targets.hydro).toNumber()),
+            bio: Math.min(1, st.planet.gauges.bio.div(st.planet.targets.bio).toNumber()),
+          }
+        : { thermal: 1, atmo: 1, hydro: 1, bio: 1 };
+      const siteWx = weatherAt(
+        { seed: land.seed, type: land.type, aspects: wAspects, dir: [TMP.x, TMP.y, TMP.z] },
+        st.gameTimeMs,
+      );
+      const wxNote =
+        siteWx.kind !== 'clear' && siteWx.intensity >= 0.3
+          ? ` · ${WEATHER_LABEL[siteWx.kind]} below`
+          : '';
+
       if (entryArm > 0) {
         f.prompt = {
           verb: 'land',
@@ -1121,7 +1143,7 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
           hold: false,
         };
       } else {
-        f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false };
+        f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}${wxNote}`, hold: false };
       }
       if (!f.paused && (engagePressed || entryArm >= ENTRY_ARM_SECONDS)) {
         entryArm = 0;

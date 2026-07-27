@@ -95,6 +95,12 @@ export interface SurfaceSpec {
   dir: [number, number, number];
   /** Gauge fractions 0–1 (a delivered world is all ones). */
   aspects: SurfaceAspects;
+  /**
+   * 1 when the world carries `award-winning-fjords` — planetGeometry crinkles
+   * the coast band harder for the quirk, and the transcription law says the
+   * ground must crinkle identically or the landing breaks the promise.
+   */
+  fjords?: number;
 }
 
 export interface SurfaceParams {
@@ -120,6 +126,8 @@ export interface SurfaceParams {
   /** Macro normalization span, sampled the way planetGeometry normalizes. */
   macroMin: number;
   macroSpan: number;
+  /** Coast-band frequency — 4.2, or 9.2 by decree of Slartibartfast. */
+  coastF: number;
   noise: NoiseFunction3D;
   noise2: NoiseFunction3D;
   /** Landing-local detail noises (seeded off the site, not the planet). */
@@ -157,6 +165,7 @@ function macroRaw(
   noise: NoiseFunction3D,
   noise2: NoiseFunction3D,
   type: PlanetType,
+  coastF: number,
   x: number,
   y: number,
   z: number,
@@ -175,8 +184,13 @@ function macroRaw(
     const r = 1 - Math.abs(noise2(x * f * 1.7, y * f * 1.7, z * f * 1.7));
     e += shape.ridge * 0.3 * r * r;
   }
-  e += 0.1 * noise2(x * 4.2, y * 4.2, z * 4.2);
+  e += 0.1 * noise2(x * coastF, y * coastF, z * coastF);
   return e;
+}
+
+/** planetGeometry's coast-band frequency, fjord decree included. */
+function coastFreq(fjords: number | undefined): number {
+  return 4.2 + (fjords ?? 0) * 5;
 }
 
 /**
@@ -190,6 +204,7 @@ function macroSpanFor(
   noise: NoiseFunction3D,
   noise2: NoiseFunction3D,
   type: PlanetType,
+  coastF: number,
 ): { min: number; span: number } {
   const N = 2048;
   const golden = Math.PI * (3 - Math.sqrt(5));
@@ -199,7 +214,7 @@ function macroSpanFor(
     const y = 1 - (2 * (i + 0.5)) / N;
     const r = Math.sqrt(Math.max(0, 1 - y * y));
     const a = golden * i;
-    const e = macroRaw(noise, noise2, type, Math.cos(a) * r, y, Math.sin(a) * r);
+    const e = macroRaw(noise, noise2, type, coastF, Math.cos(a) * r, y, Math.sin(a) * r);
     if (e < min) min = e;
     if (e > max) max = e;
   }
@@ -212,7 +227,8 @@ export function buildSurfaceParams(spec: SurfaceSpec): SurfaceParams {
   const rand = mulberry(spec.seed);
   const noise = createNoise3D(rand);
   const noise2 = createNoise3D(rand);
-  const { min, span } = macroSpanFor(noise, noise2, spec.type);
+  const coastF = coastFreq(spec.fjords);
+  const { min, span } = macroSpanFor(noise, noise2, spec.type, coastF);
 
   const up = new Vector3(spec.dir[0], spec.dir[1], spec.dir[2]).normalize();
   // East is horizontal by construction; degenerate at the poles, where any
@@ -223,7 +239,7 @@ export function buildSurfaceParams(spec: SurfaceSpec): SurfaceParams {
   const north = new Vector3().crossVectors(up, east).normalize();
 
   const macroAt = (d: Vector3) =>
-    (macroRaw(noise, noise2, spec.type, d.x, d.y, d.z) - min) / span;
+    (macroRaw(noise, noise2, spec.type, coastF, d.x, d.y, d.z) - min) / span;
   const macro0 = macroAt(up);
   const seaNorm = 0.3 + spec.aspects.hydro * 0.18;
 
@@ -255,6 +271,7 @@ export function buildSurfaceParams(spec: SurfaceSpec): SurfaceParams {
     seaLevelM: rawSea,
     macroMin: min,
     macroSpan: span,
+    coastF,
     noise,
     noise2,
     detail,
@@ -351,7 +368,7 @@ function fbm(
  */
 export function analyticHeight(p: SurfaceParams, x: number, z: number): number {
   localDir(p, x, z, DIR);
-  const macroN = (macroRaw(p.noise, p.noise2, p.type, DIR.x, DIR.y, DIR.z) - p.macroMin) / p.macroSpan;
+  const macroN = (macroRaw(p.noise, p.noise2, p.type, p.coastF, DIR.x, DIR.y, DIR.z) - p.macroMin) / p.macroSpan;
   let h = (macroN - p.macro0) * MACRO_RELIEF_M;
 
   const r = p.relief;
@@ -385,7 +402,7 @@ export function curvatureDrop(p: SurfaceParams, x: number, z: number): number {
  * asserted in a comment.
  */
 export function macroNormAt(p: SurfaceParams, dir: Vector3): number {
-  return (macroRaw(p.noise, p.noise2, p.type, dir.x, dir.y, dir.z) - p.macroMin) / p.macroSpan;
+  return (macroRaw(p.noise, p.noise2, p.type, p.coastF, dir.x, dir.y, dir.z) - p.macroMin) / p.macroSpan;
 }
 
 /**
@@ -403,10 +420,11 @@ export function findDrySite(spec: SurfaceSpec, out: Vector3): Vector3 {
   const rand = mulberry(spec.seed);
   const noise = createNoise3D(rand);
   const noise2 = createNoise3D(rand);
-  const { min, span } = macroSpanFor(noise, noise2, spec.type);
+  const coastF = coastFreq(spec.fjords);
+  const { min, span } = macroSpanFor(noise, noise2, spec.type, coastF);
   const seaNorm = 0.3 + spec.aspects.hydro * 0.18;
   const normAt = (d: Vector3) =>
-    (macroRaw(noise, noise2, spec.type, d.x, d.y, d.z) - min) / span;
+    (macroRaw(noise, noise2, spec.type, coastF, d.x, d.y, d.z) - min) / span;
 
   const dir = new Vector3(spec.dir[0], spec.dir[1], spec.dir[2]).normalize();
   out.copy(dir);

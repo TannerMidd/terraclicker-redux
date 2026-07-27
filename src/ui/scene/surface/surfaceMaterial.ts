@@ -34,6 +34,7 @@ import {
   clamp,
   float,
   floor,
+  fract,
   int,
   ivec2,
   length,
@@ -51,6 +52,7 @@ import {
   time,
   transformNormalToView,
   uniform,
+  uv,
   vec2,
   vec3,
   vec4,
@@ -309,6 +311,21 @@ export function createLiquidMaterial(pal: PlanetPalette, tiers: SurfaceTiers, te
       .mul(0.5)
       .add(0.62),
   );
+  // Shore breaks: lines of constant depth-phase march toward the beach —
+  // depth shrinks shoreward, so adding time walks the crests in. Ragged by
+  // noise, confined to the last shallow band, gone on lava.
+  const breakNoise = mx_fractal_noise_float(
+    vec3(worldXZ.x.mul(0.045), time.mul(0.22), worldXZ.y.mul(0.045)), 2, 2.2, 0.5, 1,
+  ).mul(0.5).add(0.5);
+  const breakPhase = fract(depth.mul(-11).add(time.mul(0.34)).add(breakNoise.mul(0.6)));
+  const breaks = smoothstep(0.72, 0.94, breakPhase)
+    .mul(smoothstep(0.2, 0.05, depth))
+    .mul(smoothstep(0.005, 0.03, depth)) // not on dry texels
+    .mul(breakNoise.mul(0.7).add(0.5));
+  // Mist: a soft luminous haze hugging the waterline, breathing slowly.
+  const mist = smoothstep(0.085, 0.0, depth)
+    .mul(mx_fractal_noise_float(vec3(worldXZ.x.mul(0.02), time.mul(0.13), worldXZ.y.mul(0.02)), 2, 2.1, 0.5, 1).mul(0.5).add(0.5))
+    .mul(0.4);
   const lavaTone = mx_fractal_noise_float(
     vec3(worldXZ.x.mul(0.016), time.mul(0.07), worldXZ.y.mul(0.016)),
     3,
@@ -318,9 +335,14 @@ export function createLiquidMaterial(pal: PlanetPalette, tiers: SurfaceTiers, te
   ).mul(0.5).add(0.5);
   const lavaCol = mix(uLava.mul(0.35), uLava, lavaTone);
 
-  mat.colorNode = mix(waterCol.add(foam.mul(0.5)), lavaCol, lavaOn);
-  mat.emissiveNode = lavaCol.mul(lavaOn).mul(lavaTone.mul(1.4).add(0.4));
-  mat.opacityNode = mix(smoothstep(0, 0.06, depth).mul(0.5).add(0.42), float(1), lavaOn);
+  const foamAll = foam.mul(0.5).add(breaks.mul(0.55)).add(mist.mul(0.6));
+  mat.colorNode = mix(waterCol.add(foamAll), lavaCol, lavaOn);
+  mat.emissiveNode = mix(vec3(0.9, 0.95, 1).mul(mist.mul(0.12)), lavaCol.mul(lavaTone.mul(1.4).add(0.4)), lavaOn);
+  mat.opacityNode = mix(
+    smoothstep(0, 0.06, depth).mul(0.5).add(0.42).add(breaks.mul(0.3)).add(mist.mul(0.25)).min(1),
+    float(1),
+    lavaOn,
+  );
   mat.roughnessNode = mix(float(0.14), float(0.75), lavaOn);
   mat.metalnessNode = float(0);
 
@@ -356,6 +378,13 @@ export function createSkyMaterial(pal: PlanetPalette) {
   const sunTint = uniform(new Color(0xfff2dc));
   /** Atmospheric presence 0–1 (the Atmo gauge, or 1 for a delivered world). */
   const density = uniform(1);
+  /** Lightning flash envelope 0–1 (engine/weather.stormFlash drives it). */
+  const flash = uniform(0);
+  /** Weather gloom 0–1: heavy fronts sit on the sky before they sit on you. */
+  const gloom = uniform(0);
+  /** What the front's underside looks like — the scene keeps it in step
+   * with the fog tint, so the dome and the haze are one weather. */
+  const gloomTint = uniform(new Color(0x595949));
 
   const mat = new MeshBasicNodeMaterial();
   mat.side = BackSide;
@@ -399,15 +428,28 @@ export function createSkyMaterial(pal: PlanetPalette) {
   // Day stars belong to vacuum alone; even a modest atmosphere scatters
   // enough blue to drown them until the sun is properly down.
   const vacuumStars = smoothstep(0.3, 0.08, density).mul(0.85);
+  // A front overhead puts the stars out — snow, dust and ash are all
+  // opaque from underneath, whatever the air pressure did or did not do.
   const starVis = clamp(nightness.mul(density.mul(0.6).oneMinus()).add(vacuumStars), 0, 1)
-    .mul(smoothstep(-0.06, 0.25, up));
+    .mul(smoothstep(-0.06, 0.25, up))
+    .mul(gloom.oneMinus());
   sky = sky.add(vec3(0.9, 0.95, 1).mul(starField.mul(twinkle)).mul(starVis));
 
   // Below the horizon the sky ends in ground haze rather than void.
   sky = mix(sky, horizonCol.mul(0.6).add(0.004), smoothstep(-0.02, -0.3, up));
 
+  // Weather gloom flattens the whole dome toward the FRONT'S own colour —
+  // the same tint the fog wears, brighter toward the horizon where the
+  // walker's haze meets the ceiling, dimmer straight up where it is thick.
+  const ceiling = gloomTint.mul(day.mul(0.72).add(0.06)).mul(
+    horizonMask.mul(0.45).add(0.55),
+  );
+  sky = mix(sky, ceiling, gloom.mul(0.92));
+  // …and lightning un-flattens it for a frame or two.
+  sky = sky.add(vec3(1.0, 1.0, 1.12).mul(flash).mul(density.mul(0.7).add(0.3)).mul(0.8));
+
   mat.colorNode = sky;
-  return { mat, uniforms: { sunDir, sunTint, density } };
+  return { mat, uniforms: { sunDir, sunTint, density, flash, gloom, gloomTint } };
 }
 
 // ————— Cloud deck —————
@@ -479,6 +521,36 @@ export function createPlasmaMaterial() {
   mat.colorNode = hot;
   mat.opacityNode = clamp(fire.mul(1.35).add(whiteout.mul(1.05)).add(rim.mul(intensity).mul(0.12)), 0, 1);
   return { mat, uniforms: { intensity, tint } };
+}
+
+// ————— Precipitation —————
+
+/**
+ * One material for every falling thing: rain streaks, snow, dust, ash. The
+ * kind only changes uniforms (tint, glow) and per-instance shapes, so a
+ * front rolling in compiles nothing — the sharing law, kept in the weather.
+ */
+export function createPrecipMaterial() {
+  const tint = uniform(new Color(0x9db8d8));
+  const glow = uniform(0); // meteors and nothing else
+  const fade = uniform(0.5);
+  const mat = new MeshBasicNodeMaterial();
+  mat.transparent = true;
+  mat.depthWrite = false;
+  mat.fog = false;
+  // The pool billboards by yaw alone; whichever face the camera gets, keep.
+  mat.side = DoubleSide;
+  // Shape in UV space, NOT positionLocal: on an instanced mesh the node
+  // system folds the instance matrix into positionLocal, so a streak scaled
+  // ×300 sees |y| in the hundreds and a 0.5-scale mask reads pure zero —
+  // measured as a meteor shower rendering as nothing at all. UVs are the
+  // one geometry coordinate instancing leaves alone.
+  const u = uv();
+  const edge = smoothstep(0.5, 0.18, abs(u.x.sub(0.5)));
+  const cap = smoothstep(0.52, 0.3, abs(u.y.sub(0.5)));
+  mat.colorNode = tint.add(vec3(1, 0.98, 0.9).mul(glow));
+  mat.opacityNode = edge.mul(cap).mul(fade);
+  return { mat, uniforms: { tint, glow, fade } };
 }
 
 // ————— Core-sample crystals —————

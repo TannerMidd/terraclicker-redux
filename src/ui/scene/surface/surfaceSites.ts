@@ -39,6 +39,12 @@ import {
 const CELL_M = 110;
 /** Fraction of cells that grew a seam, before the terrain has its say. */
 const DEPOSIT_P = 0.42;
+/**
+ * Fraction of DESERT cells that grew a seam the sand then covered. Buried
+ * seams are planet-fixed like every other site; a dust front at strength is
+ * what moves the sand off them (engine/weather.ts, `buriedRevealed`).
+ */
+const BURIED_P = 0.12;
 /** How far from the touchdown the near-field site survey reaches, metres. */
 export const SITE_FIELD_RADIUS = 460;
 
@@ -55,19 +61,28 @@ export interface SiteSpec {
   rot: number;
   /** Sample kind this seam yields (content/groundSamples.ts). */
   kind: string;
+  /** Under the sand until a dust front moves it (desert worlds only). */
+  buried?: boolean;
 }
 
 /** Transitional alias — the scene and control layers grew up calling it this. */
 export type DepositSpec = SiteSpec;
 
 // ————— Cube-sphere quantisation —————
+// Exported pieces are shared with the landmark lattice (surfaceLandmarks.ts):
+// the same construction at a coarser cell size, per the spec's spine.
+
+/** Cells per cube-face edge at an arbitrary cell size — the lattice generalised. */
+export function cellsPerEdgeAt(radiusM: number, cellM: number): number {
+  return Math.max(16, Math.round((Math.PI / 2) * radiusM / cellM));
+}
 
 /** Cells per cube-face edge for this planet: one cell ≈ CELL_M at face centre. */
 export function cellsPerEdge(radiusM: number): number {
   return Math.max(64, Math.round((Math.PI / 2) * radiusM / CELL_M));
 }
 
-interface Cell {
+export interface Cell {
   face: number;
   iu: number;
   iv: number;
@@ -93,14 +108,14 @@ function faceUv(d: Vector3): { face: number; u: number; v: number } {
     : { face: 5, u: -d.x / az, v: d.y / az };
 }
 
-function cellOf(d: Vector3, n: number): Cell {
+export function cellOf(d: Vector3, n: number): Cell {
   const { face, u, v } = faceUv(d);
   const clamp = (k: number) => Math.min(n - 1, Math.max(0, Math.floor(((k + 1) / 2) * n)));
   return { face, iu: clamp(u), iv: clamp(v) };
 }
 
 /** Face coordinates (with sub-cell offset 0–1) back to a unit direction. */
-function cellDir(cell: Cell, n: number, ou: number, ov: number, out: Vector3): Vector3 {
+export function cellDir(cell: Cell, n: number, ou: number, ov: number, out: Vector3): Vector3 {
   const u = -1 + ((cell.iu + ou) * 2) / n;
   const v = -1 + ((cell.iv + ov) * 2) / n;
   switch (cell.face) {
@@ -124,7 +139,7 @@ export function siteIdAt(p: SurfaceParams, dir: Vector3): string {
 }
 
 /** One deterministic stream per cell, mixed from the planet seed. */
-function cellRand(seed: number, cell: Cell): () => number {
+export function cellRand(seed: number, cell: Cell): () => number {
   const h =
     (seed ^
       Math.imul(cell.face + 1, 0x9e3779b9) ^
@@ -151,10 +166,13 @@ export function depositSites(
   tiers: SurfaceTiers,
   quirks: readonly string[] = [],
   radiusM: number = SITE_FIELD_RADIUS,
+  opts: { buried?: boolean } = {},
 ): SiteSpec[] {
   const n = cellsPerEdge(p.radiusM);
   const seen = new Set<string>();
   const out: SiteSpec[] = [];
+  // Only deserts bury seams, and only callers who asked get to see them.
+  const buriedBand = opts.buried && p.type === 'desert' ? BURIED_P : 0;
 
   // Walk the local grid finely enough that no cell under the disc is missed;
   // the cell set (not the grid) is what decides anything.
@@ -169,7 +187,13 @@ export function depositSites(
       seen.add(id);
 
       const r = cellRand(p.seed, cell);
-      if (r() >= DEPOSIT_P) continue;
+      // One presence roll, two bands: below DEPOSIT_P the seam stands in the
+      // open, in the next BURIED_P sliver the sand got there first. Every
+      // draw after the roll is identical either way, so an open seam is
+      // bit-for-bit the seam it was before deserts learned to bury things.
+      const presence = r();
+      const buried = presence >= DEPOSIT_P && presence < DEPOSIT_P + buriedBand;
+      if (presence >= DEPOSIT_P && !buried) continue;
       const ou = 0.15 + r() * 0.7; // sub-cell jitter, strictly inside the cell
       const ov = 0.15 + r() * 0.7;
       const richness = 2 + Math.floor(r() * 4);
@@ -201,7 +225,9 @@ export function depositSites(
         x: sx,
         y,
         z: sz,
-        richness,
+        // The sand kept it safe: a buried seam runs one band richer, which
+        // is why walking into a dust front is a plan and not a mistake.
+        richness: buried ? Math.min(5, richness + 1) : richness,
         scale,
         rot,
         kind: sampleKindAt({
@@ -212,6 +238,7 @@ export function depositSites(
           quirks,
           roll: kindRoll,
         }).id,
+        ...(buried ? { buried: true } : {}),
       });
     }
   }

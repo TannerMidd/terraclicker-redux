@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import {
+  Color,
   DoubleSide,
   Group,
   Mesh,
@@ -15,6 +16,7 @@ import { useUiBus, zoomLive } from '../fx/uiBus';
 import { ASPECTS, type AspectId } from '../../engine/types';
 import { format } from '../../engine/num';
 import { mulberry } from '../../engine/rng';
+import { stormFlash, weatherFronts, type WeatherKind } from '../../engine/weather';
 import { createPlanetGeometry } from './planetGeometry';
 import { heroMoonPosition, heroMoons, heroWorldRadius } from './universeLayout';
 import {
@@ -41,6 +43,19 @@ function gaugeFrac(a: AspectId): number {
   const t = p.targets[a];
   return t.lte(0) ? 1 : Math.min(1, p.gauges[a].div(t).toNumber());
 }
+
+/** What each front kind looks like from orbit. */
+const FRONT_TINT: Partial<Record<WeatherKind, number>> = {
+  rain: 0x77828e,
+  storm: 0x4c5566,
+  fog: 0xaeb8be,
+  dust: 0xb59155,
+  whiteout: 0xf1f5f9,
+  ash: 0x3c3d42,
+};
+const Y_UP = new Vector3(0, 1, 0);
+const FRONT_V = new Vector3();
+const WHITE = new Color(0xffffff);
 
 export function Planet({ detail }: { detail: number }) {
   // Re-mount planet visuals when the world itself changes.
@@ -154,6 +169,67 @@ export function Planet({ detail }: { detail: number }) {
 
     // Rotation (occasionally, allegedly, reversed).
     if (spin.current) spin.current.rotation.y += d * 0.045 * (reverse ? -1 : 1);
+
+    // The weather, from orbit: the same pure function the ground evaluates,
+    // painted onto the cloud shell. Fronts live in the planet frame — the
+    // frame landing directions use — so they are counter-rotated into the
+    // spinning shell and the storm stays over the ground it is actually on.
+    const st = useGame.getState().s;
+    const fronts = weatherFronts(
+      {
+        seed,
+        type,
+        aspects: {
+          thermal: u.thermal.value as number,
+          atmo: u.atmo.value as number,
+          hydro: u.hydro.value as number,
+          bio: u.bio.value as number,
+        },
+      },
+      st.gameTimeMs,
+    )
+      .sort((a, b) => b.intensity - a.intensity)
+      .slice(0, 3);
+    const spinY = spin.current?.rotation.y ?? 0;
+    for (let i = 0; i < 3; i++) {
+      const slot = clouds.fronts[i]!;
+      const tintU = clouds.tints[i]!;
+      const f = fronts[i];
+      const tintHex = f ? FRONT_TINT[f.kind] : undefined;
+      if (!f || tintHex === undefined) {
+        (slot.value as { w: number }).w = 0;
+        continue;
+      }
+      FRONT_V.set(f.center[0], f.center[1], f.center[2]).applyAxisAngle(Y_UP, -spinY);
+      // The angular radius rides as the vector's length (see the material).
+      FRONT_V.multiplyScalar(f.radius + 0.12);
+      let strength = f.intensity;
+      if (f.kind === 'storm') {
+        // The cell fires: the flash every observer agrees on, seen from above.
+        strength = Math.min(1, strength + stormFlash(seed, st.gameTimeMs, f.intensity) * 0.8);
+      }
+      const v = slot.value as { x: number; y: number; z: number; w: number };
+      v.x = FRONT_V.x;
+      v.y = FRONT_V.y;
+      v.z = FRONT_V.z;
+      v.w = strength;
+      (tintU.value as Color).set(tintHex);
+      if (f.kind === 'storm') {
+        (tintU.value as Color).lerp(WHITE, stormFlash(seed, st.gameTimeMs, f.intensity) * 0.85);
+      }
+    }
+    if (
+      import.meta.env?.DEV &&
+      typeof window !== 'undefined' &&
+      (window as unknown as Record<string, unknown>)['__tcOrbitWatch']
+    ) {
+      // Headless verification (armed by setting __tcOrbitWatch): what the
+      // orbital shell is being told to draw. Never allocates unless armed.
+      (window as unknown as Record<string, unknown>)['__tcOrbitWx'] = fronts.map((f) => ({
+        kind: f.kind,
+        w: f.intensity,
+      }));
+    }
 
     // The pet asteroid follows its planet around like a very slow dog.
     const pet = petRef.current;

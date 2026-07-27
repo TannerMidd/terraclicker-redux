@@ -17,6 +17,8 @@
  * gflook:yaw,pitch | gfteleport:x,z[,yaw] | gfmine[:ms] (work nearest seam) |
  * gfscanall (identify every site — the field pulse, without the dwell) |
  * gfverb:i (choose the pick's meaning: 0 break · 1 core · 2 prospect · 3 preserve) |
+ * gfweather:kind (pin the sky: rain fog storm dust whiteout ash tremor meteors clear) |
+ * gflandmarks (log the region's landmark census) |
  * gfboard (board the runabout and take off).
  * Prints console errors and the active render backend.
  */
@@ -291,6 +293,74 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.evaluate(() => { window.__tcSurface.input.engage = false; });
   } else if (kind === 'gfscanall') {
     await page.evaluate(() => window.__tcSurface.identifyAll());
+  } else if (kind === 'gfshore') {
+    // Walk the reticle to the nearest wading shelf and face the open water.
+    // gfshore:look instead stands on the beach above it, looking down the
+    // waterline — the postcard angle for shore breaks and mist.
+    const found = await page.evaluate((mode) => {
+      const s = window.__tcSurface;
+      const sea = s.state().seaLevelM;
+      for (let r = 30; r < 3200; r += 14) {
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 20) {
+          const x = Math.cos(a) * r;
+          const z = Math.sin(a) * r;
+          const depth = sea - s.heightAt(x, z);
+          if (depth > 0.35 && depth < 0.8) {
+            // Up-gradient is the way to the beach.
+            const e = 8;
+            const gx = s.heightAt(x + e, z) - s.heightAt(x - e, z);
+            const gz = s.heightAt(x, z + e) - s.heightAt(x, z - e);
+            const g = Math.hypot(gx, gz) || 1;
+            if (mode === 'look') {
+              const bx = x + (gx / g) * 26;
+              const bz = z + (gz / g) * 26;
+              s.teleport(bx, bz);
+              s.look(Math.atan2(-(x - bx), -(z - bz)), -0.34);
+            } else {
+              s.teleport(x, z);
+              s.look(Math.atan2(gx, gz), -0.12);
+            }
+            return { x, z, depth };
+          }
+        }
+      }
+      return null;
+    }, arg);
+    if (!found) errors.push('gfshore: no wading shelf within 3.2 km');
+    else console.log('gfshore:', JSON.stringify(found));
+    await page.waitForTimeout(400);
+  } else if (kind === 'gfweather') {
+    const set = await page.evaluate((k) => window.__tcSurface.setWeather(k), arg);
+    console.log('gfweather:', set);
+    await page.waitForTimeout(2500); // let fog and particles settle in
+  } else if (kind === 'gflandmarks') {
+    const list = await page.evaluate(() => window.__tcSurface.state()?.landmarks ?? []);
+    console.log('gflandmarks:', JSON.stringify(list));
+  } else if (kind === 'gfvisit') {
+    // gfvisit[:i] — stand a photographer's distance from the i-th (default
+    // nearest) landmark and face it.
+    const which = await page.evaluate((idx) => {
+      const s = window.__tcSurface;
+      const st = s.state();
+      const sorted = [...st.landmarks].sort((a, b) =>
+        Math.hypot(a.x - st.pos[0], a.z - st.pos[2]) - Math.hypot(b.x - st.pos[0], b.z - st.pos[2]));
+      const lm = sorted[Math.min(idx, sorted.length - 1)];
+      if (!lm) return null;
+      const back = 34;
+      const ang = Math.atan2(lm.x - st.pos[0], lm.z - st.pos[2]);
+      const sx = lm.x - Math.sin(ang) * back;
+      const sz = lm.z - Math.cos(ang) * back;
+      s.teleport(sx, sz);
+      const p = s.state().pos;
+      const dx = lm.x - p[0];
+      const dz = lm.z - p[2];
+      const dy = lm.y + 4 - p[1];
+      s.look(Math.atan2(-dx, -dz), Math.atan2(dy, Math.hypot(dx, dz)));
+      return lm;
+    }, Number(arg || 0));
+    if (!which) errors.push('gfvisit: no landmarks in the region');
+    else console.log('gfvisit:', JSON.stringify(which));
+    await page.waitForTimeout(500);
   } else if (kind === 'gfverb') {
     await page.evaluate((i) => window.__tcSurface.setVerb(i), Number(arg));
   } else if (kind === 'gfboard') {

@@ -32,9 +32,19 @@ import {
   type SurfaceTiers,
 } from './terrainField';
 import { depositSites, type DepositSpec } from './surfaceSites';
+import { landmarkSites, type LandmarkSpec } from './surfaceLandmarks';
 import { SAMPLE_BY_ID } from '../../../content/groundSamples';
 import { surfaceScanRange } from '../../../engine/deepField';
 import { siteMinable } from '../../../engine/groundSites';
+import {
+  stormFlash,
+  syntheticWeather,
+  tremorPulse,
+  weatherAt,
+  weatherOutlook,
+  type LocalWeather,
+  type WeatherKind,
+} from '../../../engine/weather';
 import type { GroundSiteOutcome, SampleHaul } from '../../../engine/types';
 import * as audio from '../../audio/audio';
 
@@ -88,6 +98,14 @@ export function verbHits(verb: MiningVerb, richness: number): number {
       return hitsNeeded(richness);
   }
 }
+/**
+ * Swings needed RIGHT NOW, weather included — hard tremors rattle a seam
+ * loose and one swing comes free. Control and scene both read this, so the
+ * crack on the crystal and the moment it gives can never disagree.
+ */
+export function verbHitsNow(verb: MiningVerb, richness: number): number {
+  return Math.max(1, verbHits(verb, richness) - surfaceLive.weather.hitsBonus);
+}
 /** Samples a completed verb hands the suit. */
 export function verbYield(verb: MiningVerb, richness: number): number {
   switch (verb) {
@@ -102,6 +120,14 @@ export function verbYield(verb: MiningVerb, richness: number): number {
 const BOARD_RANGE = 6.5;
 /** Where the runabout parks, metres from the touchdown point. */
 export const SHIP_PARK: { x: number; z: number } = { x: 11, z: -7 };
+/**
+ * Water deeper than this and the suit declines to continue. It is not a
+ * wall any more: up to here you wade, slower with depth, and past it a firm
+ * buoyant shove walks you back toward the shallows. A skimmer (Phase 3)
+ * will renegotiate this figure. Lava never negotiates.
+ */
+export const WADE_MAX_M = 1.2;
+const LAVA_WADE_M = 0.12;
 
 export const surfaceLive = {
   phase: 'entry' as GroundfallPhase,
@@ -179,6 +205,28 @@ export const surfaceLive = {
   mineNonce: 0,
   /** Bumped at touchdown, for the dust kick. */
   touchdownNonce: 0,
+
+  // — the sky (engine/weather.ts, evaluated fresh each frame) —
+  /** The weather standing at this landing right now. */
+  weather: syntheticWeather('clear') as LocalWeather,
+  /** The next change worth planning around, refreshed on a slow cadence. */
+  outlook: null as { kind: WeatherKind; inMs: number } | null,
+  /** Tremor ground-shake envelope 0–1 (walk camera and audio ride it). */
+  groundShake: 0,
+  /** Lightning flash envelope 0–1 — sky, lamp and thunder all ride this. */
+  skyFlash: 0,
+  /** Effective field-pulse reach after the weather has its say, metres. */
+  scanRangeNow: 90,
+  /** This stay has seen the dust move: buried seams stand revealed. */
+  buriedRevealed: false,
+  /** Bumped when buried seams join the field; the scene reseats crystals. */
+  revealNonce: 0,
+
+  // — the water —
+  /** 0–1 wade depth fraction (0 dry, 1 at the suit's limit). */
+  wade: 0,
+  /** The suit is actively declining to swim this frame. */
+  wadeRefused: false,
 };
 
 export const surfaceInput = {
@@ -194,10 +242,14 @@ let params: SurfaceParams | null = null;
 let tiers: SurfaceTiers | null = null;
 /** The workable field: lattice sites minus what this world remembers as spent. */
 let deposits: DepositSpec[] = [];
-/** Every lattice site in the region, spent or not — the scene's full census. */
+/** Every lattice site in the region, spent, buried or not — the full census. */
 let allSites: DepositSpec[] = [];
+/** The coarse lattice's memorable places for this region. */
+let landmarks: LandmarkSpec[] = [];
 /** What the save already knew about these sites when we landed. */
 let priorStates: Map<string, GroundSiteOutcome> = new Map();
+/** DEV harness only: pin the sky to a kind for visual verification. */
+let weatherOverride: WeatherKind | null = null;
 /** Bake resolution. Tests shrink it; the game never touches it. */
 let tierSpecs: { near: { texels: number; extent: number }; far: { texels: number; extent: number } } = {
   near: TIER_NEAR,
@@ -233,6 +285,21 @@ export function surfaceDeposits(): readonly DepositSpec[] {
   return deposits;
 }
 /**
+ * Every seam a stay could conceivably work — the open field plus any buried
+ * seams still under the sand. The scene sizes its crystal seats from this,
+ * so a dust front can raise seams without anyone reallocating anything.
+ */
+export function surfaceSeamCensus(): DepositSpec[] {
+  const record = priorStates;
+  return allSites.filter((d) => {
+    const prior = record.get(d.id);
+    return prior === undefined || prior === 'preserved' || prior === 'visited';
+  });
+}
+export function surfaceLandmarkList(): readonly LandmarkSpec[] {
+  return landmarks;
+}
+/**
  * Sites standing as prospect markers: what earlier landings staked out, plus
  * whatever this stay has staked so far. The scene plants a marker on each —
  * the first persistent, visible change a player leaves on a world.
@@ -258,8 +325,9 @@ export function beginGroundfall(s: GroundfallSession): void {
   // The autoland has opinions about setting down in the sea: it diverts to
   // the nearest dry shelf, and the session records where it ACTUALLY landed
   // so the return-to-orbit sits over the right spot.
+  const fjords = s.quirks.includes('award-winning-fjords') ? 1 : 0;
   const dry = findDrySite(
-    { seed: s.seed, type: s.type, size: s.size, dir: s.dir, aspects: s.aspects },
+    { seed: s.seed, type: s.type, size: s.size, dir: s.dir, aspects: s.aspects, fjords },
     DRY_DIR,
   );
   session = s = { ...s, dir: [dry.x, dry.y, dry.z] };
@@ -270,11 +338,13 @@ export function beginGroundfall(s: GroundfallSession): void {
     size: s.size,
     dir: s.dir,
     aspects: s.aspects,
+    fjords,
   });
   tiers = { near: makeTier(tierSpecs.near), far: makeTier(tierSpecs.far) };
   bakeCursor = { near: 0, far: 0, normals: false };
   deposits = [];
   allSites = [];
+  landmarks = [];
   priorStates = new Map();
 
   const live = surfaceLive;
@@ -304,6 +374,16 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.prompt = null;
   live.alt = DESCENT_START_ALT;
   live.sunUp = s.sunLocal[1];
+  live.weather = syntheticWeather('clear');
+  live.outlook = null;
+  live.groundShake = 0;
+  live.skyFlash = 0;
+  live.scanRangeNow = live.scanRange;
+  live.buriedRevealed = false;
+  live.revealNonce = 0;
+  live.wade = 0;
+  live.wadeRefused = false;
+  outlookAt = -100;
   surfaceInput.fwd = 0;
   surfaceInput.strafe = 0;
   surfaceInput.run = false;
@@ -349,10 +429,14 @@ export function endGroundfall(): { pos: Vector3; yaw: number; pitch: number } | 
   tiers = null;
   deposits = [];
   allSites = [];
+  landmarks = [];
   priorStates = new Map();
+  weatherOverride = null;
   releasePointer();
   audio.entryRoarStop();
   audio.surfaceWindStop();
+  audio.weatherPrecipStop();
+  audio.tremorRumbleStop();
   useUiBus.getState().setGroundfall(null);
   if (!s) return null;
   return {
@@ -386,8 +470,10 @@ function stepGeneration(): number {
       buildNormalMap(tiers.near);
       // The lattice says where the seams grew; the save says which of them
       // this world still has. Worked and prospected seams are spent — the
-      // ground remembers, which is the entire point of the record.
-      allSites = depositSites(params, tiers, session?.quirks ?? []);
+      // ground remembers, which is the entire point of the record. Buried
+      // seams ride in the census from the start; joining the workable field
+      // is the dust front's job (rebuildWorkableField).
+      allSites = depositSites(params, tiers, session?.quirks ?? [], undefined, { buried: true });
       priorStates = new Map();
       const record = session
         ? useGame.getState().s.expedition.groundWorlds[session.worldKey]
@@ -395,9 +481,11 @@ function stepGeneration(): number {
       if (record) {
         for (const [id, st] of Object.entries(record.sites)) priorStates.set(id, st.s);
       }
-      deposits = allSites.filter((d) => siteMinable(
-        record?.sites[d.id],
-      ));
+      deposits = allSites.filter(
+        (d) => siteMinable(record?.sites[d.id]) && (!d.buried || surfaceLive.buriedRevealed),
+      );
+      // The coarse lattice: the region's memorable places.
+      landmarks = landmarkSites(params, tiers, session?.quirks ?? []);
       bakeCursor.normals = true;
       surfaceLive.ready = true;
     } else {
@@ -534,6 +622,60 @@ export interface SurfaceStepResult {
   done: { pos: Vector3; yaw: number; pitch: number } | null;
 }
 
+/** Recompute the workable field from the census and the stay's own ledger. */
+function rebuildWorkableField(): void {
+  deposits = allSites.filter(
+    (d) =>
+      siteMinable(
+        priorStates.has(d.id) ? { s: priorStates.get(d.id)!, atMs: 0 } : undefined,
+      ) && (!d.buried || surfaceLive.buriedRevealed),
+  );
+}
+
+/** Seconds between outlook refreshes — a forecast is not a per-frame need. */
+const OUTLOOK_EVERY_S = 5;
+let outlookAt = -100;
+
+/** Evaluate the sky for this frame: snapshot, latch, shake, forecast. */
+function stepWeather(gameTimeMs: number): void {
+  const live = surfaceLive;
+  const s = session!;
+  const wSpec = { seed: s.seed, type: s.type, aspects: s.aspects, dir: s.dir };
+  live.weather = weatherOverride
+    ? syntheticWeather(weatherOverride)
+    : weatherAt(wSpec, gameTimeMs);
+  live.scanRangeNow = live.scanRange * live.weather.scanRangeMult;
+  live.groundShake =
+    live.weather.kind === 'tremor'
+      ? tremorPulse(s.seed, gameTimeMs, live.weather.intensity)
+      : 0;
+  live.skyFlash =
+    live.weather.kind === 'storm'
+      ? stormFlash(s.seed, gameTimeMs, live.weather.intensity)
+      : 0;
+  if (live.t - outlookAt > OUTLOOK_EVERY_S) {
+    outlookAt = live.t;
+    live.outlook = weatherOverride ? null : weatherOutlook(wSpec, gameTimeMs);
+  }
+
+  // The dust moved: buried seams stand for the rest of the stay. Sand is in
+  // no hurry to come back, and un-revealing mid-swing would be a cruelty.
+  if (live.weather.buriedRevealed && !live.buriedRevealed && live.ready) {
+    live.buriedRevealed = true;
+    rebuildWorkableField();
+    live.revealNonce++;
+    if (allSites.some((d) => d.buried)) {
+      useUiBus.getState().addToast({
+        kind: 'info',
+        kicker: 'FIELD REPORT',
+        title: 'The dust has moved',
+        body: 'The front has uncovered ground the sand was sitting on. The scanner suggests a look before the weather changes its mind.',
+        ttlMs: 6200,
+      });
+    }
+  }
+}
+
 /** One frame. Returns the flight pose when the stay is over. */
 export function stepSurface(dt: number, t: number): SurfaceStepResult {
   const live = surfaceLive;
@@ -542,6 +684,7 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
 
   live.t += dt;
   const st = useGame.getState().s;
+  stepWeather(st.gameTimeMs);
   // The hero world completing while you stand on it: the world you were
   // standing on has been delivered. The runabout very sensibly leaves.
   if (s.hero && st.planet.lifetimeIndex !== heroLifetimeIndex && live.phase === 'walk') {
@@ -631,11 +774,21 @@ function stepWalk(dt: number): void {
     .addScaledVector(FWD, surfaceInput.fwd)
     .addScaledVector(RIGHT, surfaceInput.strafe);
   if (WISH.lengthSq() > 1) WISH.normalize();
-  const speed = WALK_SPEED * (surfaceInput.run ? RUN_MULT : 1);
-  WISH.multiplyScalar(speed);
 
   const ground = heightAt(p, tr, live.pos.x, live.pos.z);
   groundNormalAt(p, tr, live.pos.x, live.pos.z, NORMAL);
+
+  // The water participates now. Depth of liquid over the ground underfoot:
+  // up to WADE_MAX the sea is merely an opinion about your speed; past it
+  // the suit declines (see below), and lava declines almost immediately.
+  const lava = p.relief.liquid === 'lava';
+  const wadeLimit = lava ? LAVA_WADE_M : WADE_MAX_M;
+  const depth = Math.max(0, p.seaLevelM - ground);
+  live.wade = lava ? 0 : Math.min(1, depth / WADE_MAX_M);
+
+  const wadeSlow = 1 - 0.55 * Math.min(1, depth / wadeLimit) * (lava ? 0 : 1);
+  const speed = WALK_SPEED * (surfaceInput.run ? RUN_MULT : 1) * wadeSlow;
+  WISH.multiplyScalar(speed);
 
   if (live.grounded) {
     const k = 1 - Math.exp(-dt * GROUND_ACCEL);
@@ -647,7 +800,8 @@ function stepWalk(dt: number): void {
       live.vel.z += NORMAL.z * 14 * dt;
     }
     if (surfaceInput.jump) {
-      live.vel.y = JUMP_SPEED;
+      // Thigh-deep water keeps some of the jump for itself.
+      live.vel.y = JUMP_SPEED * (1 - 0.4 * live.wade);
       live.grounded = false;
       audio.footstep(true);
     }
@@ -684,14 +838,31 @@ function stepWalk(dt: number): void {
     audio.footstep(falling);
   }
 
-  // The sea (or the lava) is not for walking in. Wading depth, then a wall.
-  const liquid = p.seaLevelM;
-  if (heightAt(p, tr, live.pos.x, live.pos.z) < liquid - 1.1) {
-    TO_TARGET.set(live.pos.x, 0, live.pos.z).normalize();
-    live.pos.x -= live.vel.x * dt * 2;
-    live.pos.z -= live.vel.z * dt * 2;
-    live.vel.x *= 0.4;
-    live.vel.z *= 0.4;
+  // Past wading depth the suit declines — not a wall, a firm buoyant shove
+  // back up the depth gradient, scaling with how far past the line you are.
+  // "Refuse-until-skimmer": Phase 3's amphibious ranks renegotiate this.
+  const depthNow = Math.max(0, p.seaLevelM - heightAt(p, tr, live.pos.x, live.pos.z));
+  live.wadeRefused = false;
+  if (depthNow > wadeLimit) {
+    live.wadeRefused = true;
+    const e = 2.5;
+    // Uphill on the seabed is the way out of the sea.
+    const gx = (heightAt(p, tr, live.pos.x + e, live.pos.z) - heightAt(p, tr, live.pos.x - e, live.pos.z)) / (2 * e);
+    const gz = (heightAt(p, tr, live.pos.x, live.pos.z + e) - heightAt(p, tr, live.pos.x, live.pos.z - e)) / (2 * e);
+    const g = Math.hypot(gx, gz);
+    const over = Math.min(1.5, (depthNow - wadeLimit) * (lava ? 8 : 1.6));
+    if (g > 1e-5) {
+      live.vel.x += (gx / g) * (14 + over * 22) * dt;
+      live.vel.z += (gz / g) * (14 + over * 22) * dt;
+    } else {
+      // A flat seabed offers no gradient; back the way you came, then.
+      TO_TARGET.set(-live.vel.x, 0, -live.vel.z).normalize();
+      live.vel.x += TO_TARGET.x * (14 + over * 22) * dt;
+      live.vel.z += TO_TARGET.z * (14 + over * 22) * dt;
+    }
+    const damp = Math.exp(-dt * (2.4 + over * 4));
+    live.vel.x *= damp;
+    live.vel.z *= damp;
   }
 
   // Impact recoil settles quickly; the bob math below rides on top of it.
@@ -719,7 +890,8 @@ function stepFootsteps(dt: number, planar: number): void {
   const stride = 2.1;
   if (footAcc >= stride) {
     footAcc = 0;
-    audio.footstep(false);
+    if (surfaceLive.wade > 0.06) audio.wadeSplash(surfaceLive.wade);
+    else audio.footstep(false);
   }
 }
 
@@ -834,7 +1006,7 @@ function stepWork(dt: number): void {
       return;
     }
 
-    const needed = verbHits(verb, best.richness);
+    const needed = verbHitsNow(verb, best.richness);
     const done = live.hits.get(best.id) ?? 0;
     const label =
       verb === 'core'
@@ -879,14 +1051,17 @@ function stepWork(dt: number): void {
   live.prompt = null;
 
   // Nothing in reach: the engage key charges the field pulse instead. One
-  // held breath and every site within range reports to the compass.
+  // held breath and every site within range reports to the compass. The
+  // range is the weather's to bend — dust chokes it, storms feed it — and
+  // buried seams answer no pulse until the dust has moved them into the sun.
   if (surfaceInput.engage) {
     live.scanning = true;
     live.scanCharge += dt / FIELD_SCAN_SECONDS;
     if (live.scanCharge >= 1) {
       live.scanCharge = 0;
-      const r2 = live.scanRange * live.scanRange;
+      const r2 = live.scanRangeNow * live.scanRangeNow;
       for (const d of allSites) {
+        if (d.buried && !live.buriedRevealed) continue;
         const dx = d.x - live.pos.x;
         const dz = d.z - live.pos.z;
         if (dx * dx + dz * dz <= r2) live.scanned.add(d.id);
@@ -945,6 +1120,13 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
     camera.quaternion.setFromEuler(CAM_EUL);
     camera.position.copy(live.pos);
     camera.position.y += live.bob - live.kick * 0.045;
+    // Tremors are the one thing allowed to shake a standing camera, and
+    // only a little: the ground is making a point, not a health bar.
+    if (live.groundShake > 0.01) {
+      const g = live.groundShake * 0.05;
+      camera.position.x += (Math.sin(t * 47.1) + Math.sin(t * 23.7)) * g;
+      camera.position.y += Math.sin(t * 39.3) * g * 0.7;
+    }
   }
 
   if (live.shake > 0.001 && live.phase !== 'walk') {
@@ -1006,7 +1188,20 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       session,
       seaLevelM: params?.seaLevelM ?? null,
       sunLocal: session?.sunLocal ?? null,
+      weather: { ...surfaceLive.weather },
+      outlook: surfaceLive.outlook,
+      wade: surfaceLive.wade,
+      wadeRefused: surfaceLive.wadeRefused,
+      buriedRevealed: surfaceLive.buriedRevealed,
+      landmarks: landmarks.map((l) => ({
+        id: l.id, kind: l.kind, name: l.name, x: l.x, y: l.y, z: l.z,
+      })),
     }),
+    /** Pin the sky to a kind ('clear' resets, null clears the pin). */
+    setWeather: (kind: string | null) => {
+      weatherOverride = kind && kind !== 'clear' ? (kind as WeatherKind) : null;
+      return weatherOverride ?? 'clear';
+    },
     /** Choose the pick's meaning by index into MINING_VERBS. */
     setVerb: (i: number) => {
       surfaceLive.verbIdx = ((i | 0) % MINING_VERBS.length + MINING_VERBS.length) % MINING_VERBS.length;
