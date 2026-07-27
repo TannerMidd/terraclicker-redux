@@ -452,26 +452,51 @@ export function touchdownThud(): void {
   footstep(true);
 }
 
-/** The extractor working: rationed so a held beam does not stack sources. */
-let mineLastAt = 0;
-export function mineHum(_dt: number): void {
+/** The pick landing on crystal: a knock with a ring in it. */
+export function pickThunk(): void {
   const c = ensure();
   if (!c || !master) return;
   const t = c.currentTime;
-  if (t - mineLastAt < 0.11) return;
-  mineLastAt = t;
+  // The knock: a short burst of low filtered noise.
+  const src = c.createBufferSource();
+  src.buffer = noiseBuffer(c);
+  const nf = c.createBiquadFilter();
+  nf.type = 'lowpass';
+  nf.frequency.value = 460 + Math.random() * 120;
+  const ng = c.createGain();
+  ng.gain.setValueAtTime(0.09, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  src.connect(nf).connect(ng).connect(master);
+  src.start(t);
+  src.stop(t + 0.1);
+  // The ring: crystal answering back, a little different every strike.
   const o = c.createOscillator();
-  o.type = 'square';
-  o.frequency.value = 620 + Math.random() * 140;
+  o.type = 'sine';
+  o.frequency.value = 1420 * Math.pow(2, (Math.random() * 140 - 70) / 1200);
   const g = c.createGain();
-  g.gain.setValueAtTime(0.012, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
-  const f = c.createBiquadFilter();
-  f.type = 'bandpass';
-  f.frequency.value = 900;
-  o.connect(f).connect(g).connect(master);
-  o.start(t);
-  o.stop(t + 0.14);
+  g.gain.setValueAtTime(0.028, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  o.connect(g).connect(master);
+  o.start(t + 0.012);
+  o.stop(t + 0.32);
+}
+
+/** The seam giving way: a chord of the rings it made while resisting. */
+export function crystalShatter(): void {
+  const c = ensure();
+  if (!c || !master) return;
+  const t = c.currentTime;
+  for (const [i, f] of [988, 1318, 1976, 2637].entries()) {
+    const o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = f * Math.pow(2, (Math.random() * 40 - 20) / 1200);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.03 - i * 0.005, t + i * 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5 + i * 0.08);
+    o.connect(g).connect(master);
+    o.start(t + i * 0.02);
+    o.stop(t + 0.62 + i * 0.08);
+  }
 }
 
 /** A core sample coming free: bright, brief, worth the walk. */

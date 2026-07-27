@@ -31,17 +31,17 @@ import { paletteFor } from '../planetMaterial';
 import {
   applySurfaceCamera,
   attachSurfaceInput,
+  hitsNeeded,
   stepSurface,
   surfaceDeposits,
-  surfaceInput,
   surfaceLive,
   surfaceParams,
   surfaceTiers,
   SHIP_PARK,
+  SWING_IMPACT,
 } from './surfaceControl';
 import {
   buildTierTextures,
-  createBeamMaterial,
   createCloudDeckMaterial,
   createCrystalMaterial,
   createDustRingMaterial,
@@ -52,7 +52,7 @@ import {
   disposeTierTextures,
 } from './surfaceMaterial';
 import { terrainGeometry } from './terrainMesh';
-import { heightAt, groundNormalAt, scatterSites, PLANET_RADIUS_M } from './terrainField';
+import { heightAt, groundNormalAt, scatterSites, PLANET_RADIUS_M, type DepositSpec } from './terrainField';
 import { lightRig, releaseLightRig } from '../sceneLightRig';
 import { useLamp } from '../SceneLamps';
 import { restoreFlightAfterGroundfall } from '../flightControl';
@@ -90,7 +90,6 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   const cloudDeck = useRef<Mesh>(null);
   const plasmaQuad = useRef<Mesh>(null);
   const dustRing = useRef<Mesh>(null);
-  const beamMesh = useRef<Mesh>(null);
   const crystals = useRef<InstancedMesh>(null);
   const shipGroup = useRef<Group>(null);
   const dustBornAt = useRef(-10);
@@ -120,7 +119,6 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const skyB = createSkyMaterial(palette);
     const cloudsB = createCloudDeckMaterial();
     const crystalB = createCrystalMaterial();
-    const beamB = createBeamMaterial();
     const dustB = createDustRingMaterial();
 
     // Session statics.
@@ -153,7 +151,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       Math.min(0.85, a.atmo * (0.3 + a.hydro * 0.55));
     (cloudsB.uniforms.sunTint as { value: Color }).value = new Color(session.starHex);
 
-    return { p, tiers, tex, terrainB, liquidB, skyB, cloudsB, crystalB, beamB, dustB };
+    return { p, tiers, tex, terrainB, liquidB, skyB, cloudsB, crystalB, dustB };
   }, [ready, palette, session]);
 
   // Bake progress → React exactly once.
@@ -216,28 +214,39 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     };
   }, [built, session]);
 
-  // Crystal instance seats (4 shards per seam), hidden as they are worked.
+  // Crystal instance seats (4 shards per seam). `crack` 0–1 tilts and sinks
+  // the shards as the pick works them — the seam visibly losing the argument.
+  const writeSeamMatrices = (mesh: InstancedMesh, d: DepositSpec, crack: number) => {
+    for (let s = 0; s < 4; s++) {
+      const a = d.rot + s * 1.7;
+      const lean = 0.22 + ((s * 37) % 10) / 21 + crack * (0.28 + (s % 2) * 0.14);
+      SEAT.position.set(
+        d.x + Math.cos(a) * 0.55 * d.scale,
+        d.y - 0.15 - crack * 0.22 * d.scale,
+        d.z + Math.sin(a) * 0.55 * d.scale,
+      );
+      SEAT.quaternion.setFromAxisAngle(V1.set(Math.cos(a + 1.2), 0, Math.sin(a + 1.2)).normalize(), lean);
+      const shrink = 1 - crack * 0.16;
+      SEAT.scale.set(0.28 * d.scale * shrink, (0.55 + (s % 3) * 0.35) * d.scale * shrink, 0.28 * d.scale * shrink);
+      SEAT.updateMatrix();
+      mesh.setMatrixAt(d.id * 4 + s, SEAT.matrix);
+    }
+  };
+
   useEffect(() => {
     const mesh = crystals.current;
     if (!mesh || !built) return;
     const seams = surfaceDeposits();
-    let i = 0;
-    for (const d of seams) {
-      for (let s = 0; s < 4; s++) {
-        const a = d.rot + s * 1.7;
-        const lean = 0.22 + ((s * 37) % 10) / 21;
-        SEAT.position.set(d.x + Math.cos(a) * 0.55 * d.scale, d.y - 0.15, d.z + Math.sin(a) * 0.55 * d.scale);
-        SEAT.quaternion.setFromAxisAngle(V1.set(Math.cos(a + 1.2), 0, Math.sin(a + 1.2)).normalize(), lean);
-        SEAT.scale.set(0.28 * d.scale, (0.55 + (s % 3) * 0.35) * d.scale, 0.28 * d.scale);
-        SEAT.updateMatrix();
-        mesh.setMatrixAt(i++, SEAT.matrix);
-      }
-    }
-    mesh.count = i;
+    for (const d of seams) writeSeamMatrices(mesh, d, 0);
+    mesh.count = seams.length * 4;
     mesh.instanceMatrix.needsUpdate = true;
+    // The effect writes by deposit id, so the count must cover the last one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [built]);
 
   const minedShown = useRef(new Set<number>());
+  const lastHitShown = useRef(surfaceLive.hitNonce);
+  const hitFlash = useRef(0);
 
   // ————— The frame loop: step the state machine, drive every uniform —————
   useFrame((state, dtRaw) => {
@@ -331,7 +340,8 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     V2.y += 0.4;
     suitLamp.set(V2, LAMP_WARM, Math.max(0, 1 - day * 1.5) * 30 * (live.phase === 'walk' ? 1 : 0), 34);
 
-    // The nearest live seam glows on the lamp pool.
+    // The nearest live seam glows on the lamp pool; a landing pick spikes it.
+    hitFlash.current *= Math.exp(-dt * 9);
     let nearSeam = null as { x: number; y: number; z: number } | null;
     let nearD = 65;
     for (const d of surfaceDeposits()) {
@@ -344,9 +354,22 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     }
     if (nearSeam) {
       V2.set(nearSeam.x, nearSeam.y + 1.6, nearSeam.z);
-      seamLamp.set(V2, LAMP_SEAM, 6 + (1 - day) * 16, 26);
+      seamLamp.set(V2, LAMP_SEAM, 6 + (1 - day) * 16 + hitFlash.current, 26);
     } else {
       seamLamp.setIntensity(0);
+    }
+
+    // Each landed hit cracks the seam a little further.
+    if (live.hitNonce !== lastHitShown.current) {
+      lastHitShown.current = live.hitNonce;
+      hitFlash.current = 26;
+      const mesh2 = crystals.current;
+      const worked = live.target;
+      if (mesh2 && worked && !live.mined.has(worked.id)) {
+        const crack = (live.hits.get(worked.id) ?? 0) / hitsNeeded(worked.richness);
+        writeSeamMatrices(mesh2, worked, Math.min(1, crack));
+        mesh2.instanceMatrix.needsUpdate = true;
+      }
     }
 
     // Newly worked seams collapse out of the instance list.
@@ -360,26 +383,6 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
           mesh.setMatrixAt(id * 4 + s, M1);
         }
         mesh.instanceMatrix.needsUpdate = true;
-      }
-    }
-
-    // The extractor beam.
-    const beam = beamMesh.current;
-    if (beam) {
-      const target = live.target;
-      const working = target && surfaceInput.engage && live.phase === 'walk' && live.mineProgress > 0;
-      beam.visible = Boolean(working);
-      (built.beamB.uniforms.strength as { value: number }).value = working ? 0.55 + live.mineProgress * 0.45 : 0;
-      if (working && target) {
-        // From a hip-mounted emitter to the seam.
-        V2.copy(camera.position);
-        V3.set(0.32, -0.42, -0.6).applyQuaternion(camera.quaternion);
-        V2.add(V3);
-        V3.set(target.x, target.y + 0.8, target.z);
-        const len = V2.distanceTo(V3);
-        beam.position.copy(V2).add(V3).multiplyScalar(0.5);
-        beam.scale.set(1, len, 1);
-        beam.quaternion.setFromUnitVectors(UP, V3.sub(V2).normalize());
       }
     }
 
@@ -453,13 +456,12 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               <octahedronGeometry args={[0.7, 0]} />
             </instancedMesh>
 
-            <mesh ref={beamMesh} visible={false} material={built.beamB.mat} frustumCulled={false}>
-              <cylinderGeometry args={[0.09, 0.22, 1, 8, 1, true]} />
-            </mesh>
-
             <mesh ref={dustRing} visible={false} material={built.dustB.mat} rotation={[-Math.PI / 2, 0, 0]}>
               <planeGeometry args={[2, 2]} />
             </mesh>
+
+            <Pickaxe />
+            <ImpactShards gravity={built.p.gravity} />
 
             {shipPose && (
               <group ref={shipGroup} position={[SHIP_PARK.x, shipPose.y, SHIP_PARK.z]} quaternion={shipPose.q}>
@@ -664,6 +666,200 @@ function LandedRunabout() {
         </mesh>
       ))}
     </group>
+  );
+}
+
+// ————— The pick —————
+
+/** Piecewise swing: wind up, strike hard, recover soft. Radians about X. */
+function swingAngle(s: number): number {
+  const REST = -0.66;
+  const WINDUP = -1.42;
+  const STRIKE = 0.82;
+  if (s <= 0) return REST;
+  if (s < 0.35) {
+    const k = s / 0.35;
+    return REST + (WINDUP - REST) * (1 - (1 - k) * (1 - k));
+  }
+  if (s < SWING_IMPACT) {
+    const k = (s - 0.35) / (SWING_IMPACT - 0.35);
+    return WINDUP + (STRIKE - WINDUP) * k * k * k;
+  }
+  const k = Math.min(1, (s - SWING_IMPACT) / (1 - SWING_IMPACT));
+  const soft = k * k * (3 - 2 * k);
+  return STRIKE + (REST - STRIKE) * soft;
+}
+
+/**
+ * The first-person pickaxe. A viewmodel in the classic sense: welded to the
+ * lens with its own depth privileges so a wall can never amputate it, swaying
+ * against look and stride, and swinging on the cadence the control layer
+ * dictates — the impact frame there is the impact frame here.
+ */
+function Pickaxe() {
+  const camera = useThree((s) => s.camera);
+  const root = useRef<Group>(null);
+  const pivot = useRef<Group>(null);
+  const lag = useRef({ yaw: 0, pitch: 0, x: 0, y: 0 });
+
+  useFrame((state, dtRaw) => {
+    const g = root.current;
+    const p = pivot.current;
+    if (!g || !p) return;
+    const live = surfaceLive;
+    const visible = live.phase === 'walk';
+    g.visible = visible;
+    if (!visible) return;
+    const dt = Math.min(dtRaw, 0.1);
+
+    // Look lag: the tool trails the eyes by a beat and settles.
+    const l = lag.current;
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const dy = wrap(live.yaw - l.yaw);
+    const dp = live.pitch - l.pitch;
+    l.yaw = live.yaw;
+    l.pitch = live.pitch;
+    const k = 1 - Math.exp(-dt * 9);
+    l.x += (-dy * 0.6 - l.x) * k;
+    l.y += (dp * 0.5 - l.y) * k;
+
+    g.position.copy(camera.position);
+    g.quaternion.copy(camera.quaternion);
+    g.translateX(0.3 + l.x * 0.4);
+    g.translateY(-0.34 + live.bob * 0.5 + l.y * 0.4 - live.kick * 0.02);
+    g.translateZ(-0.52);
+
+    const ang = swingAngle(live.swing);
+    p.rotation.set(ang, -0.3 + ang * 0.08 + l.x, -0.22 + ang * 0.05);
+    void state;
+  });
+
+  // A viewmodel is its own worst lighting rig — the camera side is always the
+  // shadow side — so the metals carry a faint self-light to stay legible
+  // against bright ground.
+  const steel = { color: 0xb8c2ce, emissive: 0x2a323d, emissiveIntensity: 0.7, roughness: 0.35, metalness: 0.85, depthTest: false } as const;
+  const haft = { color: 0x6a5138, emissive: 0x1e150b, emissiveIntensity: 0.6, roughness: 0.8, metalness: 0.05, depthTest: false } as const;
+  return (
+    <group ref={root} visible={false}>
+      <group ref={pivot} position={[0, -0.06, 0]} rotation={[-0.66, -0.3, -0.22]} scale={0.72}>
+        {/* Haft, grip wrap, and the head assembly at the top. */}
+        <mesh position={[0, 0.22, 0]} renderOrder={520}>
+          <cylinderGeometry args={[0.016, 0.02, 0.5, 8]} />
+          <meshStandardMaterial {...haft} />
+        </mesh>
+        <mesh position={[0, 0.03, 0]} renderOrder={520}>
+          <cylinderGeometry args={[0.021, 0.022, 0.13, 8]} />
+          <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
+        </mesh>
+        <mesh position={[0, 0.47, 0]} renderOrder={521}>
+          <boxGeometry args={[0.045, 0.05, 0.2]} />
+          <meshStandardMaterial {...steel} />
+        </mesh>
+        {/* The business end: a spike forward, a chisel back. */}
+        <mesh position={[0, 0.47, -0.2]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={521}>
+          <coneGeometry args={[0.026, 0.22, 6]} />
+          <meshStandardMaterial {...steel} />
+        </mesh>
+        <mesh position={[0, 0.47, 0.14]} renderOrder={521}>
+          <boxGeometry args={[0.06, 0.028, 0.1]} />
+          <meshStandardMaterial {...steel} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+// ————— Impact shards —————
+
+const SHARD_MAX = 48;
+
+/**
+ * Crystal chips. A tiny CPU pool: each landed hit throws a handful from the
+ * impact point, a broken seam throws a fistful, gravity does the rest.
+ */
+function ImpactShards({ gravity }: { gravity: number }) {
+  const mesh = useRef<InstancedMesh>(null);
+  const pool = useMemo(
+    () => ({
+      pos: new Float32Array(SHARD_MAX * 3),
+      vel: new Float32Array(SHARD_MAX * 3),
+      life: new Float32Array(SHARD_MAX),
+      size: new Float32Array(SHARD_MAX),
+      spin: new Float32Array(SHARD_MAX),
+      next: 0,
+    }),
+    [],
+  );
+  const lastHit = useRef(surfaceLive.hitNonce);
+  const lastBreak = useRef(surfaceLive.mineNonce);
+
+  useFrame((state, dtRaw) => {
+    const m = mesh.current;
+    if (!m) return;
+    const dt = Math.min(dtRaw, 0.1);
+    const live = surfaceLive;
+
+    const burst = (count: number, speed: number, size: number) => {
+      for (let n = 0; n < count; n++) {
+        const i = pool.next;
+        pool.next = (pool.next + 1) % SHARD_MAX;
+        const a = Math.random() * Math.PI * 2;
+        const up = 0.35 + Math.random() * 0.65;
+        const horiz = Math.sqrt(Math.max(0, 1 - up * up));
+        pool.pos[i * 3] = live.hitAt.x;
+        pool.pos[i * 3 + 1] = live.hitAt.y;
+        pool.pos[i * 3 + 2] = live.hitAt.z;
+        const v = speed * (0.6 + Math.random() * 0.8);
+        pool.vel[i * 3] = Math.cos(a) * horiz * v;
+        pool.vel[i * 3 + 1] = up * v;
+        pool.vel[i * 3 + 2] = Math.sin(a) * horiz * v;
+        pool.life[i] = 1;
+        pool.size[i] = size * (0.6 + Math.random() * 0.9);
+        pool.spin[i] = (Math.random() - 0.5) * 14;
+      }
+    };
+    if (live.hitNonce !== lastHit.current) {
+      lastHit.current = live.hitNonce;
+      burst(9, 2.6, 0.045);
+    }
+    if (live.mineNonce !== lastBreak.current) {
+      lastBreak.current = live.mineNonce;
+      burst(24, 4.2, 0.085);
+    }
+
+    const t = state.clock.elapsedTime;
+    for (let i = 0; i < SHARD_MAX; i++) {
+      if (pool.life[i]! <= 0) {
+        M1.makeScale(0, 0, 0);
+        m.setMatrixAt(i, M1);
+        continue;
+      }
+      pool.life[i]! -= dt / 0.75;
+      pool.vel[i * 3 + 1]! -= gravity * dt;
+      pool.pos[i * 3]! += pool.vel[i * 3]! * dt;
+      pool.pos[i * 3 + 1]! += pool.vel[i * 3 + 1]! * dt;
+      pool.pos[i * 3 + 2]! += pool.vel[i * 3 + 2]! * dt;
+      SEAT.position.set(pool.pos[i * 3]!, pool.pos[i * 3 + 1]!, pool.pos[i * 3 + 2]!);
+      SEAT.quaternion.setFromAxisAngle(UP, t * pool.spin[i]!);
+      const s = pool.size[i]! * Math.max(0, pool.life[i]!);
+      SEAT.scale.set(s, s, s);
+      SEAT.updateMatrix();
+      m.setMatrixAt(i, SEAT.matrix);
+    }
+    m.instanceMatrix.needsUpdate = true;
+  });
+
+  return (
+    <instancedMesh ref={mesh} args={[undefined, undefined, SHARD_MAX]} frustumCulled={false}>
+      <tetrahedronGeometry args={[1, 0]} />
+      <meshStandardMaterial
+        color={0x9ff0ff}
+        emissive={0x48c8e8}
+        emissiveIntensity={0.9}
+        roughness={0.25}
+        metalness={0.1}
+      />
+    </instancedMesh>
   );
 }
 

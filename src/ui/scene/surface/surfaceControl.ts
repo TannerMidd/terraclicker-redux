@@ -54,7 +54,14 @@ const JUMP_SPEED = 5.2;
 const GROUND_ACCEL = 11; // 1/s velocity approach
 const SLOPE_STAND = 0.6; // ground normal y below this and you slide
 const MINE_RANGE = 4.2;
-const MINE_SECONDS = 1.9;
+/** One full pick swing: wind-up, strike, recover. */
+export const SWING_SECONDS = 0.72;
+/** Fraction of the swing at which the head actually lands. */
+export const SWING_IMPACT = 0.58;
+/** Swings a seam takes before it gives: modest ones crack fast. */
+export function hitsNeeded(richness: number): number {
+  return 2 + richness;
+}
 const BOARD_RANGE = 6.5;
 /** Where the runabout parks, metres from the touchdown point. */
 export const SHIP_PARK: { x: number; z: number } = { x: 11, z: -7 };
@@ -89,6 +96,7 @@ export const surfaceLive = {
   samples: 0,
   /** Deposit currently in reach + view, or null. */
   target: null as DepositSpec | null,
+  /** 0–1 toward the current seam giving way (hits landed / hits needed). */
   mineProgress: 0,
   /** Deposit ids already worked this stay. */
   mined: new Set<number>(),
@@ -96,6 +104,20 @@ export const surfaceLive = {
   prompt: null as { verb: 'mine' | 'board'; label: string; blocked?: string } | null,
   /** Sun elevation −1…1 (sin of altitude angle); negative is night. */
   sunUp: 0,
+
+  // — the pick —
+  /** 0–1 phase of the current swing; 0 is the pick at rest. */
+  swing: 0,
+  /** Engage held with a seam in reach: the arm is working. */
+  swinging: false,
+  /** Bumped every time the head lands; FX and audio key off it. */
+  hitNonce: 0,
+  /** Where the last hit landed, for sparks. */
+  hitAt: { x: 0, y: 0, z: 0 },
+  /** Hits landed per seam this stay (visual cracking reads it too). */
+  hits: new Map<number, number>(),
+  /** Camera dip from the last impact, decays fast. */
+  kick: 0,
   /** Bumped whenever a deposit finishes, for FX. */
   mineNonce: 0,
   /** Bumped at touchdown, for the dust kick. */
@@ -190,8 +212,12 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.ready = false;
   live.samples = 0;
   live.mined.clear();
+  live.hits.clear();
   live.target = null;
   live.mineProgress = 0;
+  live.swing = 0;
+  live.swinging = false;
+  live.kick = 0;
   live.prompt = null;
   live.alt = DESCENT_START_ALT;
   live.sunUp = s.sunLocal[1];
@@ -551,6 +577,9 @@ function stepWalk(dt: number): void {
     live.vel.z *= 0.4;
   }
 
+  // Impact recoil settles quickly; the bob math below rides on top of it.
+  live.kick *= Math.exp(-dt * 7);
+
   // Head bob: driven by actual ground travel, subtle, none while airborne.
   const planar = Math.hypot(live.vel.x, live.vel.z);
   if (live.grounded && planar > 0.4) {
@@ -616,24 +645,49 @@ function stepWork(dt: number): void {
   }
 
   if (best) {
-    live.prompt = { verb: 'mine', label: `extract core sample (${best.richness})` };
+    const needed = hitsNeeded(best.richness);
+    const done = live.hits.get(best.id) ?? 0;
+    live.prompt = { verb: 'mine', label: `mine the seam (${best.richness} samples)` };
+
     if (surfaceInput.engage) {
-      live.mineProgress = Math.min(1, live.mineProgress + dt / MINE_SECONDS);
-      audio.mineHum(dt);
-      if (live.mineProgress >= 1) {
-        live.mined.add(best.id);
-        live.samples += best.richness;
-        live.mineProgress = 0;
-        live.mineNonce++;
-        audio.sampleChime();
+      // The pick swings on its own cadence while the key is held; the HIT is
+      // the moment the head lands, and everything — sparks, sound, the
+      // camera's little dip, the seam cracking — keys off that instant.
+      live.swinging = true;
+      const before = live.swing;
+      live.swing += dt / SWING_SECONDS;
+      if (before < SWING_IMPACT && live.swing >= SWING_IMPACT) {
+        const now = done + 1;
+        live.hits.set(best.id, now);
+        live.hitNonce++;
+        live.hitAt.x = best.x;
+        live.hitAt.y = best.y + 0.7;
+        live.hitAt.z = best.z;
+        live.kick = 1;
+        audio.pickThunk();
+        if (now >= needed) {
+          live.mined.add(best.id);
+          live.hits.delete(best.id);
+          live.samples += best.richness;
+          live.mineNonce++;
+          audio.crystalShatter();
+          audio.sampleChime();
+        }
       }
+      if (live.swing >= 1) live.swing = 0;
     } else {
-      live.mineProgress = Math.max(0, live.mineProgress - dt * 1.4);
+      live.swinging = false;
+      live.swing = Math.max(0, live.swing - dt * 2.6);
     }
+    live.mineProgress = live.mined.has(best.id)
+      ? 0
+      : Math.min(1, (live.hits.get(best.id) ?? 0) / needed);
     return;
   }
 
-  live.mineProgress = Math.max(0, live.mineProgress - dt * 1.4);
+  live.swinging = false;
+  live.swing = Math.max(0, live.swing - dt * 2.6);
+  live.mineProgress = 0;
   live.prompt = null;
 }
 
@@ -677,11 +731,11 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
     camera.lookAt(SHIP_PARK.x, lookY + 6 + alt * 0.04, SHIP_PARK.z);
     camera.rotateZ(Math.sin(t * 1.7) * live.shake * 0.02);
   } else {
-    // The walker's eyes.
-    CAM_EUL.set(live.pitch, live.yaw, 0);
+    // The walker's eyes. The kick is the pick landing — a dip, not a shake.
+    CAM_EUL.set(live.pitch - live.kick * 0.012, live.yaw, 0);
     camera.quaternion.setFromEuler(CAM_EUL);
     camera.position.copy(live.pos);
-    camera.position.y += live.bob;
+    camera.position.y += live.bob - live.kick * 0.045;
   }
 
   if (live.shake > 0.001 && live.phase !== 'walk') {

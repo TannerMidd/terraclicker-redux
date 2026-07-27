@@ -31,12 +31,14 @@ import {
   configureTierSpecsForTests,
   endGroundfall,
   EYE,
+  hitsNeeded,
   stepSurface,
   surfaceDeposits,
   surfaceInput,
   surfaceLive,
   surfaceParams,
   surfaceTiers,
+  SWING_SECONDS,
   TAKEOFF_SECONDS,
   type GroundfallPhase,
 } from '../src/ui/scene/surface/surfaceControl';
@@ -48,6 +50,7 @@ import {
   stepFlight,
 } from '../src/ui/scene/flightControl';
 import { heroWorldShell } from '../src/ui/scene/universeLayout';
+import { SORTIE_FLAG } from '../src/content/firstSortie';
 import { useGame } from '../src/state/store';
 import { useUiBus } from '../src/ui/fx/uiBus';
 
@@ -288,11 +291,14 @@ describe('the walk (control layer, driven like the frame loop)', () => {
       const dy = seam.y + 0.9 - surfaceLive.pos.y;
       surfaceLive.pitch = Math.atan2(dy, Math.hypot(dx, dz));
       surfaceInput.engage = true;
-      for (let i = 0; i < 240 && !surfaceLive.mined.has(seam.id); i++) {
+      // Hit-based now: the richest seam takes 2+5 swings at SWING_SECONDS
+      // apiece, so give the arm ten honest seconds before calling it stuck.
+      for (let i = 0; i < 620 && !surfaceLive.mined.has(seam.id); i++) {
         stepSurface(1 / 60, (t += 1 / 60));
       }
       surfaceInput.engage = false;
       expect(surfaceLive.mined.has(seam.id)).toBe(true);
+      expect(surfaceLive.hits.has(seam.id)).toBe(false); // ledger cleaned
     }
     const carried = surfaceLive.samples;
     expect(carried).toBeGreaterThanOrEqual(C.GROUND_SURVEY_SAMPLES);
@@ -314,6 +320,88 @@ describe('the walk (control layer, driven like the frame loop)', () => {
       done = stepSurface(1 / 60, (t += 1 / 60)).done;
     }
     expect(done).not.toBeNull();
+    expect(useUiBus.getState().groundfall).toBeNull();
+  });
+
+  it('lands one swing at a time: hits accumulate, then the seam gives', () => {
+    commitOverHero();
+    bakeAndLand();
+    const p = surfaceParams()!;
+    const tiers = surfaceTiers()!;
+    let t = 9000;
+    const seam = [...surfaceDeposits()][0]!;
+    const back = 2.2;
+    const a = Math.atan2(seam.x, seam.z);
+    const sx = seam.x - Math.sin(a) * back;
+    const sz = seam.z - Math.cos(a) * back;
+    surfaceLive.pos.set(sx, heightAt(p, tiers, sx, sz) + EYE, sz);
+    surfaceLive.vel.set(0, 0, 0);
+    const dx = seam.x - sx;
+    const dz = seam.z - sz;
+    surfaceLive.yaw = Math.atan2(-dx, -dz);
+    surfaceLive.pitch = Math.atan2(seam.y + 0.9 - surfaceLive.pos.y, Math.hypot(dx, dz));
+
+    // One full swing lands exactly one hit.
+    surfaceInput.engage = true;
+    const nonceBefore = surfaceLive.hitNonce;
+    for (let i = 0; i < Math.ceil((SWING_SECONDS * 0.8) / (1 / 60)); i++) {
+      stepSurface(1 / 60, (t += 1 / 60));
+    }
+    expect(surfaceLive.hitNonce).toBe(nonceBefore + 1);
+    expect(surfaceLive.hits.get(seam.id)).toBe(1);
+    expect(surfaceLive.mined.has(seam.id)).toBe(false);
+    expect(surfaceLive.mineProgress).toBeCloseTo(1 / hitsNeeded(seam.richness), 5);
+
+    // Let go mid-cycle: the pick recovers, the hits already landed remain.
+    surfaceInput.engage = false;
+    for (let i = 0; i < 60; i++) stepSurface(1 / 60, (t += 1 / 60));
+    expect(surfaceLive.swing).toBe(0);
+    expect(surfaceLive.hits.get(seam.id)).toBe(1);
+  });
+
+  it('flies the entry itself when the pilot commits to a dive', () => {
+    const st = useGame.getState().s;
+    st.flags[SORTIE_FLAG] = 1;
+    const shell = heroWorldShell(st.planet.size);
+    // Nose hard down over the pole, throttle open.
+    beginFlightAt(new Vector3(0, shell + 0.42, 0), 0, -1.3);
+    flightInput.thrust = 1;
+    let t = 0;
+    let sawAbortWindow = false;
+    for (let i = 0; i < 300 && !useUiBus.getState().groundfall; i++) {
+      stepFlight(1 / 60, (t += 1 / 60));
+      if (flightLive.prompt?.label.includes('pull up to abort')) sawAbortWindow = true;
+    }
+    flightInput.thrust = 0;
+    // The console announced the commitment before flying it.
+    expect(sawAbortWindow).toBe(true);
+    expect(useUiBus.getState().groundfall).not.toBeNull();
+    expect(useUiBus.getState().groundfall!.hero).toBe(true);
+  });
+
+  it('never auto-enters while hovering inside the envelope', () => {
+    const st = useGame.getState().s;
+    st.flags[SORTIE_FLAG] = 1;
+    const shell = heroWorldShell(st.planet.size);
+    beginFlightAt(new Vector3(0, shell + 0.2, 0), 0, 0);
+    let t = 0;
+    for (let i = 0; i < 240; i++) stepFlight(1 / 60, (t += 1 / 60));
+    // The polite offer stands; nothing was committed on the pilot's behalf.
+    expect(flightLive.prompt?.verb).toBe('land');
+    expect(flightLive.prompt?.label).toContain('make groundfall');
+    expect(useUiBus.getState().groundfall).toBeNull();
+  });
+
+  it('keeps its hands off the stick during the induction', () => {
+    const st = useGame.getState().s;
+    expect(st.flags[SORTIE_FLAG]).toBeUndefined();
+    const shell = heroWorldShell(st.planet.size);
+    beginFlightAt(new Vector3(0, shell + 0.42, 0), 0, -1.3);
+    flightInput.thrust = 1;
+    let t = 0;
+    for (let i = 0; i < 300; i++) stepFlight(1 / 60, (t += 1 / 60));
+    flightInput.thrust = 0;
+    // A brand-new pilot diving at home just gets cushioned, as before.
     expect(useUiBus.getState().groundfall).toBeNull();
   });
 

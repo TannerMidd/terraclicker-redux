@@ -14,7 +14,6 @@
  * about where the ground is, because they are reading the same array.
  */
 import {
-  AdditiveBlending,
   BackSide,
   Color,
   DataTexture,
@@ -496,25 +495,6 @@ export function createCrystalMaterial() {
   mat.metalnessNode = float(0.1);
   mat.emissiveNode = glow.mul(pulse.mul(0.5).add(0.42)).mul(night.mul(1.6).add(1));
   return { mat, uniforms: { glow, night } };
-}
-
-/** The extractor beam: bright, noisy, unmistakably working — even on snow. */
-export function createBeamMaterial() {
-  const strength = uniform(0);
-  const mat = new MeshBasicNodeMaterial();
-  mat.transparent = true;
-  mat.blending = AdditiveBlending;
-  mat.depthWrite = false;
-  const n = mx_fractal_noise_float(
-    vec3(positionLocal.x.mul(2), positionLocal.y.mul(6).sub(time.mul(22)), 0.7),
-    2,
-    2.2,
-    0.5,
-    1,
-  ).mul(0.5).add(0.5);
-  mat.colorNode = vec3(0.5, 0.92, 1).mul(n.mul(0.9).add(0.6)).mul(strength.mul(4.5));
-  mat.opacityNode = strength.mul(n.mul(0.5).add(0.5));
-  return { mat, uniforms: { strength } };
 }
 
 /** Touchdown dust: an expanding, thinning ring. */

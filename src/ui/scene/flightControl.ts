@@ -622,6 +622,7 @@ export function beginFlightAt(pos: Vector3, yaw: number, pitch: number): void {
   f.autopilotPhase = 'off';
   autopilotTargetKey = '';
   scanLostFor = 0;
+  entryArm = 0;
   hierarchyGalaxySeatValid = false;
   hierarchySystemSeatValid = false;
   f.altitude = Infinity;
@@ -1083,13 +1084,48 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
     const refusal = landingRefusal(landBody.land.type);
     if (refusal) {
       f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false, blocked: refusal };
+      entryArm = 0;
     } else {
-      f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false };
-      if (engagePressed && !f.paused) {
+      /**
+       * A pilot pointing the nose at the ground and holding it there has
+       * already answered the question. The dive must be DELIBERATE — most of
+       * the velocity carrying inward, inside the envelope, sustained for
+       * most of a second — and the console announces the commitment with
+       * time to pull up, because an aborted landing should always be one
+       * stick-pull away. Hovering, orbiting and sightseeing never trigger
+       * it; they keep the polite engage offer instead. New pilots keep the
+       * offer too: the induction flies close to home, and its first lesson
+       * should not end with an unplanned continent.
+       */
+      bodyPosition(landBody, f.clock, TO_SITE);
+      TMP.copy(f.pos).sub(TO_SITE);
+      const up = TMP.length();
+      if (up > 1e-6) TMP.divideScalar(up);
+      const closing = -f.vel.dot(TMP);
+      const diving =
+        Boolean(st.flags[SORTIE_FLAG])
+        && f.speed > 0.05
+        && closing > f.speed * 0.55
+        && f.altitude < landBody.radius * 0.5 + 0.25;
+      entryArm = diving ? entryArm + dt : 0;
+
+      if (entryArm > 0) {
+        f.prompt = {
+          verb: 'land',
+          label: `atmospheric entry: ${landBody.land.name} — pull up to abort`,
+          hold: false,
+        };
+      } else {
+        f.prompt = { verb: 'land', label: `make groundfall on ${landBody.land.name}`, hold: false };
+      }
+      if (!f.paused && (engagePressed || entryArm >= ENTRY_ARM_SECONDS)) {
+        entryArm = 0;
         commitGroundfall(landBody);
         return;
       }
     }
+  } else {
+    entryArm = 0;
   }
 
   // Jump has a dedicated binding, and contextual Engage performs the verb the
@@ -1103,6 +1139,11 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
 }
 
 // ————— Groundfall: the handoff between the helm and the ground —————
+
+/** Sustained-dive commitment before the entry flies itself (seconds). */
+const ENTRY_ARM_SECONDS = 0.85;
+/** How long the current dive has been held; any easing off resets it. */
+let entryArm = 0;
 
 /** Scene context of the active descent, kept out of the serializable session. */
 let entryBody: FlightBody | null = null;
@@ -2629,6 +2670,7 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       scanId: flightLive.scanId,
       prompt: flightLive.prompt,
       station: flightLive.station,
+      entryArm,
       nav: flightLive.nav,
       navTarget: navTargetValid ? NAV_POS.toArray() : null,
       navLabel: flightLive.navLabel,
