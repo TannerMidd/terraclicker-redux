@@ -30,5 +30,11 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     environment: 'node',
+    // Long-horizon simulation tests (offline catch-up, megaprojects, the
+    // Circular) legitimately run multi-second sims; on a two-core CI runner
+    // under worker contention they brush past the default 5s and fail with
+    // no regression anywhere. Twenty seconds is still tight enough to catch
+    // a genuine hang.
+    testTimeout: 20_000,
   },
 });

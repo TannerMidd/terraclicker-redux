@@ -43,28 +43,36 @@ if (!localBundle) {
   process.exit(1);
 }
 
-console.log(`Pushing main (${sh('git rev-parse --short HEAD')})…`);
+const sha = sh('git rev-parse HEAD');
+console.log(`Pushing main (${sha.slice(0, 7)})…`);
 execSync('git push origin main', { cwd: root, stdio: 'inherit' });
 
+// Watch THE RUN FOR THIS COMMIT, never "the latest run": polling latest has
+// a race where the previous push's green run answers for a new one that is
+// about to fail — which is exactly how a failed deploy once got reported as
+// verified. The run for this sha may take a few seconds to even appear.
 console.log('Waiting for the Pages workflow…');
-const deadline = Date.now() + 8 * 60_000;
+const deadline = Date.now() + 10 * 60_000;
 let runOk = false;
 while (Date.now() < deadline) {
-  let status = '';
+  let rows = [];
   try {
-    status = sh('gh run list --workflow "Deploy to GitHub Pages" --branch main --limit 1 --json status,conclusion --jq ".[0].status + \\":\\" + (.[0].conclusion // \\"\\")"');
+    rows = JSON.parse(
+      sh('gh run list --workflow "Deploy to GitHub Pages" --branch main --limit 10 --json headSha,status,conclusion'),
+    );
   } catch {
     /* transient API hiccup — keep polling */
   }
-  if (status.startsWith('completed:')) {
-    if (status === 'completed:success') { runOk = true; break; }
-    console.error(`Workflow finished: ${status.split(':')[1]} — see \`gh run view\`.`);
+  const run = rows.find((r) => r.headSha === sha);
+  if (run?.status === 'completed') {
+    if (run.conclusion === 'success') { runOk = true; break; }
+    console.error(`Workflow for ${sha.slice(0, 7)} finished: ${run.conclusion} — see \`gh run view\`.`);
     process.exit(1);
   }
   await new Promise((r) => setTimeout(r, 8000));
 }
 if (!runOk) {
-  console.error('Workflow did not complete in time — check `gh run list`.');
+  console.error(`No completed workflow for ${sha.slice(0, 7)} in time — check \`gh run list\`.`);
   process.exit(1);
 }
 
