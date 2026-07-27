@@ -25,6 +25,8 @@ and [docs/PROGRESSION.md](docs/PROGRESSION.md).
 | *The Total Perspective Vortex. You are here.* | *One-hand mode: planet up top, Guide below.* |
 | ![The universe accumulates](docs/screenshots/07-universe.png) | ![A galaxy forms](docs/screenshots/08-galaxy.png) |
 | *Scroll out: every world you finished is still there — orbiting its star, forming systems, running freighter routes.* | *Twenty-five worlds later, a galaxy swallows its five systems and starts to turn.* |
+| ![At the helm](docs/screenshots/09-flight.png) | ![A Deep Field contact](docs/screenshots/10-deep-field.png) |
+| *Press `F` and the camera becomes the company runabout. Nothing out here is staged for you.* | *A Deep Field landmark, scanned. It was here before you and is unmoved by the commission.* |
 
 ## Run it
 
@@ -39,7 +41,30 @@ npm run dev        # http://localhost:5173
 | `npm test` | engine test suite (determinism, offline parity, saves, pacing bands) |
 | `npm run balance` | headless bot harness — pacing timelines in your terminal |
 | `npm run build` | typecheck + production build to `dist/` |
+| `npm run site` | build + assemble the published site into `site/` |
+| `npm run site:preview` | serve `site/` at http://localhost:4180 (landing + game together) |
+| `npm run landing:check` | headless landing-page audit at six widths (needs `site:preview`) |
+| `npm run deploy` | build, assemble, push to the public Pages repo |
 | `node scripts/shot.mjs out.png` | headless verification screenshot (Playwright) |
+
+## The published site
+
+Two things ship to `https://tannermidd.github.io/terraclicker-redux/`:
+
+| Path | What | Source |
+|---|---|---|
+| `/` | landing page — what the game is, what's in it, screens, FAQ | `landing/` (hand-written HTML/CSS, no build step) |
+| `/play/` | the game | `dist/` (vite build; `base` is `'./'`, so the path doesn't matter) |
+
+`scripts/assemble-site.mjs` owns that layout and is the only place it's defined —
+both `npm run deploy` and the Pages workflow go through it. Saves are keyed to the
+origin, not the path, so moving the game under `/play/` did not disturb anyone's run.
+
+Landing screenshots are re-encoded from `docs/screenshots/*.png` to WebP by
+`npm run shots:optimize` (3.9 MB → 0.5 MB) and committed to `landing/media/`.
+`npm run landing:check` is the front door's answer to `shot.mjs`: it loads the page
+at six widths against a running `site:preview` and fails on console errors, dead
+requests, broken images, missing alt text or horizontal overflow.
 
 ## Architecture in one breath
 

@@ -12,6 +12,7 @@
  * back to WebGL2, which is not the backend players are on and hides the
  * hitches that matter. `TC_BROWSER=chromium` measures the fallback instead.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 

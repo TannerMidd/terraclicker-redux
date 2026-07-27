@@ -3,8 +3,10 @@
  * Loads a mature save, flies through galaxy -> system -> planet reveal tiers,
  * and verifies render/navigation/collision coordinates agree.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 const port = process.env.TC_PORT ?? '5173';
 const saveText = await fs.readFile(new URL('../shots/u34.txt', import.meta.url), 'utf8');
@@ -141,7 +143,11 @@ const result = await page.evaluate(async () => {
   };
 });
 
-await page.screenshot({ path: process.env.TC_SCALE_SHOT ?? 'C:/tmp/terraclicker-flight-scale.png' });
+const scaleShot =
+  process.env.TC_SCALE_SHOT ??
+  fileURLToPath(new URL('../shots/terraclicker-flight-scale.png', import.meta.url));
+await fs.mkdir(new URL('../shots/', import.meta.url), { recursive: true });
+await page.screenshot({ path: scaleShot });
 await browser.close();
 
 console.log(JSON.stringify({ imported, result, errors: errors.slice(0, 8) }, null, 2));

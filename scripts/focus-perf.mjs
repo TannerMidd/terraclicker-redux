@@ -16,6 +16,7 @@
  * the one backend that cannot show the bug. Set `TC_BROWSER=chromium` to
  * compare the fallback path deliberately.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 

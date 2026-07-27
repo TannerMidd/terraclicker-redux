@@ -14,6 +14,22 @@
       "port": 4173
     },
     {
+      "name": "site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "preview",
+        "--outDir",
+        "site",
+        "--host",
+        "localhost",
+        "--port",
+        "4180",
+        "--strictPort"
+      ],
+      "port": 4180
+    },
+    {
       "name": "dev-alt",
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--host", "localhost", "--port", "5199", "--strictPort"],

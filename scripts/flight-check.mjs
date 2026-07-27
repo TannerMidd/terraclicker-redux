@@ -12,6 +12,7 @@
  *
  * Needs a dev server. TC_PORT selects it (default 5173).
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 
 const port = process.env.TC_PORT ?? '5173';

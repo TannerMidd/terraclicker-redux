@@ -5,11 +5,15 @@
  * (localhost, not 127.0.0.1 — Vite binds IPv6 ::1 on this machine.)
  * Writes screenshots outside the bundle and prints a machine-readable report.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const outputDir = process.argv[2] ?? 'C:/tmp/terraclicker-asset-qa';
+const outputDir =
+  process.argv[2] ??
+  fileURLToPath(new URL('../shots/asset-qa/', import.meta.url));
 await fs.mkdir(outputDir, { recursive: true });
 
 const issues = [];

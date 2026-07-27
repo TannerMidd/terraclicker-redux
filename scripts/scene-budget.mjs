@@ -22,6 +22,7 @@
  * CHROME for WebGPU, like frame-perf.mjs; TC_BROWSER=chromium measures the
  * WebGL2 fallback instead.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 

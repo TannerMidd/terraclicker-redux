@@ -8,6 +8,7 @@
  */
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 
 const port = process.env.TC_PORT ?? '5173';

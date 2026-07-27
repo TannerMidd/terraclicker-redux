@@ -1,5 +1,6 @@
 /** Headed liveness probe: real compositing + WebGPU path + interactivity.
  * Opens off-screen so it doesn't disturb the desktop. */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 
 const browser = await chromium.launch({

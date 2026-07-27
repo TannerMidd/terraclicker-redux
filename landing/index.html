@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#05060A" />
+    <title>TerraClicker Redux — terraform the cosmos one click at a time</title>
+    <meta
+      name="description"
+      content="A free browser idle game where the cookie is a planet. Click it, industrialise it, and watch the ice caps retreat and the oceans rise in real time. Then finish it, keep it, and fly out to see what was already there."
+    />
+    <link rel="canonical" href="https://tannermidd.github.io/terraclicker-redux/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="TerraClicker Redux" />
+    <meta
+      property="og:description"
+      content="Terraform the cosmos one click at a time. Mostly harmless. A free browser idle game."
+    />
+    <meta property="og:url" content="https://tannermidd.github.io/terraclicker-redux/" />
+    <meta
+      property="og:image"
+      content="https://tannermidd.github.io/terraclicker-redux/media/social-card.jpg"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%90%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="preload" as="image" href="media/02-terraforming.webp" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="topbar">
+      <a class="wordmark" href="#top" aria-label="TerraClicker Redux — home">
+        <svg viewBox="0 0 122 122" aria-hidden="true" focusable="false">
+          <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="61" cy="60" r="34" stroke="#58D68A" stroke-width="6" />
+            <path
+              d="M30 57c14-6 30-4 43 4 8 5 15 5 22 2M40 38c9 2 15 7 19 14M49 86c4-10 13-17 24-20"
+              stroke="currentColor"
+              stroke-width="5"
+            />
+            <path d="M61 16v13M61 91v13M17 60h13M92 60h13" stroke="#58D68A" stroke-width="5" />
+          </g>
+        </svg>
+        <span>Terra<em>Clicker</em></span>
+      </a>
+
+      <nav aria-label="Sections">
+        <a href="#loop">The loop</a>
+        <a href="#features">Features</a>
+        <a href="#screens">Screens</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+
+      <a class="btn btn-play btn-sm" href="play/">Play</a>
+    </header>
+
+    <main id="main">
+      <!-- ————————————————— hero ————————————————— -->
+      <section class="hero" id="top">
+        <div class="starfield" aria-hidden="true"></div>
+
+        <div class="wrap hero-copy">
+          <p class="eyebrow">An idle game, issued in the public interest</p>
+          <h1>TerraClicker <span class="redux">Redux</span></h1>
+          <p class="tagline">Terraform the cosmos one click at a time. Mostly harmless.</p>
+          <p class="lede">
+            The cookie is a planet. Click it, industrialise it, and watch the ice caps retreat, the
+            oceans find the basins and city lights wake on the night side — live, in the shader, not
+            on a progress bar. Finish it and it doesn't disappear: it takes an orbit and stays there
+            while the next, stranger world drifts in.
+          </p>
+
+          <div class="cta">
+            <a class="btn btn-play" href="play/">
+              Play free in your browser
+              <small>no account, no install</small>
+            </a>
+            <a class="btn btn-ghost" href="#loop">How it works</a>
+          </div>
+
+          <ul class="badges">
+            <li>Free &amp; ad-free</li>
+            <li>Saves in your browser</li>
+            <li>Desktop &amp; mobile</li>
+            <li>WebGPU, WebGL2 fallback</li>
+            <li>Works offline</li>
+          </ul>
+        </div>
+
+        <figure class="hero-shot">
+          <img
+            src="media/02-terraforming.webp"
+            width="1400"
+            height="836"
+            alt="A half-terraformed world fills the screen: blue oceans between ochre continents, green creeping up from the coastlines, satellites in orbit, and the four terraforming gauges arced around the planet."
+            fetchpriority="high"
+          />
+          <figcaption>Terra Prima, under management. The gauges on the left are the shader's inputs.</figcaption>
+        </figure>
+      </section>
+
+      <!-- ————————————————— the loop ————————————————— -->
+      <section class="band" id="loop">
+        <div class="wrap">
+          <h2>The loop</h2>
+          <p class="section-lede">
+            An incremental game with the usual bones — click, buy, multiply, come back tomorrow — and
+            one difference: the thing your numbers are doing is visible from orbit.
+          </p>
+
+          <ol class="chain" aria-label="The core gameplay loop">
+            <li><span class="step-n">01</span> Click the planet</li>
+            <li><span class="step-n">02</span> Earn Terraform Units</li>
+            <li><span class="step-n">03</span> Buy 14 tiers of industry</li>
+            <li><span class="step-n">04</span> Fill four gauges</li>
+            <li><span class="step-n">05</span> Finish the world — keep it</li>
+            <li class="loopback"><span class="step-n">↻</span> A stranger world arrives</li>
+          </ol>
+
+          <h3 class="gauges-title">Four gauges, one bottleneck</h3>
+          <p class="section-lede narrow">
+            Every building feeds one or two of them. A world is finished when all four hit target —
+            and each new world moves the targets, so the build that just worked stops working.
+          </p>
+
+          <ul class="gauges" data-animate>
+            <li style="--c: var(--thermal); --fill: 88%">
+              <span class="g-name">Thermal</span>
+              <span class="g-track"><span class="g-fill"></span></span>
+              <span class="g-note">volcanic worlds arrive nearly full</span>
+            </li>
+            <li style="--c: var(--atmo); --fill: 54%">
+              <span class="g-name">Atmospheric</span>
+              <span class="g-track"><span class="g-fill"></span></span>
+              <span class="g-note">thickens the limb, softens the terminator</span>
+            </li>
+            <li style="--c: var(--hydro); --fill: 31%">
+              <span class="g-name">Hydrologic</span>
+              <span class="g-track"><span class="g-fill"></span></span>
+              <span class="g-note">raises the sea until it finds the basins</span>
+            </li>
+            <li style="--c: var(--bio); --fill: 12%">
+              <span class="g-name">Biotic</span>
+              <span class="g-track"><span class="g-fill"></span></span>
+              <span class="g-note">green climbs out of the coastlines last</span>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ————————————————— headline features ————————————————— -->
+      <section id="features">
+        <div class="wrap">
+          <h2 class="sr-only">Features</h2>
+
+          <article class="feature">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--bio)">The planet is the cookie</p>
+              <h3>Your numbers are the picture</h3>
+              <p>
+                Thermal, Atmospheric, Hydrologic and Biotic aren't a readout of progress — they are
+                uniforms feeding a node-material shader. Warm the world and the caps retreat. Raise
+                the water and it pools where the terrain is low. Push Biotic and vegetation climbs
+                out of the coastlines while lights come on across the night side.
+              </p>
+              <p>There is no separate artwork for "sixty percent done". There's just the planet.</p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/01-hero-barren.webp"
+                width="1400"
+                height="836"
+                alt="The same world before any work: dry ochre basins, wide white ice caps, a thin dark atmosphere."
+              />
+              <figcaption>Hour one. Dry basins, big caps, thin air.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature reverse">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--hydro)">Five worlds make a system</p>
+              <h3>Nothing you finish is thrown away</h3>
+              <p>
+                Complete a commission and the world doesn't vanish to make room for the next one. It
+                takes an orbit and stays. Scroll out and there's your whole career at once: worlds
+                you terraformed circling the stars they were billed to, freighters running the routes
+                between them, five systems folding into a galaxy that starts, slowly, to turn.
+              </p>
+              <p>
+                Any of it can be clicked. The camera leaves the rail, flies over, and rebuilds those
+                worlds from the seeds they were terraformed with — the same planets, not a diagram.
+              </p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/08-galaxy.webp"
+                width="1400"
+                height="836"
+                alt="Pulled back from the planet: a spiral galaxy assembled from finished systems turning slowly against a violet nebula, with the current world still in the foreground."
+              />
+              <figcaption>Five systems in, the galaxy starts to turn.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--improbable)">Take the helm</p>
+              <h3>The camera is also a ship</h3>
+              <p>
+                Press <kbd>F</kbd> and the crane becomes the company runabout: first person,
+                hold-to-steer, <kbd>W</kbd> to thrust, <kbd>shift</kbd> for an improbability boost.
+                Nothing is staged for you and nothing is scenery — worlds, moons and stars are all
+                solid, and a proximity governor parks you on the hull line instead of letting you
+                sail through a planet.
+              </p>
+              <p>
+                Speed near a surface is capped by how fast the ground sweeps across the glass, so a
+                low pass is a crawl and getting around a world takes half a minute. That one rule is
+                the difference between a marble and a place.
+              </p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/09-flight.webp"
+                width="1400"
+                height="836"
+                alt="First-person view from the runabout: a lava-veined world fills the left of the frame, a ringed star and freighters ahead, throttle readout along the bottom reading making excellent time."
+              />
+              <figcaption>Manual flight. The console reports speed in plain language.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature reverse">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--atmo)">The Deep Field</p>
+              <h3>Not everything out there is yours</h3>
+              <p>
+                Everything else in the sky is a monument to something you finished. Fifteen things
+                are not. They're placed once, by the master seed alone, and never move — a generation
+                ship still going, a teapot, a restaurant that politely declines to be reached. No two
+                players get the same sky.
+              </p>
+              <p>
+                At range they're an anonymous glint worth a detour. Hold <kbd>E</kbd> to scan; hold it
+                again up close to board. Salvage buys ship refits and <em>only</em> ship refits: the
+                idle economy never touches it, so if you never leave the planet you lose nothing but
+                the view. Your logbook survives prestige. It was never part of the portfolio.
+              </p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/10-deep-field.webp"
+                width="1400"
+                height="875"
+                alt="Through the cockpit canopy, the hull of an enormous derelict generation ship, labelled The Perpetual, Generation Ship, with a new Guide entry sliding in at bottom left."
+              />
+              <figcaption>A scan buys a name and a Guide entry. Nothing else.</figcaption>
+            </figure>
+          </article>
+
+          <article class="feature">
+            <div class="feature-copy">
+              <p class="kicker" style="--k: var(--magrathea)">Prestige</p>
+              <h3>Then Magrathea calls</h3>
+              <p>
+                Sooner or later a custom-planet firm with an old reputation and a long lunch break
+                offers to buy the entire portfolio. Take the money. Everything resets except the
+                Blueprints, which buy permanent advantages from a catalogue — and a short list of
+                things the mice were never buying: your Guide entries, your logbook, the laws you
+                passed, the monuments.
+              </p>
+              <p>The second run is faster, wider and considerably stranger.</p>
+            </div>
+            <figure>
+              <img
+                loading="lazy"
+                src="media/04-magrathea.webp"
+                width="1400"
+                height="836"
+                alt="A volcanic commission with lava veins still glowing, and the Magrathea offer panel open on the right."
+              />
+              <figcaption>The offer arrives when the portfolio is worth something.</figcaption>
+            </figure>
+          </article>
+        </div>
+      </section>
+
+      <!-- ————————————————— the rest ————————————————— -->
+      <section class="band" id="more">
+        <div class="wrap">
+          <h2>Also in the box</h2>
+          <div class="cards">
+            <article class="card">
+              <h3>Marvin</h3>
+              <p>
+                Buy him once. He clicks the planet once a second, forever, and mentions how he feels
+                about it. Brain the size of a planet, employed to click one.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Vogon poetry readings</h3>
+              <p>
+                A fleet arrives, moors above the work site, and reads. Production halves until it's
+                finished. Research a Babel Fish and it halves the damage instead of the reading.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Improbability</h3>
+              <p>
+                Heart of Gold drives raise the improbability level, and improbable things start
+                turning up: whales, petunias, refractive bubbles that are worth clicking on.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Research, including the Answer</h3>
+              <p>
+                A queue you start and walk away from. One item takes <b class="gold">42</b> real
+                hours and pays a permanent <b class="gold">+42%</b> to everything, through every
+                prestige. Its description is "42". The follow-up never finishes.
+              </p>
+            </article>
+            <article class="card">
+              <h3>While you were hitchhiking</h3>
+              <p>
+                Idle games are about coming back, so offline progress is a feature and not a patch.
+                You return to a report on what happened, at up to full efficiency once researched.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Six planet types, twenty quirks</h3>
+              <p>
+                A volcanic world arrives with Thermal mostly filled and triple the Hydrologic target,
+                so your dusty seeders are suddenly the bottleneck. One world refuses to terraform on
+                Mondays. Planet 42 is always Earth, and its quirk does nothing whatsoever.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Orbital surveys</h3>
+              <p>
+                Every arrival opens with a pick-one-of-three report — rich geothermal seams, an
+                improbability shadow, paperwork lost in transit. Ten seconds of agency before the
+                grind resumes.
+              </p>
+            </article>
+            <article class="card">
+              <h3>The Total Perspective Vortex</h3>
+              <p>
+                One continuous zoom from the planet under your cursor out to the cosmic web, with a
+                small arrow and a short label. You are here.
+              </p>
+            </article>
+            <article class="card">
+              <h3>An actual ending</h3>
+              <p>
+                There is a booking at a restaurant at the end of things. It turns out to have been
+                made already. It pays no multiplier — the reward for finishing is that you finished.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ————————————————— gallery ————————————————— -->
+      <section id="screens">
+        <div class="wrap">
+          <h2>Screens</h2>
+          <p class="section-lede">
+            Captured headlessly by the same rig the project uses for visual regression, which is why
+            they look like the game rather than like a poster.
+          </p>
+
+          <ul class="gallery">
+            <li>
+              <button type="button" data-src="media/03-vogon-raid.webp" data-cap="A Vogon poetry reading in progress. Production −50% until the fleet has finished.">
+                <img loading="lazy" src="media/03-vogon-raid.webp" width="1400" height="836" alt="A wedge of blocky green-grey ships moored in low orbit above a half-terraformed world." />
+                <figcaption>A reading in progress</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/07-universe.webp" data-cap="Scroll out and the finished worlds are still in their orbits, with freight running between them.">
+                <img loading="lazy" src="media/07-universe.webp" width="1400" height="836" alt="A wide view of several completed worlds in their orbits across a dark nebula, with terraforming notifications stacked at bottom left." />
+                <figcaption>The portfolio, so far</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/05-vortex.webp" data-cap="The Total Perspective Vortex. The arrow is you.">
+                <img loading="lazy" src="media/05-vortex.webp" width="1400" height="836" alt="The Total Perspective Vortex: a logarithmic zoom out to filaments of the cosmic web with a small you-are-here marker." />
+                <figcaption>You are here</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/02-terraforming.webp" data-cap="Mid-commission: oceans risen, vegetation creeping, clouds forming, satellites in orbit.">
+                <img loading="lazy" src="media/02-terraforming.webp" width="1400" height="836" alt="A world at roughly half terraformed, oceans and vegetation spreading, seen from the hero camera." />
+                <figcaption>Mid-commission</figcaption>
+              </button>
+            </li>
+            <li>
+              <button type="button" data-src="media/09-flight.webp" data-cap="At the helm of the company runabout, with nothing staged for it.">
+                <img loading="lazy" src="media/09-flight.webp" width="1400" height="836" alt="First-person flight past a lava-veined world towards a ringed star." />
+                <figcaption>At the helm</figcaption>
+              </button>
+            </li>
+            <li class="portrait">
+              <button type="button" data-src="media/06-mobile.webp" data-cap="One-hand mode: planet up top, Guide below, same save format.">
+                <img loading="lazy" src="media/06-mobile.webp" width="390" height="844" alt="The game on a phone in portrait: the planet fills the top half, the Guide panel and shop fill the bottom." />
+                <figcaption>One-hand mode</figcaption>
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ————————————————— under the hood ————————————————— -->
+      <section class="band" id="tech">
+        <div class="wrap">
+          <h2>Under the hood</h2>
+          <dl class="specs">
+            <div>
+              <dt>Deterministic engine</dt>
+              <dd>
+                250&nbsp;ms ticks, seeded RNG streams stored in the save. One eight-hour offline
+                catch-up and 480 one-minute ticks produce bit-identical states. That's a unit test,
+                not a hope.
+              </dd>
+            </div>
+            <div>
+              <dt>WebGPU renderer</dt>
+              <dd>
+                three.js <code>WebGPURenderer</code> with TSL node materials driving the planet from
+                the four gauges, automatic WebGL2 fallback, and device tiers so phones get a scene
+                they can actually run.
+              </dd>
+            </div>
+            <div>
+              <dt>Saves you own</dt>
+              <dd>
+                Schema-validated, versioned and migrated, held in <code>localStorage</code> with
+                rolling backups, and exportable as a compressed string you can carry to another
+                browser.
+              </dd>
+            </div>
+            <div>
+              <dt>No server</dt>
+              <dd>
+                No accounts, no telemetry, no ads, nothing phoning home. The entire game is a static
+                bundle served off GitHub Pages, and it keeps running when the network doesn't.
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- ————————————————— faq ————————————————— -->
+      <section id="faq">
+        <div class="wrap narrow-wrap">
+          <h2>Questions the Guide anticipates</h2>
+
+          <details>
+            <summary>Is it really free?</summary>
+            <p>Yes. No account, no ads, no purchases, no premium currency, nothing to unsubscribe from.</p>
+          </details>
+          <details>
+            <summary>Where are my saves?</summary>
+            <p>
+              In your browser's <code>localStorage</code>, with rolling backups, saved continuously.
+              Clearing site data for this domain will clear the game, so if you care about a run,
+              export the save string from Settings — it's also how you move a run to another browser.
+            </p>
+          </details>
+          <details>
+            <summary>Does it work on a phone?</summary>
+            <p>
+              Yes, with a one-hand portrait layout and touch controls for flight. The renderer uses
+              WebGPU where the device has it and falls back to WebGL2 where it doesn't, dropping
+              scene detail by device tier.
+            </p>
+          </details>
+          <details>
+            <summary>Do I have to leave the tab open?</summary>
+            <p>
+              No. You'll be caught up when you come back, with a report on what happened while you
+              were away. Research raises both the offline efficiency and the cap.
+            </p>
+          </details>
+          <details>
+            <summary>How long is it?</summary>
+            <p>
+              First prestige lands somewhere in the first hour or two. After that it's an idle game —
+              it's as long as you want, and it has a genuine ending for people who want one.
+            </p>
+          </details>
+          <details>
+            <summary>Is it finished?</summary>
+            <p>
+              It's feature-complete against its design document and it's playable end to end. Balance
+              across the later systems is still moving, and it's a solo project, so expect the
+              occasional rough edge and the occasional sudden improvement.
+            </p>
+          </details>
+          <details>
+            <summary>Is this an official Hitchhiker's Guide game?</summary>
+            <p>
+              No. It's an unaffiliated, unofficial homage written in its own words — no text from the
+              books is reproduced, and it isn't endorsed by or connected to the rights holders. If
+              you like the register, the books are better and you should read those.
+            </p>
+          </details>
+        </div>
+      </section>
+
+      <!-- ————————————————— final cta ————————————————— -->
+      <section class="finale">
+        <div class="wrap">
+          <img class="panic" src="assets/dont-panic.svg" width="512" height="256" alt="" loading="lazy" />
+          <h2>The planet isn't going to click itself</h2>
+          <p>Well — it is, eventually. You have to buy Marvin first.</p>
+          <a class="btn btn-play btn-lg" href="play/">
+            Play TerraClicker Redux
+            <small>free, in this browser, right now</small>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap footer-inner">
+        <p>
+          <b>TerraClicker Redux</b> — an independent incremental game. Built to a design document,
+          rendered with three.js, and deployed as a static bundle.
+        </p>
+        <p class="fine">
+          An unofficial, unaffiliated homage to a certain guidebook, written in original words. Not
+          endorsed by or associated with the rights holders. Screenshots are of the actual game.
+        </p>
+        <p class="fine">
+          <a href="play/">Play</a> ·
+          <a href="play/recovery.html">Save recovery tool</a> ·
+          <a href="https://github.com/TannerMidd/terraclicker-redux">Build repository</a>
+        </p>
+      </div>
+    </footer>
+
+    <dialog id="lightbox" aria-label="Screenshot">
+      <button class="lb-close" type="button" aria-label="Close">✕</button>
+      <img alt="" />
+      <p class="lb-cap"></p>
+    </dialog>
+
+    <script src="script.js" defer></script>
+  </body>
+</html>

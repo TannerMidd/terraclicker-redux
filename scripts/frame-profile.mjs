@@ -11,6 +11,7 @@
  * WebGPU the usual culprit is `getNodeBuilderState` — a node graph being
  * turned into WGSL inside the render pass — rather than the link itself.
  */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 

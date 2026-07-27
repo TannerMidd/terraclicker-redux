@@ -1,4 +1,5 @@
 /** Dev probe: load a save, complete one world, log cinematic + camera state. */
+import './workspace-runtime.mjs';
 import { chromium } from 'playwright';
 import fs from 'node:fs/promises';
 
