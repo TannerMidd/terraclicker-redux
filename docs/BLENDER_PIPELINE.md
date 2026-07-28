@@ -30,19 +30,29 @@ lighting, animation. Those live in code (`shipKit.tsx`) and are shared.
 
 | File | What it is |
 |---|---|
-| `assets-source/uplift/blender/runabout.py` | **The source of truth.** A Python script that builds the ship. |
-| `assets-source/uplift/blender/runabout.blend` | The Blender file, *output* of that script. Open it, look at it, edit it. |
-| `public/assets/uplift/meshes/ships/runabout.glb` | The game asset. This is what ships to players. |
+| `assets-source/uplift/blender/kitlib.py` | Shared machinery: geometry verbs, UVs, export, self-measurement. |
+| `assets-source/uplift/blender/runabout.py` | **A source of truth.** Palette + builders for the ship. |
+| `assets-source/uplift/blender/skimmer.py` | Same, for the survey sled. |
+| `assets-source/uplift/blender/*.blend` | The Blender files, *output* of those scripts. Open, look, edit. |
+| `public/assets/uplift/meshes/ships/*.glb` | The game assets. This is what ships to players. |
 | `scripts/uplift/build-ship.mjs` | The driver: runs Blender, then checks the result. |
 
 ```bash
 npm run assets:ship
 ```
 
-That runs Blender with no window, writes both the `.blend` and the `.glb`, and
-then **verifies the `.glb` by replaying the game's own loading code**. A green
-`OK` means the model will work in game. It is not a formality — it has already
-caught one real bug (see §5).
+That runs Blender with no window, writes every `.blend` and `.glb`, and then
+**verifies each `.glb` by replaying the game's own loading code**. A green `OK`
+means the models will work in game. It is not a formality — it has already
+caught two real bugs (see §5). To do one asset only:
+
+```bash
+node scripts/uplift/build-ship.mjs skimmer
+```
+
+An asset script is just a palette and some builder functions; everything that
+is true of *all* of them lives in `kitlib.py`, which is the file to read when
+you want to know why a rule exists.
 
 Blender lives outside the repo, at `F:\Tools\Blender\Blender Foundation\Blender 5.2\`.
 Set `$BLENDER` if yours is elsewhere. Nobody needs Blender installed to *run*
@@ -203,10 +213,13 @@ which a binary `.blend` never can.
 
 ## 8. Adding a *new* Blender asset
 
-1. Write `assets-source/uplift/blender/<thing>.py`, following `runabout.py`:
-   flat-coloured materials, UVs on everything, identity transforms, nose −Y.
-2. Name the root empty something stable — that string is the API.
-3. Export to `public/assets/uplift/meshes/<family>/<thing>.glb`.
+1. Write `assets-source/uplift/blender/<thing>.py`: `import kitlib as k`, a
+   palette, builder functions, and `k.run(...)` at the bottom. Copy the shape
+   of `skimmer.py` — it is the smaller of the two.
+2. Name the asset root something stable — that string is the API.
+3. Add it to the `ASSETS` registry in `scripts/uplift/build-ship.mjs`, with its
+   required names, triangle budget, and each call site's box fit. That is what
+   gets it built and verified.
 4. Add `prefetchKit('meshes/<family>/<thing>.glb')` to `preloadUplift()` in
    `upliftAssets.ts` so it downloads with everything else.
 5. Get geometry with `kitGeometryFit(path, name, fit)` and draw it with a

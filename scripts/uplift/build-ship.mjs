@@ -1,16 +1,17 @@
 /**
- * Build the Blender-authored runabout (ASSET_UPLIFT.md 3.1) and prove it
- * survives the path the game actually loads it through.
+ * Build the Blender-authored kits and prove they survive the path the game
+ * actually loads them through.
  *
  * The proof matters more than the build. `kitGeometry()` merges every mesh
  * under a named node into ONE geometry and bakes material colour into vertex
  * colours — a model that opens perfectly in Blender still fails in-game if a
- * mesh is missing UVs, if the asset names moved, or if the axis convention
- * came out wrong. So this runs the real merge here, in node, against the real
- * file, and reports the fitted result for every call site.
+ * mesh is missing UVs, if an asset name moved, or if the axis convention came
+ * out wrong. So this runs the real merge here, in node, against the real file,
+ * and reports the fitted result for every call site.
  *
- *   node scripts/uplift/build-ship.mjs            build, verify, install
- *   node scripts/uplift/build-ship.mjs --verify   verify the shipped GLB only
+ *   node scripts/uplift/build-ship.mjs                build+verify everything
+ *   node scripts/uplift/build-ship.mjs skimmer        just one
+ *   node scripts/uplift/build-ship.mjs --verify       verify shipped GLBs only
  *
  * Blender is found via $BLENDER, else the usual install roots.
  */
@@ -31,32 +32,60 @@ const BLENDER_CANDIDATES = [
   '/Applications/Blender.app/Contents/MacOS/Blender',
 ].filter(Boolean);
 
-const SCRIPT = resolve(SOURCE_ROOT, 'blender', 'runabout.py');
-const BLEND = resolve(SOURCE_ROOT, 'blender', 'runabout.blend');
-const GLB = resolve(PUBLIC_ROOT, 'meshes', 'ships', 'runabout.glb');
-
-/** Names the game reads out of this kit. Renaming one is a silent breakage. */
-const REQUIRED_NAMES = ['runabout', 'hull-nose'];
-
-/** Every call site's box fit, so a silhouette change is measured, not guessed. */
-const CALL_SITES = [
+/**
+ * Every Blender-authored kit.
+ *
+ * `names` are read out of the GLB by the TSX as strings — they are an API, and
+ * a rename is a silent breakage, so they are asserted here. `sites` mirror the
+ * call sites' box fits so a drifting silhouette is measured rather than
+ * noticed on screen. `anchors` are points on the model that separate
+ * basic-material emitters have to sit on: those meshes live in the TSX,
+ * outside the merge (the shared kit material cannot glow), so they do not
+ * follow the hull when it changes — the build prints where to put them.
+ */
+const ASSETS = [
   {
-    label: 'chase exterior  (RunaboutExterior.tsx)',
-    asset: 'runabout',
-    min: [-0.76, -0.12, -0.85],
-    max: [0.76, 0.26, 0.79],
+    id: 'runabout',
+    script: 'runabout.py',
+    blend: 'runabout.blend',
+    glb: 'meshes/ships/runabout.glb',
+    names: ['runabout', 'hull-nose'],
+    budget: 4000,
+    forward: 'hull-nose',
+    sites: [
+      { label: 'chase exterior  (RunaboutExterior.tsx)', asset: 'runabout', min: [-0.76, -0.12, -0.85], max: [0.76, 0.26, 0.79] },
+      { label: 'landed on world (SurfaceScene.tsx)', asset: 'runabout', min: [-0.71, 0, -0.85], max: [0.71, 0.42, 0.7] },
+      { label: 'cockpit prow    (RunaboutHull.tsx)', asset: 'hull-nose', min: [-0.029, -0.01, -0.065], max: [0.029, 0.01, 0.065] },
+    ],
+    anchors: {
+      site: 0,
+      note: 'RunaboutExterior.tsx',
+      points: [
+        ['wingtip lamps  ', [6.28, 1.35, 0.19], 'mirrored pair'],
+        ['dorsal beacon  ', [0, 0.6, 1.15], ''],
+        ['engine exhausts', [2.88, 6.0, 0.26], 'mirrored pair'],
+      ],
+    },
   },
   {
-    label: 'landed on world (SurfaceScene.tsx)',
-    asset: 'runabout',
-    min: [-0.71, 0, -0.85],
-    max: [0.71, 0.42, 0.7],
-  },
-  {
-    label: 'cockpit prow    (RunaboutHull.tsx)',
-    asset: 'hull-nose',
-    min: [-0.029, -0.01, -0.065],
-    max: [0.029, 0.01, 0.065],
+    id: 'skimmer',
+    script: 'skimmer.py',
+    blend: 'skimmer.blend',
+    glb: 'meshes/ships/skimmer.glb',
+    names: ['survey-skimmer'],
+    budget: 1500,
+    forward: 'skimmer-prow',
+    sites: [
+      { label: 'parked sled     (SurfaceScene.tsx)', asset: 'survey-skimmer', min: [-0.93, 0, -1.9], max: [0.93, 2.05, 1.35] },
+    ],
+    anchors: {
+      site: 0,
+      note: 'SkimmerSled in SurfaceScene.tsx',
+      points: [
+        ['scanner ball   ', [0, 1.19, 2.02], ''],
+        ['running strips ', [0.68, -0.15, 0.65], 'mirrored pair'],
+      ],
+    },
   },
 ];
 
@@ -69,19 +98,18 @@ function findBlender() {
   );
 }
 
-function build() {
-  const blender = findBlender();
-  console.log(`Blender: ${blender}`);
+function build(asset, blender) {
   const output = execFileSync(
     blender,
-    ['--background', '--factory-startup', '--python', SCRIPT,
-      '--', '--blend', BLEND, '--glb', GLB],
+    ['--background', '--factory-startup', '--python', resolve(SOURCE_ROOT, 'blender', asset.script),
+      '--', '--blend', resolve(SOURCE_ROOT, 'blender', asset.blend),
+      '--glb', resolve(PUBLIC_ROOT, asset.glb)],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
   // Blender narrates every exported primitive; only the model's own report is
   // interesting, and it is the part that fails loudly.
   for (const line of output.split(/\r?\n/)) {
-    if (/^(runabout:|\s{2}(bounds|size|authored|envelope|fit |wrote|OVER|bevel))/.test(line)) {
+    if (/^(\w[\w -]*:\s\d|\s{2}(bounds|size|authored|envelope|fit |wrote|OVER|bevel))/.test(line)) {
       console.log(line);
     }
   }
@@ -134,87 +162,104 @@ function kitGeometry(scene, name) {
   return { merged, parts: parts.length, attributes: [...attributeSets][0] };
 }
 
-/** kitGeometryFit()'s box mode, same file. */
+/** kitGeometryFit()'s box mode, same file. Returns the fit's own frame too. */
 function fitBox(base, { min, max }, rotateY = Math.PI) {
   const geo = base.clone();
   if (rotateY) geo.rotateY(rotateY);
   geo.computeBoundingBox();
   const bb = geo.boundingBox;
   const size = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
-  const s = [0, 1, 2].map((i) => (max[i] - min[i]) / Math.max(1e-5, size[i]));
+  const scale = [0, 1, 2].map((i) => (max[i] - min[i]) / Math.max(1e-5, size[i]));
+  // Read before the transform: applyMatrix4 RECOMPUTES boundingBox in place,
+  // so `bb` stops describing the pre-fit model the moment the fit is applied.
+  const bbMin = bb.min.toArray();
   geo.applyMatrix4(
     new THREE.Matrix4()
       .makeTranslation(
-        min[0] - bb.min.x * s[0],
-        min[1] - bb.min.y * s[1],
-        min[2] - bb.min.z * s[2],
+        min[0] - bb.min.x * scale[0],
+        min[1] - bb.min.y * scale[1],
+        min[2] - bb.min.z * scale[2],
       )
-      .multiply(new THREE.Matrix4().makeScale(s[0], s[1], s[2])),
+      .multiply(new THREE.Matrix4().makeScale(scale[0], scale[1], scale[2])),
   );
-  return { geo, scale: s };
+  return { geo, scale, bbMin };
 }
 
-async function verify() {
-  console.log(`\nVerifying ${GLB.replace(ROOT, '.').replaceAll('\\', '/')} `
-    + `(${(statSync(GLB).size / 1024).toFixed(0)} KB)`);
-  const scene = await loadKit(GLB);
+/**
+ * A point authored in Blender axes, in the fitted frame the TSX works in.
+ * Derived from the real geometry rather than hardcoded, so it stays true when
+ * the model moves. Blender (x, y, z) is glTF (x, z, -y), and the fit spins
+ * that by PI first.
+ */
+function fittedPoint(blender, fit) {
+  const g = [-blender[0], blender[2], blender[1]];
+  return [0, 1, 2].map((i) => fit.min[i] + (g[i] - fit.bbMin[i]) * fit.scale[i]);
+}
+
+async function verify(asset) {
+  const path = resolve(PUBLIC_ROOT, asset.glb);
+  console.log(`\n${asset.id} — ${asset.glb} (${(statSync(path).size / 1024).toFixed(0)} KB)`);
+  const scene = await loadKit(path);
 
   const present = [];
   scene.traverse((o) => present.push(o.name));
-  const missing = REQUIRED_NAMES.filter((n) => !present.includes(n));
+  const missing = asset.names.filter((n) => !present.includes(n));
   if (missing.length) throw new Error(`kit is missing required node(s): ${missing.join(', ')}`);
 
   let failed = false;
-  for (const site of CALL_SITES) {
+  const fits = [];
+  for (const site of asset.sites) {
     const { merged, parts, attributes } = kitGeometry(scene, site.asset);
     const tris = merged.getAttribute('position').count / 3;
-    const { scale } = fitBox(merged, site);
+    const fit = fitBox(merged, site);
+    fits.push({ ...fit, min: site.min });
     // A near-1 ratio between the three fit scales means the box fit is close
     // to uniform, which is the only way the authored shape survives it.
-    const skew = Math.max(...scale) / Math.min(...scale);
-    const flag = skew > 1.25 ? '  <-- DISTORTS' : '';
+    const skew = Math.max(...fit.scale) / Math.min(...fit.scale);
     if (skew > 1.25) failed = true;
     console.log(
       `  ${site.label}\n`
       + `      ${parts} meshes, ${tris} tris, attrs [${attributes}]\n`
-      + `      fit scale ${scale.map((v) => v.toFixed(3)).join(' / ')}  skew ${skew.toFixed(2)}×${flag}`,
+      + `      fit scale ${fit.scale.map((v) => v.toFixed(3)).join(' / ')}`
+      + `  skew ${skew.toFixed(2)}×${skew > 1.25 ? '  <-- DISTORTS' : ''}`,
     );
   }
 
-  // Orientation: after the loader's rotateY(PI) the nose must lead on -Z and
-  // the gear must be the floor. Getting this wrong flies the ship backwards.
-  const { merged } = kitGeometry(scene, 'runabout');
-  const { geo } = fitBox(merged, CALL_SITES[0]);
-  geo.computeBoundingBox();
-  const nose = scene.getObjectByName('hull-nose');
+  // Orientation: after the loader's rotateY(PI) the nose must lead on -Z, so
+  // in the file it has to sit on +Z. Getting this wrong flies it backwards.
+  const nose = scene.getObjectByName(asset.forward);
   nose.geometry.computeBoundingBox();
   const noseZ = nose.geometry.boundingBox.max.z;
-  console.log(`\n  prow sits at +Z in the file: ${noseZ > 0 ? 'yes' : 'NO — ship faces backwards'}`);
+  console.log(`  forward part '${asset.forward}' on +Z: ${noseZ > 0 ? 'yes' : 'NO — it faces backwards'}`);
   if (noseZ <= 0) failed = true;
 
+  const { merged } = kitGeometry(scene, asset.names[0]);
   const tris = merged.getAttribute('position').count / 3;
-  console.log(`  whole ship: ${tris} triangles (budget 4000)${tris > 4000 ? '  <-- OVER' : ''}`);
-  if (tris > 4000) failed = true;
+  console.log(`  whole asset: ${tris} triangles (budget ${asset.budget})${tris > asset.budget ? '  <-- OVER' : ''}`);
+  if (tris > asset.budget) failed = true;
 
-  // Where the separately-drawn emissive bits must sit on THIS hull. They are
-  // basic-material meshes in RunaboutExterior.tsx, not part of the merge, so
-  // they do not move themselves when the model changes.
-  const map = (x, y, z) => {
-    const b = { x: [-6.45, 6.45], y: [-1.3, 2.2], z: [-8, 6] };
-    const site = CALL_SITES[0];
-    const f = (v, [lo, hi], i) => site.min[i] + ((v - lo) / (hi - lo)) * (site.max[i] - site.min[i]);
-    return [f(x, b.x, 0), f(z, b.y, 1), f(y, b.z, 2)];
-  };
-  const fmt = (p) => `[${p.map((v) => v.toFixed(3)).join(', ')}]`;
-  console.log('\n  Fitted anchors for RunaboutExterior.tsx:');
-  console.log(`    wingtip lamps   ${fmt(map(6.28, 1.35, 0.19))} (mirror x for port)`);
-  console.log(`    dorsal beacon   ${fmt(map(0, 0.6, 1.15))}`);
-  console.log(`    engine exhausts ${fmt(map(2.88, 6.0, 0.26))} (mirror x for port)`);
+  if (asset.anchors) {
+    const fit = fits[asset.anchors.site];
+    console.log(`  fitted anchors for ${asset.anchors.note}:`);
+    for (const [label, point, note] of asset.anchors.points) {
+      const p = fittedPoint(point, fit).map((v) => v.toFixed(3)).join(', ');
+      console.log(`    ${label} [${p}]${note ? `  (${note})` : ''}`);
+    }
+  }
 
-  if (failed) throw new Error('verification failed');
-  console.log('\nOK');
+  if (failed) throw new Error(`${asset.id}: verification failed`);
 }
 
-const verifyOnly = process.argv.includes('--verify');
-if (!verifyOnly) build();
-await verify();
+const argv = process.argv.slice(2);
+const verifyOnly = argv.includes('--verify');
+const wanted = argv.filter((a) => !a.startsWith('--'));
+const selected = wanted.length ? ASSETS.filter((a) => wanted.includes(a.id)) : ASSETS;
+if (!selected.length) throw new Error(`no such asset: ${wanted.join(', ')}`);
+
+if (!verifyOnly) {
+  const blender = findBlender();
+  console.log(`Blender: ${blender}`);
+  for (const asset of selected) build(asset, blender);
+}
+for (const asset of selected) await verify(asset);
+console.log('\nOK');

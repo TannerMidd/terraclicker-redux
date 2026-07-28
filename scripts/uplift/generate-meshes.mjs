@@ -423,27 +423,15 @@ function runaboutRefits() {
   ];
 }
 
-function skimmerParts() {
-  return asset('survey-skimmer', [
-    box('skimmer-deck', [3.5, 0.25, 1.5], MATERIALS.darkMetal, [0, 0.45, 0]),
-    mesh('skimmer-nose', new THREE.ConeGeometry(0.78, 1.5, 6), MATERIALS.pale, [0, 0.45, 2.45], [1, 1, 1], [Math.PI / 2, 0, 0]),
-    ...[-1, 1].map((s) => cylinder(`skimmer-cushion-${s}`, 0.32, 0.42, 2.8, 10, MATERIALS.metal, [s * 1.35, 0, 0], [Math.PI / 2, 0, 0])),
-    cylinder('skimmer-mast', 0.05, 0.08, 1.5, 6, MATERIALS.metal, [0, 1.2, -0.45]),
-    torus('skimmer-sensor', 0.36, 0.07, 6, 16, MATERIALS.cyan, [0, 1.9, -0.45], [Math.PI / 2, 0, 0]),
-    box('skimmer-handle', [1.2, 0.08, 0.08], MATERIALS.gold, [0, 1.2, 0.5]),
-  ]);
-}
-
 async function generateShipKits() {
   const outputs = [];
-  // runabout.glb is NOT here: the hull (3.1) is modelled in Blender, from
-  // assets-source/uplift/blender/runabout.py via `npm run assets:ship`. It is
-  // the one asset a player looks at from two metres away, and primitives could
-  // not carry the panel breaks. Leaving it out means running this generator
-  // without Blender installed no longer flattens that model back to boxes.
+  // runabout.glb and skimmer.glb are NOT here: both are modelled in Blender,
+  // from assets-source/uplift/blender/ via `npm run assets:ship`. They are the
+  // hardware a player looks at from two metres away, and primitives could not
+  // carry the panel breaks. Leaving them out means running this generator
+  // without Blender installed no longer flattens those models back to boxes.
   const specs = [
     ['runabout-refits.glb', runaboutRefits(), { atlas: '../../textures/ships/runabout-pbr.ktx2' }],
-    ['skimmer.glb', [skimmerParts()], { triangleBudget: 1500 }],
   ];
   for (const [file, assets, extras] of specs) {
     const scene = new THREE.Scene();

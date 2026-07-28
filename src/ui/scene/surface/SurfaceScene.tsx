@@ -1255,13 +1255,17 @@ function SkimmerSled() {
     return (
       <group>
         <mesh geometry={kitSled} material={shipMaterial()} />
-        <mesh name="sk-scanner" position={[0, 2.1, 1.2]}>
+        {/* Emitters, so outside the merge — the shared kit material cannot
+            glow. Seated on the authored hull: the ball caps the sensor mast
+            and the strips light the running boards. `npm run assets:ship`
+            prints these anchors whenever the sled changes. */}
+        <mesh name="sk-scanner" position={[0, 2.02, 1.18]}>
           <sphereGeometry args={[0.11, 10, 8]} />
           <meshBasicMaterial color={0x6fe0ff} transparent opacity={0.85} toneMapped={false} />
         </mesh>
         {[-0.68, 0.68].map((x) => (
-          <mesh key={x} position={[x, 0.51, 0.1]}>
-            <boxGeometry args={[0.05, 0.02, 2.6]} />
+          <mesh key={x} position={[x, 0.653, -0.158]}>
+            <boxGeometry args={[0.05, 0.02, 1.95]} />
             <meshBasicMaterial color={0xd98d2b} transparent opacity={0.6} toneMapped={false} />
           </mesh>
         ))}
