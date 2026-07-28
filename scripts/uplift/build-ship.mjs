@@ -87,6 +87,27 @@ const ASSETS = [
       ],
     },
   },
+  {
+    id: 'settlements',
+    script: 'settlements.py',
+    blend: 'settlements.blend',
+    glb: 'meshes/settlements/settlement-kit.glb',
+    // The nine the TSX asks for by name, plus optional variants. A missing
+    // variant is not an error — the family falls back to its base asset — but
+    // a missing BASE is, so only the nine are required here.
+    names: ['hab-shell', 'roof', 'mast', 'dome', 'pad', 'stilt', 'works', 'banner', 'scaffold'],
+    optional: ['hab-shell-b', 'hab-shell-c', 'roof-b', 'roof-c', 'dome-b', 'stilt-b', 'works-b'],
+    // Instanced per asset, so the budget that bites is the per-asset one.
+    perAsset: 900,
+    budget: 16000,
+    skewLimit: null, // the seat matrix owns proportions here — see fitBox()
+    sites: [
+      { label: 'hab shells      (unit frame)', asset: 'hab-shell', min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] },
+      { label: 'roofs           (unit frame)', asset: 'roof', min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] },
+      { label: 'domes           (dome frame)', asset: 'dome', min: [-1, -0.063, -1], max: [1, 1, 1] },
+      { label: 'pads            (pad frame)', asset: 'pad', min: [-1, -0.5, -1], max: [1, 0.5, 1] },
+    ],
+  },
 ];
 
 function findBlender() {
@@ -215,28 +236,58 @@ async function verify(asset) {
     fits.push({ ...fit, min: site.min });
     // A near-1 ratio between the three fit scales means the box fit is close
     // to uniform, which is the only way the authored shape survives it.
+    //
+    // That only matters where the fitted envelope IS the final shape — the
+    // vehicles. A settlement family is fitted into the UNIT frame of the
+    // primitive it replaces and then given its real dimensions by the seat
+    // matrix, so a big skew there is the design, not a defect: `skewLimit:
+    // null` opts out and reports the number for information only.
+    const limit = asset.skewLimit === undefined ? 1.25 : asset.skewLimit;
     const skew = Math.max(...fit.scale) / Math.min(...fit.scale);
-    if (skew > 1.25) failed = true;
+    const bad = limit !== null && skew > limit;
+    if (bad) failed = true;
     console.log(
       `  ${site.label}\n`
       + `      ${parts} meshes, ${tris} tris, attrs [${attributes}]\n`
       + `      fit scale ${fit.scale.map((v) => v.toFixed(3)).join(' / ')}`
-      + `  skew ${skew.toFixed(2)}×${skew > 1.25 ? '  <-- DISTORTS' : ''}`,
+      + `  skew ${skew.toFixed(2)}×${bad ? '  <-- DISTORTS' : ''}`,
     );
   }
 
   // Orientation: after the loader's rotateY(PI) the nose must lead on -Z, so
   // in the file it has to sit on +Z. Getting this wrong flies it backwards.
-  const nose = scene.getObjectByName(asset.forward);
-  nose.geometry.computeBoundingBox();
-  const noseZ = nose.geometry.boundingBox.max.z;
-  console.log(`  forward part '${asset.forward}' on +Z: ${noseZ > 0 ? 'yes' : 'NO — it faces backwards'}`);
-  if (noseZ <= 0) failed = true;
+  // Only vehicles have a front; a settlement is placed by its seat matrix.
+  if (asset.forward) {
+    const nose = scene.getObjectByName(asset.forward);
+    nose.geometry.computeBoundingBox();
+    const noseZ = nose.geometry.boundingBox.max.z;
+    console.log(`  forward part '${asset.forward}' on +Z: ${noseZ > 0 ? 'yes' : 'NO — it faces backwards'}`);
+    if (noseZ <= 0) failed = true;
+  }
 
-  const { merged } = kitGeometry(scene, asset.names[0]);
-  const tris = merged.getAttribute('position').count / 3;
-  console.log(`  whole asset: ${tris} triangles (budget ${asset.budget})${tris > asset.budget ? '  <-- OVER' : ''}`);
-  if (tris > asset.budget) failed = true;
+  // Every asset in the file gets merged and measured — a kit is only as good
+  // as its worst member, and the ones with no call site listed above are
+  // exactly the ones nobody would notice breaking.
+  let total = 0;
+  const over = [];
+  for (const name of [...asset.names, ...(asset.optional ?? [])]) {
+    if (!present.includes(name)) continue;
+    const { merged } = kitGeometry(scene, name);
+    const tris = merged.getAttribute('position').count / 3;
+    total += tris;
+    if (asset.perAsset && tris > asset.perAsset) over.push(`${name} ${tris}`);
+  }
+  if (asset.perAsset) {
+    console.log(`  ${asset.names.length + (asset.optional?.length ?? 0)} assets, ${total} triangles`
+      + `  (per-asset budget ${asset.perAsset})`);
+    if (over.length) {
+      console.log(`    OVER: ${over.join(', ')}`);
+      failed = true;
+    }
+  } else {
+    console.log(`  whole asset: ${total} triangles (budget ${asset.budget})${total > asset.budget ? '  <-- OVER' : ''}`);
+    if (total > asset.budget) failed = true;
+  }
 
   if (asset.anchors) {
     const fit = fits[asset.anchors.site];

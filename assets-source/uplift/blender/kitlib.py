@@ -233,7 +233,13 @@ def box_uvs(bm):
 
 _roots = {}
 _parts = []
+_asset_parts = {}
 _current = None
+
+
+def current_name():
+    """The asset currently being filled — for naming parts uniquely."""
+    return _current.name if _current else "?"
 
 
 def asset(name, extras=None):
@@ -250,6 +256,7 @@ def asset(name, extras=None):
         root[key] = value
     bpy.context.scene.collection.objects.link(root)
     _roots[name] = root
+    _asset_parts[name] = []
     _current = root
     return root
 
@@ -275,6 +282,7 @@ def _emit(name, bm, material, bevel_amount):
     bpy.context.scene.collection.objects.link(obj)
     obj.parent = _current  # identity local transform: see the orientation note
     _parts.append(obj)
+    _asset_parts[_current.name].append(obj)
     return obj
 
 
@@ -321,7 +329,7 @@ def _report(lo, hi, fit_min, fit_max):
         print(f"  fit {label:<7}{skew:+.1%}{flag}")
 
 
-def run(label, build, fit_min=None, fit_max=None, tri_budget=4000):
+def run(label, build, fit_min=None, fit_max=None, tri_budget=4000, per_asset=None):
     """Reset the scene, build, measure, and write whatever was asked for.
 
     Called at the bottom of every asset script. Args after `--`:
@@ -338,6 +346,7 @@ def run(label, build, fit_min=None, fit_max=None, tri_budget=4000):
     _materials.clear()
     _roots.clear()
     _parts.clear()
+    _asset_parts.clear()
 
     build()
 
@@ -348,6 +357,14 @@ def run(label, build, fit_min=None, fit_max=None, tri_budget=4000):
     _report(lo, hi, fit_min, fit_max)
     if tris > tri_budget:
         print(f"  OVER BUDGET by {tris - tri_budget}")
+
+    # A multi-asset kit is instanced per asset, so the budget that matters is
+    # the per-asset one, not the file total.
+    if per_asset:
+        for name, objs in _asset_parts.items():
+            n = triangles(objs)
+            flag = f"  OVER by {n - per_asset}" if n > per_asset else ""
+            print(f"  asset {name:<16}{len(objs):>3} parts  {n:>4} tris{flag}")
 
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=bpy.path.abspath(args.blend))

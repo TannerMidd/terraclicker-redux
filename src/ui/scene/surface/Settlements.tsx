@@ -13,7 +13,7 @@
  * drones are not going anywhere in particular, which the Guide notes makes
  * them indistinguishable from most commuters.
  */
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   Color,
@@ -23,6 +23,7 @@ import {
   MeshStandardNodeMaterial,
   Sprite,
 } from 'three/webgpu';
+import type { BufferGeometry } from 'three/webgpu';
 import {
   SETTLEMENT_COOL_HEX,
   SETTLEMENT_WARM_HEX,
@@ -65,6 +66,91 @@ function useSeatMesh(seats: Matrix4[]) {
     m.instanceMatrix.needsUpdate = true;
   }, [seats]);
   return ref;
+}
+
+/**
+ * Split one family's seats across its shape variants, by position.
+ *
+ * Hashed off the seat's own translation rather than its index, so a given hut
+ * keeps its shape when the terrain re-centres and the seats are rebuilt — the
+ * alternative is a village that reshuffles itself every time you walk far
+ * enough east. Quantised first so floating-point drift in the re-derive cannot
+ * flip a building to a different variant.
+ */
+function variantBuckets(seats: Matrix4[], count: number): Matrix4[][] {
+  const out: Matrix4[][] = Array.from({ length: count }, () => []);
+  if (count <= 1) return [seats];
+  for (const m of seats) {
+    const x = Math.round(m.elements[12] * 4);
+    const z = Math.round(m.elements[14] * 4);
+    const h = Math.abs(Math.imul(x, 73856093) ^ Math.imul(z, 19349663));
+    out[h % count]!.push(m);
+  }
+  return out;
+}
+
+/**
+ * One instanced batch. A family renders one of these per variant, all sharing
+ * the family's single material — the one-material-per-family law is about
+ * materials, not geometries, so extra shapes cost a draw call and no shader.
+ */
+function SeatBatch({
+  geometry,
+  seats,
+  material,
+  children,
+}: {
+  geometry: BufferGeometry | null;
+  seats: Matrix4[];
+  /** Banners take a basic material; every other family is standard. */
+  material: MeshStandardNodeMaterial | MeshBasicNodeMaterial;
+  children?: ReactNode;
+}) {
+  const ref = useSeatMesh(seats);
+  if (seats.length === 0) return null;
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[geometry ?? undefined, undefined, seats.length]}
+      material={material}
+      frustumCulled={false}
+    >
+      {geometry ? null : children}
+    </instancedMesh>
+  );
+}
+
+/**
+ * A settlement family: its seats, spread over however many variants the kit
+ * actually shipped. With no kit (Tier C, or still in flight) this collapses to
+ * a single batch drawing the primitive fallback, exactly as before.
+ */
+function KitFamily({
+  variants,
+  seats,
+  material,
+  children,
+}: {
+  variants: Array<BufferGeometry | null>;
+  seats: Matrix4[];
+  /** Banners take a basic material; every other family is standard. */
+  material: MeshStandardNodeMaterial | MeshBasicNodeMaterial;
+  children?: ReactNode;
+}) {
+  const usable = variants.filter((g): g is BufferGeometry => g !== null);
+  const buckets = useMemo(
+    () => variantBuckets(seats, Math.max(1, usable.length)),
+    [seats, usable.length],
+  );
+  return (
+    <>
+      {buckets.map((bucket, i) => (
+        <SeatBatch key={i} geometry={usable[i] ?? null} seats={bucket} material={material}>
+          {children}
+        </SeatBatch>
+      ))}
+    </>
+  );
 }
 
 function basicColor(hex: number): MeshBasicNodeMaterial {
@@ -138,16 +224,23 @@ export function Settlements({
     if (!upliftActive()) return null;
     const wall = kitGeometryFit(SETTLEMENT_KIT, 'hab-shell', FIT_BOX);
     if (!wall) return null;
+    // Variants are OPTIONAL: `-b`/`-c` return null when the kit does not carry
+    // them, and KitFamily just spreads the seats over whatever exists. So the
+    // Blender kit can grow new shapes without this file changing.
+    const variants = (name: string, fit: KitFit, extra: string[]) =>
+      [name, ...extra]
+        .map((n) => kitGeometryFit(SETTLEMENT_KIT, n, fit))
+        .filter((g): g is NonNullable<typeof g> => g !== null);
     return {
-      wall,
-      roof: kitGeometryFit(SETTLEMENT_KIT, 'roof', FIT_BOX),
-      mast: kitGeometryFit(SETTLEMENT_KIT, 'mast', FIT_MAST),
-      dome: kitGeometryFit(SETTLEMENT_KIT, 'dome', FIT_DOME),
-      pad: kitGeometryFit(SETTLEMENT_KIT, 'pad', FIT_PAD),
-      stilt: kitGeometryFit(SETTLEMENT_KIT, 'stilt', FIT_STILT),
-      works: kitGeometryFit(SETTLEMENT_KIT, 'works', FIT_BOX),
-      banner: kitGeometryFit(SETTLEMENT_KIT, 'banner', FIT_BOX),
-      scaffold: kitGeometryFit(SETTLEMENT_KIT, 'scaffold', FIT_BOX),
+      wall: variants('hab-shell', FIT_BOX, ['hab-shell-b', 'hab-shell-c']),
+      roof: variants('roof', FIT_BOX, ['roof-b', 'roof-c']),
+      mast: variants('mast', FIT_MAST, []),
+      dome: variants('dome', FIT_DOME, ['dome-b']),
+      pad: variants('pad', FIT_PAD, []),
+      stilt: variants('stilt', FIT_STILT, ['stilt-b']),
+      works: variants('works', FIT_BOX, ['works-b']),
+      banner: variants('banner', FIT_BOX, []),
+      scaffold: variants('scaffold', FIT_BOX, []),
       atlas: upliftTex('textures/settlements/settlement-atlas.ktx2', { repeat: true, srgb: true }),
     };
   }, []);
@@ -186,11 +279,11 @@ export function Settlements({
 
   const wallMat = useMemo(
     // Local plaster over local stone: the palette, civilised a shade.
-    () => family(palette.high.clone().multiplyScalar(0.58).lerp(new Color(0xcabfa8), 0.35), 0.86, !!kit?.wall),
+    () => family(palette.high.clone().multiplyScalar(0.58).lerp(new Color(0xcabfa8), 0.35), 0.86, !!kit?.wall.length),
     [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const roofMat = useMemo(
-    () => family(palette.low.clone().multiplyScalar(0.5).lerp(new Color(0x37404a), 0.5), 0.92, !!kit?.roof),
+    () => family(palette.low.clone().multiplyScalar(0.5).lerp(new Color(0x37404a), 0.5), 0.92, !!kit?.roof.length),
     [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const windowWarmMat = useMemo(
@@ -202,29 +295,29 @@ export function Settlements({
     [kit],
   );
   const mastMat = useMemo(
-    () => family(new Color(0x39414b), 0.6, !!kit?.mast),
+    () => family(new Color(0x39414b), 0.6, !!kit?.mast.length),
     [kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const domeMat = useMemo(
-    () => family(palette.atmosphere.clone().multiplyScalar(0.5).lerp(new Color(0x9aa8b4), 0.5), 0.34, !!kit?.dome),
+    () => family(palette.atmosphere.clone().multiplyScalar(0.5).lerp(new Color(0x9aa8b4), 0.5), 0.34, !!kit?.dome.length),
     [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const padMat = useMemo(
-    () => family(new Color(0x2c3036), 1, !!kit?.pad),
+    () => family(new Color(0x2c3036), 1, !!kit?.pad.length),
     [kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const worksMat = useMemo(
-    () => family(new Color(0x4c4842), 0.78, !!kit?.works),
+    () => family(new Color(0x4c4842), 0.78, !!kit?.works.length),
     [kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const bannerMat = useMemo(() => {
     const m = new MeshBasicNodeMaterial();
     m.color = new Color(SETTLEMENT_WARM_HEX).multiplyScalar(0.9);
-    if (kit?.banner) m.vertexColors = true;
+    if (kit?.banner.length) m.vertexColors = true;
     return m;
   }, [kit]);
   const scaffoldMat = useMemo(
-    () => family(new Color(0x6f5f3c), 0.82, !!kit?.scaffold),
+    () => family(new Color(0x6f5f3c), 0.82, !!kit?.scaffold.length),
     [kit], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const facilityMat = useMemo(
@@ -239,17 +332,8 @@ export function Settlements({
     [],
   );
 
-  const wall = useSeatMesh(seats.wall);
-  const roof = useSeatMesh(seats.roof);
   const windowWarm = useSeatMesh(seats.windowWarm);
   const windowCool = useSeatMesh(seats.windowCool);
-  const mast = useSeatMesh(seats.mast);
-  const dome = useSeatMesh(seats.dome);
-  const pad = useSeatMesh(seats.pad);
-  const stilt = useSeatMesh(seats.stilt);
-  const works = useSeatMesh(seats.works);
-  const banner = useSeatMesh(seats.banner);
-  const scaffold = useSeatMesh(seats.scaffold);
 
   const beaconMat = sharedGlowSprite(0xaef2c8, 0.9);
   const droneMat = sharedGlowSprite(SETTLEMENT_WARM_HEX, 0.8);
@@ -330,16 +414,12 @@ export function Settlements({
   if (surfaceSettlementList().length === 0) return null;
   return (
     <group name="settlements">
-      {seats.wall.length > 0 && (
-        <instancedMesh ref={wall} args={[kit?.wall ?? undefined, undefined, seats.wall.length]} material={wallMat} frustumCulled={false}>
-          {kit?.wall ? null : <boxGeometry args={[1, 1, 1]} />}
-        </instancedMesh>
-      )}
-      {seats.roof.length > 0 && (
-        <instancedMesh ref={roof} args={[kit?.roof ?? undefined, undefined, seats.roof.length]} material={roofMat} frustumCulled={false}>
-          {kit?.roof ? null : <boxGeometry args={[1, 1, 1]} />}
-        </instancedMesh>
-      )}
+      <KitFamily variants={kit?.wall ?? []} seats={seats.wall} material={wallMat}>
+        <boxGeometry args={[1, 1, 1]} />
+      </KitFamily>
+      <KitFamily variants={kit?.roof ?? []} seats={seats.roof} material={roofMat}>
+        <boxGeometry args={[1, 1, 1]} />
+      </KitFamily>
       {/* Windows stay quads on purpose: the pane detail is the emissive
           atlas (2.4), which costs zero triangles. */}
       {seats.windowWarm.length > 0 && (
@@ -352,41 +432,27 @@ export function Settlements({
           <boxGeometry args={[1, 1, 1]} />
         </instancedMesh>
       )}
-      {seats.mast.length > 0 && (
-        <instancedMesh ref={mast} args={[kit?.mast ?? undefined, undefined, seats.mast.length]} material={mastMat} frustumCulled={false}>
-          {kit?.mast ? null : <cylinderGeometry args={[0.5, 0.7, 1, 6]} />}
-        </instancedMesh>
-      )}
-      {seats.dome.length > 0 && (
-        <instancedMesh ref={dome} args={[kit?.dome ?? undefined, undefined, seats.dome.length]} material={domeMat} frustumCulled={false}>
-          {kit?.dome ? null : <sphereGeometry args={[1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.52]} />}
-        </instancedMesh>
-      )}
-      {seats.pad.length > 0 && (
-        <instancedMesh ref={pad} args={[kit?.pad ?? undefined, undefined, seats.pad.length]} material={padMat} frustumCulled={false}>
-          {kit?.pad ? null : <cylinderGeometry args={[1, 1, 1, 18]} />}
-        </instancedMesh>
-      )}
-      {seats.stilt.length > 0 && (
-        <instancedMesh ref={stilt} args={[kit?.stilt ?? undefined, undefined, seats.stilt.length]} material={mastMat} frustumCulled={false}>
-          {kit?.stilt ? null : <cylinderGeometry args={[0.5, 0.6, 1, 5]} />}
-        </instancedMesh>
-      )}
-      {seats.works.length > 0 && (
-        <instancedMesh ref={works} args={[kit?.works ?? undefined, undefined, seats.works.length]} material={worksMat} frustumCulled={false}>
-          {kit?.works ? null : <boxGeometry args={[1, 1, 1]} />}
-        </instancedMesh>
-      )}
-      {seats.banner.length > 0 && (
-        <instancedMesh ref={banner} args={[kit?.banner ?? undefined, undefined, seats.banner.length]} material={bannerMat} frustumCulled={false}>
-          {kit?.banner ? null : <boxGeometry args={[1, 1, 1]} />}
-        </instancedMesh>
-      )}
-      {seats.scaffold.length > 0 && (
-        <instancedMesh ref={scaffold} args={[kit?.scaffold ?? undefined, undefined, seats.scaffold.length]} material={scaffoldMat} frustumCulled={false}>
-          {kit?.scaffold ? null : <boxGeometry args={[1, 1, 1]} />}
-        </instancedMesh>
-      )}
+      <KitFamily variants={kit?.mast ?? []} seats={seats.mast} material={mastMat}>
+        <cylinderGeometry args={[0.5, 0.7, 1, 6]} />
+      </KitFamily>
+      <KitFamily variants={kit?.dome ?? []} seats={seats.dome} material={domeMat}>
+        <sphereGeometry args={[1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+      </KitFamily>
+      <KitFamily variants={kit?.pad ?? []} seats={seats.pad} material={padMat}>
+        <cylinderGeometry args={[1, 1, 1, 18]} />
+      </KitFamily>
+      <KitFamily variants={kit?.stilt ?? []} seats={seats.stilt} material={mastMat}>
+        <cylinderGeometry args={[0.5, 0.6, 1, 5]} />
+      </KitFamily>
+      <KitFamily variants={kit?.works ?? []} seats={seats.works} material={worksMat}>
+        <boxGeometry args={[1, 1, 1]} />
+      </KitFamily>
+      <KitFamily variants={kit?.banner ?? []} seats={seats.banner} material={bannerMat}>
+        <boxGeometry args={[1, 1, 1]} />
+      </KitFamily>
+      <KitFamily variants={kit?.scaffold ?? []} seats={seats.scaffold} material={scaffoldMat}>
+        <boxGeometry args={[1, 1, 1]} />
+      </KitFamily>
       {FACILITY_KINDS.map((kind) => (
         <FacilitySeats key={kind} kind={kind} seats={seats.facilityKit} material={facilityMat} />
       ))}
