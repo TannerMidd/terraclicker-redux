@@ -846,12 +846,25 @@ function cockpitLayerSvg(kind) {
   `);
 }
 
-function generateCockpitLayers() {
+/**
+ * Exported so the cockpit trio can be regenerated alone. The file names map
+ * EXPLICITLY onto cockpitLayerSvg's kinds: the old `kind === 'dashboard-fascia'
+ * ? 'dashboard' : kind` shorthand passed 'throttle-quadrant' straight through,
+ * which matched no branch and fell into the dashboard default — so the
+ * throttle plate shipped as a second, smaller dashboard floating over the
+ * real one, and the actual throttle art below was unreachable.
+ */
+export function generateCockpitLayers() {
   const outputs = [];
   const dir = ensureDir(resolve(PUBLIC_ROOT, 'cockpit'));
-  for (const kind of ['dashboard-fascia', 'window-frame', 'throttle-quadrant']) {
-    const output = resolve(dir, `${kind}.webp`);
-    renderSvg(cockpitLayerSvg(kind === 'dashboard-fascia' ? 'dashboard' : kind), output, 2048, 1024, ['-quality', '90']);
+  const KINDS = {
+    'dashboard-fascia': 'dashboard',
+    'window-frame': 'window-frame',
+    'throttle-quadrant': 'throttle',
+  };
+  for (const [file, kind] of Object.entries(KINDS)) {
+    const output = resolve(dir, `${file}.webp`);
+    renderSvg(cockpitLayerSvg(kind), output, 2048, 1024, ['-quality', '90']);
     outputs.push(output);
   }
   return outputs;
