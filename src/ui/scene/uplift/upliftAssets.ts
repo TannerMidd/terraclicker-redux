@@ -560,6 +560,7 @@ export function preloadUplift(): void {
   prefetchKit('meshes/ships/runabout-refits.glb');
   prefetchKit('meshes/ships/skimmer.glb');
   upliftPrefetch('textures/ships/runabout-pbr.ktx2', { repeat: true, srgb: true });
+  prefetchKit('meshes/props/creatures.glb');
   for (const family of ['rocks', 'boulders', 'flora', 'shrubs', 'shards', 'vents']) {
     prefetchKit(`meshes/props/${family}.glb`);
     upliftPrefetch(`textures/props/${family}-atlas.ktx2`, { repeat: true, srgb: true });

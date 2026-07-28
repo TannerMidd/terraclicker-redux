@@ -229,12 +229,35 @@ def box_uvs(bm):
             loop[layer].uv = (u * scale, v * scale)
 
 
+def motion_uvs(bm, weight, phase):
+    """Bake a part's MOTION MASK into a second UV layer (glTF TEXCOORD_1).
+
+    A creature cannot be animated the way Blender would normally do it: the
+    loader merges every mesh under an asset into one static geometry and
+    discards the hierarchy, so there is nothing left to key, and armatures
+    would cost instancing besides. Instead the SHAPE is authored here and the
+    MOTION is a vertex-stage function of this mask — which keeps a herd at one
+    draw call and one shader.
+
+        u = weight  how much this vertex is displaced, 0 (rigid) .. 1 (tip)
+        v = phase   which limb it belongs to, as a turn: 0, 0.5 = opposed pair
+
+    Weight is graded along the part rather than flat, so a wing bends from the
+    shoulder instead of hinging off the body like a door.
+    """
+    layer = bm.loops.layers.uv.new("motion") if "motion" not in bm.loops.layers.uv else bm.loops.layers.uv["motion"]
+    for face in bm.faces:
+        for loop in face.loops:
+            loop[layer].uv = (weight(loop.vert.co) if callable(weight) else weight, phase)
+
+
 # ————— Assembly —————
 
 _roots = {}
 _parts = []
 _asset_parts = {}
 _current = None
+_motion_layer = False
 
 
 def current_name():
@@ -261,17 +284,25 @@ def asset(name, extras=None):
     return root
 
 
-def part(name, material, bevel_amount=0.0):
-    """Start a mesh. Returns (bmesh, finish) — fill the first, call the second."""
+def part(name, material, bevel_amount=0.0, motion=None):
+    """Start a mesh. Returns (bmesh, finish) — fill the first, call the second.
+
+    `motion` is (weight, phase) for an animated kit; weight may be a callable
+    taking the vertex position, for a graded mask. See motion_uvs().
+    """
     bm = bmesh.new()
-    return bm, (lambda: _emit(name, bm, material, bevel_amount))
+    return bm, (lambda: _emit(name, bm, material, bevel_amount, motion))
 
 
-def _emit(name, bm, material, bevel_amount):
+def _emit(name, bm, material, bevel_amount, motion=None):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bevel(bm, bevel_amount)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     box_uvs(bm)
+    # Uniform attributes or mergeGeometries returns null, so once any part in a
+    # kit carries a motion mask, every part must — rigid ones at weight 0.
+    if _motion_layer:
+        motion_uvs(bm, *(motion or (0.0, 0.0)))
     me = bpy.data.meshes.new(name)
     bm.to_mesh(me)
     bm.free()
@@ -329,7 +360,8 @@ def _report(lo, hi, fit_min, fit_max):
         print(f"  fit {label:<7}{skew:+.1%}{flag}")
 
 
-def run(label, build, fit_min=None, fit_max=None, tri_budget=4000, per_asset=None):
+def run(label, build, fit_min=None, fit_max=None, tri_budget=4000, per_asset=None,
+        motion=False):
     """Reset the scene, build, measure, and write whatever was asked for.
 
     Called at the bottom of every asset script. Args after `--`:
@@ -343,6 +375,8 @@ def run(label, build, fit_min=None, fit_max=None, tri_budget=4000, per_asset=Non
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.context.scene.unit_settings.system = "METRIC"
+    global _motion_layer
+    _motion_layer = motion
     _materials.clear()
     _roots.clear()
     _parts.clear()

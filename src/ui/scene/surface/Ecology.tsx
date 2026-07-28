@@ -24,7 +24,17 @@ import {
   MeshStandardNodeMaterial,
   Object3D,
 } from 'three/webgpu';
+import {
+  attribute,
+  float,
+  instanceIndex,
+  positionLocal,
+  sin,
+  time,
+  vec3,
+} from 'three/tsl';
 import { mulberry } from '../../../engine/rng';
+import { kitGeometryFit, upliftActive } from '../uplift/upliftAssets';
 import { universeMotion } from '../universe/operationsVisual';
 import {
   surfaceAmbientSpecies,
@@ -36,6 +46,50 @@ import type { PlanetPalette } from '../planetMaterial';
 
 const SEAT = new Object3D();
 const ZERO = new Matrix4().makeScale(0, 0, 0);
+
+const CREATURE_KIT = 'meshes/props/creatures.glb';
+
+/**
+ * Extent fits, in metres of longest axis. These reproduce the world sizes the
+ * primitive blobs had, so a herd is the same size it always was — only now it
+ * has legs. Authored creatures are proportioned, so a kitted seat scales
+ * UNIFORMLY; the old non-uniform scales existed to beat a sphere into
+ * something animal-shaped and would squash a real one.
+ */
+const CREATURE_EXTENT = {
+  grazer: 1.7,
+  flier: 1.05,
+  'shoal-fish': 0.55,
+  mote: 0.24,
+} as const;
+
+/**
+ * Movement, from the mask the Blender kit baked into its second UV set.
+ *
+ * The creatures merge to one static geometry and are drawn instanced, so there
+ * is no rig to key and no per-object transform to animate. Instead each vertex
+ * carries `uv1 = (weight, phase)` — how much it moves, and which limb it is —
+ * and the vertex stage swings it. One shader, one draw call, forty animals.
+ *
+ * `instanceIndex` desynchronises the herd: without it every grazer in sight
+ * plants the same hoof on the same frame, which reads as a chorus line.
+ */
+function animate(
+  material: MeshStandardNodeMaterial | MeshBasicNodeMaterial,
+  opts: { rate: number; amp: [number, number, number] },
+): void {
+  const mask = attribute('uv1', 'vec2');
+  const beat = time
+    .mul(opts.rate)
+    .add(mask.y.mul(Math.PI * 2))
+    .add(float(instanceIndex).mul(0.618));
+  const swing = sin(beat).mul(mask.x);
+  material.positionNode = vec3(
+    positionLocal.x.add(swing.mul(opts.amp[0])),
+    positionLocal.y.add(swing.mul(opts.amp[1])),
+    positionLocal.z.add(swing.mul(opts.amp[2])),
+  );
+}
 
 /** Ambient pools. Small on purpose: life reads in ones, not in crowds. */
 const GROUND_MAX = 40;
@@ -122,25 +176,52 @@ export function Ecology({
   const hasAir = present.some((s) => AIR_IDS.has(s.id));
   const hasWater = present.some((s) => WATER_IDS.has(s.id));
 
+  // The authored ecology. Null on Tier C or until the GLB lands, and every
+  // family keeps its primitive fallback — a valley of blobs is the old look,
+  // not a broken one.
+  const kit = useMemo(() => {
+    if (!upliftActive()) return null;
+    const fit = (name: keyof typeof CREATURE_EXTENT) =>
+      kitGeometryFit(CREATURE_KIT, name, {
+        mode: 'extent',
+        extent: CREATURE_EXTENT[name],
+        rotateY: Math.PI,
+      });
+    const grazer = fit('grazer');
+    if (!grazer) return null;
+    return {
+      grazer,
+      flier: fit('flier'),
+      fish: fit('shoal-fish'),
+      mote: fit('mote'),
+    };
+  }, []);
+
   const critterMat = useMemo(() => {
     const m = new MeshStandardNodeMaterial();
     m.color = palette.low.clone().multiplyScalar(0.42).lerp(new Color(0x2e2a26), 0.5);
     m.roughness = 0.95;
     m.flatShading = true;
+    // A walk: legs fore-and-aft, and only as far as a leg goes.
+    if (kit?.grazer) animate(m, { rate: 5.2, amp: [0, 0.05, 0.16] });
     return m;
-  }, [palette]);
+  }, [palette, kit]);
   const flierMat = useMemo(() => {
     const m = new MeshBasicNodeMaterial();
     m.color = new Color(0x1c2026);
+    // A wingbeat: fast, and almost entirely vertical.
+    if (kit?.flier) animate(m, { rate: 11, amp: [0, 0.22, 0.02] });
     return m;
-  }, []);
+  }, [kit]);
   const shoalMat = useMemo(() => {
     const m = new MeshBasicNodeMaterial();
     m.color = palette.ice.clone().lerp(new Color(0xaef2ff), 0.5);
     m.transparent = true;
     m.opacity = 0.7;
+    // A tail beat: sideways, quick, small.
+    if (kit?.fish) animate(m, { rate: 9, amp: [0.06, 0, 0] });
     return m;
-  }, [palette]);
+  }, [palette, kit]);
   const moteMat = useMemo(() => {
     const m = new MeshBasicNodeMaterial();
     m.color = new Color(0xffe9a8);
@@ -253,7 +334,7 @@ export function Ecology({
             const gait = still ? 0 : Math.abs(Math.sin(t * 1.7 + k * 2)) * 0.08;
             SEAT.position.set(x, y + 0.42 + gait, z);
             SEAT.rotation.set(0, -a, 0);
-            SEAT.scale.set(0.9, 0.62, 1.4);
+            if (kit?.grazer) SEAT.scale.setScalar(1); else SEAT.scale.set(0.9, 0.62, 1.4);
             SEAT.updateMatrix();
             gm.setMatrixAt(i++, SEAT.matrix);
           }
@@ -270,7 +351,7 @@ export function Ecology({
           if (y < p.seaLevelM + 0.3) continue;
           SEAT.position.set(x, y + 0.5, z);
           SEAT.rotation.set(0, -a, 0);
-          SEAT.scale.set(1.1, 0.8, 1.7);
+          if (kit?.grazer) SEAT.scale.setScalar(1.22); else SEAT.scale.set(1.1, 0.8, 1.7);
           SEAT.updateMatrix();
           gm.setMatrixAt(i++, SEAT.matrix);
         }
@@ -296,7 +377,7 @@ export function Ecology({
             const y = heightAt(p, tiers, c.x, c.z) + height + Math.sin(a * 2.3 + k) * 2.4;
             SEAT.position.set(x, y, z);
             SEAT.rotation.set(0, -a, Math.sin(t * 6 + k) * 0.4);
-            SEAT.scale.set(0.5, 0.12, 0.26);
+            if (kit?.flier) SEAT.scale.setScalar(1); else SEAT.scale.set(0.5, 0.12, 0.26);
             SEAT.updateMatrix();
             am.setMatrixAt(i++, SEAT.matrix);
           }
@@ -313,7 +394,7 @@ export function Ecology({
             const y = heightAt(p, tiers, vg.x, vg.z) + 6 + Math.sin(a * 2.1) * 2.5;
             SEAT.position.set(x, y, z);
             SEAT.rotation.set(0, -a, Math.sin(t * 7 + k) * 0.5);
-            SEAT.scale.set(0.4, 0.1, 0.2);
+            if (kit?.flier) SEAT.scale.setScalar(0.8); else SEAT.scale.set(0.4, 0.1, 0.2);
             SEAT.updateMatrix();
             am.setMatrixAt(i++, SEAT.matrix);
           }
@@ -340,7 +421,7 @@ export function Ecology({
             const z = c.z + Math.sin(a * 1.4) * c.radius * 0.6;
             SEAT.position.set(x, p.seaLevelM - 0.18, z);
             SEAT.rotation.set(0, -a, 0);
-            SEAT.scale.set(0.42, 0.08, 0.14);
+            if (kit?.fish) SEAT.scale.setScalar(1); else SEAT.scale.set(0.42, 0.08, 0.14);
             SEAT.updateMatrix();
             wm.setMatrixAt(i++, SEAT.matrix);
           }
@@ -380,7 +461,7 @@ export function Ecology({
             const y = heightAt(p, tiers, vg.x, vg.z) + 2.2 + ((t * 0.35 + k * 1.7) % 6);
             SEAT.position.set(x, y, z);
             SEAT.rotation.set(0, 0, 0);
-            SEAT.scale.set(0.16, 0.16, 0.16);
+            SEAT.scale.setScalar(kit?.mote ? 1 : 0.16);
             SEAT.updateMatrix();
             mm.setMatrixAt(i++, SEAT.matrix);
           }
@@ -397,18 +478,18 @@ export function Ecology({
   return (
     <group name="ecology">
       {hasGround && (
-        <instancedMesh ref={groundRef} args={[undefined, undefined, GROUND_MAX]} material={critterMat} frustumCulled={false}>
-          <icosahedronGeometry args={[0.6, 0]} />
+        <instancedMesh ref={groundRef} args={[kit?.grazer ?? undefined, undefined, GROUND_MAX]} material={critterMat} frustumCulled={false}>
+          {kit?.grazer ? null : <icosahedronGeometry args={[0.6, 0]} />}
         </instancedMesh>
       )}
       {hasAir && (
-        <instancedMesh ref={airRef} args={[undefined, undefined, AIR_MAX]} material={flierMat} frustumCulled={false}>
-          <octahedronGeometry args={[1, 0]} />
+        <instancedMesh ref={airRef} args={[kit?.flier ?? undefined, undefined, AIR_MAX]} material={flierMat} frustumCulled={false}>
+          {kit?.flier ? null : <octahedronGeometry args={[1, 0]} />}
         </instancedMesh>
       )}
       {hasWater && (
-        <instancedMesh ref={waterRef} args={[undefined, undefined, WATER_MAX]} material={shoalMat} frustumCulled={false}>
-          <octahedronGeometry args={[1, 0]} />
+        <instancedMesh ref={waterRef} args={[kit?.fish ?? undefined, undefined, WATER_MAX]} material={shoalMat} frustumCulled={false}>
+          {kit?.fish ? null : <octahedronGeometry args={[1, 0]} />}
         </instancedMesh>
       )}
       {vignetteSeats.length > 0 && (
@@ -428,8 +509,8 @@ export function Ecology({
         </instancedMesh>
       )}
       {surfaceVignetteList().length > 0 && (
-        <instancedMesh ref={moteRef} args={[undefined, undefined, 48]} material={moteMat} frustumCulled={false}>
-          <octahedronGeometry args={[1, 0]} />
+        <instancedMesh ref={moteRef} args={[kit?.mote ?? undefined, undefined, 48]} material={moteMat} frustumCulled={false}>
+          {kit?.mote ? null : <octahedronGeometry args={[1, 0]} />}
         </instancedMesh>
       )}
     </group>

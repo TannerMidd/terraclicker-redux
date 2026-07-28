@@ -108,6 +108,24 @@ const ASSETS = [
       { label: 'pads            (pad frame)', asset: 'pad', min: [-1, -0.5, -1], max: [1, 0.5, 1] },
     ],
   },
+  {
+    id: 'creatures',
+    script: 'creatures.py',
+    blend: 'creatures.blend',
+    glb: 'meshes/props/creatures.glb',
+    names: ['grazer', 'flier', 'shoal-fish', 'mote', 'nest-mound', 'shell-bed', 'bone-arch'],
+    perAsset: 900,
+    budget: 6000,
+    skewLimit: null, // fitted by extent, then posed by the frame loop
+    // Animated in the vertex stage off a baked mask, so the second UV set is
+    // load-bearing: without it the creatures stand still, and if only SOME
+    // meshes carry it the merge returns null and they vanish entirely.
+    requireAttributes: ['uv1'],
+    sites: [
+      { label: 'grazer          (extent fit)', asset: 'grazer', min: [-0.6, -0.6, -0.6], max: [0.6, 0.6, 0.6] },
+      { label: 'flier           (extent fit)', asset: 'flier', min: [-0.6, -0.6, -0.6], max: [0.6, 0.6, 0.6] },
+    ],
+  },
 ];
 
 function findBlender() {
@@ -229,6 +247,16 @@ async function verify(asset) {
 
   let failed = false;
   const fits = [];
+  if (asset.requireAttributes) {
+    for (const name of asset.names) {
+      const { attributes } = kitGeometry(scene, name);
+      const missing = asset.requireAttributes.filter((a) => !attributes.split(',').includes(a));
+      if (missing.length) {
+        console.log(`  ${name}: MISSING ${missing.join(', ')}`);
+        failed = true;
+      }
+    }
+  }
   for (const site of asset.sites) {
     const { merged, parts, attributes } = kitGeometry(scene, site.asset);
     const tris = merged.getAttribute('position').count / 3;
