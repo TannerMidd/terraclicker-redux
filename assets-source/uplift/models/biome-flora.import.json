@@ -1,0 +1,15 @@
+{
+  "about": "Overrides for this import — see docs/BLENDER_PIPELINE.md §8. Derived on first build; edit freely.",
+  "glb": "meshes/imports/biome-flora.glb",
+  "names": [
+    "tree-desert",
+    "tree-gasgiant",
+    "tree-ice",
+    "tree-ocean",
+    "tree-terrestrial",
+    "tree-volcanic"
+  ],
+  "perAsset": 900,
+  "prefetch": true,
+  "sites": []
+}

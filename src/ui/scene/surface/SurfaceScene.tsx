@@ -97,6 +97,8 @@ const Q1 = new Quaternion();
 const M1 = new Matrix4();
 const SEAT = new Object3D();
 const UP = new Vector3(0, 1, 0);
+/** Imported (§8 of docs/BLENDER_PIPELINE.md), so it ships under meshes/imports. */
+const BIOME_FLORA_KIT = 'meshes/imports/biome-flora.glb';
 /** The ship's own pose scratch — airborne attitude, or the pad it sits on. */
 const SHIP_EUL = new Euler(0, 0, 0, 'YXZ');
 const SHIP_Q = new Quaternion();
@@ -759,7 +761,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               day={built.cloudsB.uniforms.day as { value: number }}
             />
 
-            <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} seed={session.seed} />
+            <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} bio={session.aspects.bio} seed={session.seed} />
 
             <instancedMesh
               ref={crystals}
@@ -999,6 +1001,7 @@ function ChunkedProps({
   palette,
   type,
   bioK,
+  bio,
   seed,
 }: {
   p: SurfaceParams;
@@ -1006,6 +1009,8 @@ function ChunkedProps({
   palette: ReturnType<typeof paletteFor>;
   type: string;
   bioK: number;
+  /** The raw Bio aspect, before bioK's per-type weighting — trees re-weight it. */
+  bio: number;
   seed: number;
 }) {
   // Kit geometry (2.1): one authored variant per family per world, seeded so
@@ -1028,6 +1033,12 @@ function ChunkedProps({
       shrubs: pick('shrubs', 1.4),
       shards: pick('shards', 1.2),
       vents: pick('vents', 1.4),
+      // The one prop family whose SHAPE is per-world rather than per-seed.
+      // The other five run through propVariant(), which switches on family
+      // alone — the planet type reaches the asset's name and its RNG seed and
+      // nothing else, so an ice world grows the same plant as a desert one
+      // with different jitter. These are six different plants.
+      trees: kitGeometryFit(BIOME_FLORA_KIT, `tree-${type}`, { mode: 'height', height: 1 }),
     };
   }, [type, seed]);
 
@@ -1120,11 +1131,40 @@ function ChunkedProps({
     return m;
   }, [palette, kitGeo]);
 
+  /**
+   * The tree family, drawn with its authored colours rather than the world's.
+   * The other prop families are recoloured by the palette because they are one
+   * shape everywhere and the tint is all that tells worlds apart; a per-biome
+   * tree already carries that information in its silhouette, and pushing a
+   * volcanic palette through a mangrove would only take it back out.
+   */
+  const treeMat = useMemo(
+    () =>
+      upliftFamilyMaterial({
+        tint: new Color(0xffffff).lerp(palette.low, 0.22),
+        gain: 1.15,
+        roughness: 0.92,
+      }),
+    [palette],
+  );
+
   // Densities carry the old scatter's counts per area; reach is what grew.
   // (rocks: 460 over r950 ≈ 11 a chunk; flora: 340 over r780 ≈ 12; and so on.)
   const defs = useMemo(() => {
     const floraTries = bioK > 0.04 ? Math.max(1, Math.round(12 * Math.min(1, bioK + 0.12))) : 0;
     const shrubTries = bioK > 0.04 ? Math.max(1, Math.round(10 * Math.min(1, bioK + 0.2))) : 0;
+    // Trees answer to biology harder than the undergrowth does: a barely-seeded
+    // world gets a lone survivor on a ridge, a finished one gets woodland. The
+    // ceiling is 5 rather than the undergrowth's 12 because each of these is
+    // 200 triangles and nine metres tall — a forest is expensive in a way a
+    // tussock is not.
+    // Trees read biology on their OWN curve, not the undergrowth's. The shared
+    // bioK zeroes gas giants outright — reasonable for grass, and it would
+    // have left the bladder plant unreachable, since the whole point of that
+    // silhouette is that it grows where nothing stands up. So gas giants get a
+    // quarter weighting here and nothing anywhere else changes.
+    const treeK = type === 'gasgiant' ? bio * 0.25 : bioK;
+    const treeTries = treeK > 0.06 ? Math.max(1, Math.round(5 * Math.min(1, treeK + 0.15))) : 0;
     return {
       rocks: { stream: 0x11a, chunkM: 256, reachM: 1200, tries: 11, maxSlopeY: 0.5, shore: 0.4, scale: [0.35, 2.4], squash: 0.62, lift: 0 } as PropFamilyDef,
       boulders: { stream: 0x22b, chunkM: 512, reachM: 3100, tries: 2, maxSlopeY: 0.55, shore: 0.6, scale: [2.2, 7.5], squash: 0.7, lift: 0 } as PropFamilyDef,
@@ -1132,8 +1172,13 @@ function ChunkedProps({
       shrubs: { stream: 0x44d, chunkM: 256, reachM: 900, tries: shrubTries, maxSlopeY: 0.7, shore: 1.4, scale: [0.5, 1.4], squash: 0.75, lift: 0.5 } as PropFamilyDef,
       shards: { stream: 0x55e, chunkM: 256, reachM: 1150, tries: 6, maxSlopeY: 0.6, shore: 0.5, scale: [0.8, 3.2], squash: 2.6, lift: 0.55 } as PropFamilyDef,
       vents: { stream: 0x66f, chunkM: 256, reachM: 1150, tries: 3, maxSlopeY: 0.65, shore: 3, scale: [0.7, 1.8], squash: 0.9, lift: 0.85 } as PropFamilyDef,
+      // squash 1: every other family stretches its prop into a spindle, which
+      // is what makes a 1 m cone read as undergrowth. A tree is authored in
+      // proportion and has to stay that way, so this scale IS its height in
+      // metres. Big and sparse — 5 to 9 m, two attempts per 512 m chunk.
+      trees: { stream: 0x77a, chunkM: 512, reachM: 1400, tries: treeTries, maxSlopeY: 0.62, shore: 1.6, scale: [5, 9], squash: 1, lift: 1 } as PropFamilyDef,
     };
-  }, [bioK]);
+  }, [bioK, bio, type]);
 
   return (
     <>
@@ -1151,6 +1196,14 @@ function ChunkedProps({
       {defs.shrubs.tries > 0 && (
         <PropChunks p={p} tiers={tiers} def={defs.shrubs} material={shrubMat} geometry={kitGeo?.shrubs}>
           <icosahedronGeometry args={[0.7, 0]} />
+        </PropChunks>
+      )}
+      {/* No primitive fallback: a tree is the authored asset or it is nothing.
+          A stretched cone standing nine metres tall would be worse than an
+          empty plain, and Tier C has never had these. */}
+      {defs.trees.tries > 0 && kitGeo?.trees && (
+        <PropChunks p={p} tiers={tiers} def={defs.trees} material={treeMat} geometry={kitGeo.trees}>
+          <coneGeometry args={[0.5, 1, 6]} />
         </PropChunks>
       )}
       {type === 'ice' && (
