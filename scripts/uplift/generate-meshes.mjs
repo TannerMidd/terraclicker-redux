@@ -399,31 +399,6 @@ async function generateSmallKits() {
   return outputs;
 }
 
-function runaboutParts() {
-  const g = asset('runabout', [], {
-    atlas: '../../textures/ships/runabout-pbr.ktx2',
-    decalAtlas: '../../textures/ships/hull-decals.ktx2',
-  });
-  g.add(
-    box('hull-core', [5.8, 1.35, 2.6], MATERIALS.darkMetal, [0, 0.75, 0]),
-    mesh('hull-nose', new THREE.ConeGeometry(1.31, 2.9, 8), MATERIALS.darkMetal, [0, 0.75, 4.25], [1, 1, 1], [Math.PI / 2, 0, 0]),
-    box('hull-roof', [3.6, 0.55, 2.1], MATERIALS.pale, [0, 1.55, 0.35], [0, 0, 0.04]),
-    sphere('canopy', 1.55, 16, 10, MATERIALS.cyan, [0, 1.65, 1.2], [1.15, 0.48, 0.75]),
-    ...[-1, 1].map((s) => box(`wing-${s}`, [2.2, 0.18, 2.8], MATERIALS.darkMetal, [s * 3.25, 0.7, -0.15], [0, s * 0.08, s * -0.08])),
-    ...[-1, 1].flatMap((s) => [
-      cylinder(`gear-strut-${s}`, 0.07, 0.1, 1.35, 8, MATERIALS.metal, [s * 1.95, -0.4, 0.65], [0, 0, s * 0.2]),
-      box(`gear-foot-${s}`, [0.65, 0.18, 1.05], MATERIALS.darkMetal, [s * 2.15, -1.05, 0.72]),
-    ]),
-    cylinder('rear-gear-strut', 0.07, 0.1, 1.2, 8, MATERIALS.metal, [0, -0.35, -1.65]),
-    box('rear-gear-foot', [0.8, 0.18, 0.9], MATERIALS.darkMetal, [0, -0.94, -1.78]),
-    ...[-1, 1].map((s) => cylinder(`engine-${s}`, 0.5, 0.68, 2.25, 12, MATERIALS.metal, [s * 2.2, 0.65, -1.95], [Math.PI / 2, 0, 0])),
-    torus('engine-glow-left', 0.42, 0.08, 8, 18, MATERIALS.thermal ?? MATERIALS.gold, [-2.2, 0.65, -3.08], [0, 0, 0]),
-    torus('engine-glow-right', 0.42, 0.08, 8, 18, MATERIALS.gold, [2.2, 0.65, -3.08], [0, 0, 0]),
-    box('airlock', [0.12, 1.05, 1.15], MATERIALS.gold, [-2.95, 0.72, -0.2]),
-  );
-  return g;
-}
-
 function runaboutRefits() {
   return [
     asset('skimmer-cradle', [
@@ -461,8 +436,12 @@ function skimmerParts() {
 
 async function generateShipKits() {
   const outputs = [];
+  // runabout.glb is NOT here: the hull (3.1) is modelled in Blender, from
+  // assets-source/uplift/blender/runabout.py via `npm run assets:ship`. It is
+  // the one asset a player looks at from two metres away, and primitives could
+  // not carry the panel breaks. Leaving it out means running this generator
+  // without Blender installed no longer flattens that model back to boxes.
   const specs = [
-    ['runabout.glb', [runaboutParts()], { triangleBudget: 4000 }],
     ['runabout-refits.glb', runaboutRefits(), { atlas: '../../textures/ships/runabout-pbr.ktx2' }],
     ['skimmer.glb', [skimmerParts()], { triangleBudget: 1500 }],
   ];

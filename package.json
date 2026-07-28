@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "assets:generate": "node scripts/generate-themed-assets.mjs",
     "assets:uplift": "node scripts/generate-uplift-assets.mjs",
+    "assets:ship": "node scripts/uplift/build-ship.mjs",
     "preview": "vite preview --host localhost --port 4173 --strictPort",
     "site": "npm run build && node scripts/assemble-site.mjs",
     "site:preview": "npm run site && npx vite preview --outDir site --host localhost --port 4180 --strictPort",

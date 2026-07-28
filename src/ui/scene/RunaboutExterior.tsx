@@ -149,31 +149,36 @@ export function RunaboutExterior() {
         </>
       )}
 
-      {/* Port/starboard navigation lamps and an amber dorsal service beacon. */}
-      <mesh position={[-0.76, 0.09, 0.18]}>
-        <sphereGeometry args={[0.035, 8, 6]} />
+      {/* Port/starboard navigation lamps and an amber dorsal service beacon.
+          These are basic-material emitters rather than hull geometry — the
+          merged kit shares one lit material and cannot glow on its own — so
+          they do not follow the model when it changes. Their seats come from
+          the hull itself: `npm run assets:ship` prints the fitted anchors for
+          the wingtip pods, the spine stripe and the bell mouths. */}
+      <mesh position={[-0.75, 0.042, 0.245]}>
+        <sphereGeometry args={[0.024, 8, 6]} />
         <meshBasicMaterial color={0xff4f58} toneMapped={false} />
       </mesh>
-      <mesh position={[0.76, 0.09, 0.18]}>
-        <sphereGeometry args={[0.035, 8, 6]} />
+      <mesh position={[0.75, 0.042, 0.245]}>
+        <sphereGeometry args={[0.024, 8, 6]} />
         <meshBasicMaterial color={0x4fffa6} toneMapped={false} />
       </mesh>
-      <mesh position={[0, 0.255, 0.36]}>
-        <sphereGeometry args={[0.027, 8, 6]} />
+      <mesh position={[0, 0.15, 0.157]}>
+        <sphereGeometry args={[0.022, 8, 6]} />
         <meshBasicMaterial color={0xffbb65} toneMapped={false} />
       </mesh>
 
-      <group position={[0, -0.045, 0.625]}>
-        {[-0.34, 0.34].map((x) => (
+      <group position={[0, 0.049, 0.79]}>
+        {[-0.339, 0.339].map((x) => (
           <mesh key={x} position={[x, 0, 0]}>
-            <circleGeometry args={[0.092, 16]} />
+            <circleGeometry args={[0.058, 16]} />
             <meshBasicMaterial color={0x7fe8ff} toneMapped={false} />
           </mesh>
         ))}
         <group ref={plumes}>
-          {[-0.34, 0.34].map((x) => (
+          {[-0.339, 0.339].map((x) => (
             <mesh key={x} position={[x, 0, 0.12]} rotation={[Math.PI / 2, 0, 0]}>
-              <coneGeometry args={[0.09, 0.34, 12, 1, true]} />
+              <coneGeometry args={[0.055, 0.34, 12, 1, true]} />
               <meshBasicMaterial
                 color={0x5acfea}
                 transparent

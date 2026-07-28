@@ -132,7 +132,8 @@ async function main() {
       imagegen: IMAGEGEN_PROMPTS,
       deterministic: [
         'Technical maps derived locally from the six image-generated albedo atlases.',
-        'All GLB meshes are deterministic low-poly geometry generated with three.js.',
+        'All GLB kits except the runabout hull are deterministic low-poly geometry generated with three.js.',
+        'The runabout hull (3.1) is modelled in Blender from assets-source/uplift/blender/runabout.py and built with `npm run assets:ship`.',
         'All UI SVG/WebP and non-ground masters are deterministic project-authored vector patterns.',
         'KTX2 output is Basis Universal encoded with Khronos toktx 4.4.2 and single-thread settings.',
       ],

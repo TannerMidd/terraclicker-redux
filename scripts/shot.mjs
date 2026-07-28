@@ -8,7 +8,8 @@
  * key:Name (keyboard press, e.g. key:Escape) |
  * wheel:x,y,dy (real wheel at coords — cursor zoom / focus dolly ladder) |
  * drag:x0,y0,x1,y1 (real mouse drag — orbit) | cine:cancel (skip ceremonies) |
- * flight:on|off (take/leave the helm) | move:x,y (park the mouse — steering) |
+ * flight:on|off (take/leave the helm) | view:chase|cockpit (orbital camera) |
+ * move:x,y (park the mouse — steering) |
  * flykeys:w+shift,1200 (hold real flight keys for ms) | flystate (log pose) |
  * goto:id (park beside a Deep Field landmark) | sites (log landmark placement) |
  * refit:id (install the next rank of a runabout refit).
@@ -196,6 +197,12 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
   } else if (kind === 'flight') {
     await page.evaluate((on) => (on === 'on' ? window.__tcFlight.enter() : window.__tcFlight.exit()), arg);
     await page.waitForTimeout(900);
+  } else if (kind === 'view') {
+    // view:chase|cockpit — the ORBITAL helm camera (gfview is the surface one).
+    // Chase is the only view that shows the whole hull, so it is how ship-kit
+    // work gets photographed.
+    await page.evaluate((v) => window.__tcFlight?.view(v), arg);
+    await page.waitForTimeout(400);
   } else if (kind === 'move') {
     const [x, y] = arg.split(',').map(Number);
     await page.mouse.move(x, y);
