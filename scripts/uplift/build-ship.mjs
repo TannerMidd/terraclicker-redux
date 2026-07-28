@@ -126,6 +126,19 @@ const ASSETS = [
       { label: 'flier           (extent fit)', asset: 'flier', min: [-0.6, -0.6, -0.6], max: [0.6, 0.6, 0.6] },
     ],
   },
+  {
+    id: 'ore',
+    script: 'ore.py',
+    blend: 'ore.blend',
+    glb: 'meshes/seams/crystal-seam-kit.glb',
+    names: ['crystal-shard'],
+    // Four per seam, and the seam census reaches kilometres. Cheap or nothing.
+    budget: 140,
+    skewLimit: null, // the seam's seat stretches it along the growth axis
+    sites: [
+      { label: 'seam shards     (extent fit)', asset: 'crystal-shard', min: [-0.7, -0.7, -0.7], max: [0.7, 0.7, 0.7] },
+    ],
+  },
 ];
 
 function findBlender() {

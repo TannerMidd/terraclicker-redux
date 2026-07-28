@@ -305,6 +305,27 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     [seams],
   );
 
+  // The authored seam cluster (2.7), fitted to the octahedron's own extent so
+  // the seats keep working. Per-session like the rest of the surface: a kit
+  // that has not landed leaves this landing on primitives.
+  const seamShard = useMemo(
+    () =>
+      upliftActive()
+        ? kitGeometryFit('meshes/seams/crystal-seam-kit.glb', 'crystal-shard', {
+            mode: 'extent',
+            extent: 1.4,
+          })
+        : null,
+    [],
+  );
+  /**
+   * Cross-section of a seated shard. The octahedron was a fat solid squeezed
+   * thin (0.28); the modelled cluster is already slender inside its own box,
+   * so it needs far less squeezing to end up the same width on screen. The
+   * HEIGHT term is unchanged — both geometries are fitted to the same extent.
+   */
+  const seamWidth = seamShard ? 0.62 : 0.28;
+
   // Crystal instance seats (4 shards per seam). `crack` 0–1 tilts and sinks
   // the shards as the pick works them — the seam visibly losing the argument.
   const writeSeamMatrices = (mesh: InstancedMesh, d: DepositSpec, slot: number, crack: number) => {
@@ -318,7 +339,8 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       );
       SEAT.quaternion.setFromAxisAngle(V1.set(Math.cos(a + 1.2), 0, Math.sin(a + 1.2)).normalize(), lean);
       const shrink = 1 - crack * 0.16;
-      SEAT.scale.set(0.28 * d.scale * shrink, (0.55 + (s % 3) * 0.35) * d.scale * shrink, 0.28 * d.scale * shrink);
+      const w = seamWidth * d.scale * shrink;
+      SEAT.scale.set(w, (0.55 + (s % 3) * 0.35) * d.scale * shrink, w);
       SEAT.updateMatrix();
       mesh.setMatrixAt(slot * 4 + s, SEAT.matrix);
     }
@@ -730,11 +752,11 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
 
             <instancedMesh
               ref={crystals}
-              args={[undefined, undefined, seams.length * 4]}
+              args={[seamShard ?? undefined, undefined, seams.length * 4]}
               material={built.crystalB.mat}
               frustumCulled={false}
             >
-              <octahedronGeometry args={[0.7, 0]} />
+              {seamShard ? null : <octahedronGeometry args={[0.7, 0]} />}
             </instancedMesh>
 
             {/* Prospect stakes: the mark kit's flagged stake, or the pole. */}
