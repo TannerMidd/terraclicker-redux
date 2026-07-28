@@ -1152,7 +1152,10 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
 
       // An approach aimed at a settlement says so on the offer — the same
       // snap cone the autoland will honour, so the console never advertises
-      // a doorstep the descent then declines to find.
+      // a doorstep the descent then declines to find. The offer LATCHES
+      // (see doorstepOffer): the world turns faster than anybody reads, so
+      // the note names the town for a grace window and the commit keeps
+      // that promise however far the lights have swept on.
       let setNote = '';
       if (!land.hero) {
         const record = st.run.completedPlanets.find(
@@ -1177,9 +1180,24 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
                 settlementCharacter(life ? worldTraits(life, standing) : []),
                 standing,
               );
-            setNote = lit
-              ? ` · the lights of ${app.spot.name} below`
-              : ` · ${app.spot.name}, dark, below`;
+            doorstepOffer = {
+              lifetimeIndex: land.lifetimeIndex,
+              name: app.spot.name,
+              dir: [app.spot.dir[0], app.spot.dir[1], app.spot.dir[2]],
+              lit,
+              untilClock: f.clock + OFFER_GRACE_S,
+            };
+          } else if (
+            doorstepOffer
+            && (doorstepOffer.lifetimeIndex !== land.lifetimeIndex
+              || f.clock >= doorstepOffer.untilClock)
+          ) {
+            doorstepOffer = null;
+          }
+          if (doorstepOffer && doorstepOffer.lifetimeIndex === land.lifetimeIndex) {
+            setNote = doorstepOffer.lit
+              ? ` · the lights of ${doorstepOffer.name} below`
+              : ` · ${doorstepOffer.name}, dark, below`;
           }
         }
       }
@@ -1224,6 +1242,29 @@ const ENTRY_ARM_SECONDS = 0.85;
 /** How long the current dive has been held; any easing off resets it. */
 let entryArm = 0;
 
+/**
+ * The doorstep on offer, latched. The console's settlement note is a promise
+ * — the same snap cone the autoland honours — but a delivered world turns at
+ * 0.35 rad/s and the cone is 0.2 rad wide, so a town crosses it in about a
+ * second: less time than the dive takes to arm, let alone a pilot to read
+ * the offer and act on it. (The headless rig aims and commits in the same
+ * breath for exactly this reason; a person cannot.) So from the moment the
+ * lights are genuinely below, the offer STANDS for a grace window, and a
+ * commit inside it lands on the doorstep the console was advertising when
+ * the pilot decided. Wilderness stays honest: no latch means no offer, and
+ * once the grace lapses the ground under the nose is again the ground you
+ * get.
+ */
+const OFFER_GRACE_S = 6;
+let doorstepOffer: {
+  lifetimeIndex: number;
+  name: string;
+  /** Spot direction in the RECORD frame — planet-fixed, spin-proof. */
+  dir: [number, number, number];
+  lit: boolean;
+  untilClock: number;
+} | null = null;
+
 /** Scene context of the active descent, kept out of the serializable session. */
 let entryBody: FlightBody | null = null;
 const Y_AXIS = new Vector3(0, 1, 0);
@@ -1262,6 +1303,28 @@ function commitGroundfall(body: FlightBody): void {
   // they belong to the scene the camera is in, not to the record.
   const spin = land.hero ? 0 : (worldSpins.get(land.lifetimeIndex) ?? 0);
   const up = new Vector3().copy(ENTRY_DIR).applyAxisAngle(Y_AXIS, -spin).normalize();
+
+  // The latched doorstep, honoured. If the console was advertising a town
+  // inside its grace window, the descent goes THERE: the record-frame spot
+  // is planet-fixed, so however far the mesh has turned since the pilot
+  // read the offer, the autoland delivers the doorstep it promised. The
+  // whole entry frame swings with it — start, dive line and return pose —
+  // so the cinematic remains the same straight descent it always was, just
+  // over the town; the commit already hard-cuts to the cockpit, so the
+  // vantage change lands inside an existing cut.
+  if (
+    !land.hero
+    && doorstepOffer
+    && doorstepOffer.lifetimeIndex === land.lifetimeIndex
+    && f.clock < doorstepOffer.untilClock
+  ) {
+    up.set(doorstepOffer.dir[0], doorstepOffer.dir[1], doorstepOffer.dir[2]).normalize();
+    const townDir = up.clone().applyAxisAngle(Y_AXIS, spin).normalize();
+    const swing = new Quaternion().setFromUnitVectors(ENTRY_DIR, townDir);
+    ENTRY_START.sub(ENTRY_CENTER).applyQuaternion(swing).add(ENTRY_CENTER);
+    ENTRY_DIR.copy(townDir);
+  }
+  doorstepOffer = null;
 
   // The landing frame: east/up/north exactly as terrainField will derive it,
   // so a sun expressed here rises where the ground expects it.

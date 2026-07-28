@@ -254,19 +254,37 @@ for (const action of actionsRaw.split(';').filter(Boolean)) {
     await page.evaluate((n) => window.__tc.newUniverse(Number(n)), arg);
     await page.waitForTimeout(700);
   } else if (kind === 'gfaimsettle') {
-    // gfaimsettle[:body,spot] — park over a settled world's roster spot in
-    // its CURRENT spin frame and commit in the same breath (the world turns
-    // faster than a polite pause). Body index counts landable bodies.
-    const [bIdx = '0', sIdx = '0'] = (arg || '').split(',');
+    // gfaimsettle[:body,spot[,delayMs]] — park over a settled world's roster
+    // spot in its CURRENT spin frame. Without a delay, commit in the same
+    // breath (the world turns faster than a polite pause). WITH a delay,
+    // wait it out parked — the town sweeps on — and then engage in place:
+    // that is the human timeline, and the console's latched offer
+    // (flightControl's doorstepOffer) is what makes it still find the
+    // doorstep. Body index counts landable bodies.
+    const [bIdx = '0', sIdx = '0', delayMs = '0'] = (arg || '').split(',');
     const aimed = await page.evaluate(([b, s]) => {
-      const ok = window.__tcFlight.aimSettlement(Number(b), Number(s));
-      if (ok) window.__tcFlight.input.engage = true;
-      return ok;
+      return window.__tcFlight.aimSettlement(Number(b), Number(s));
     }, [bIdx, sIdx]);
     if (!aimed) errors.push(`gfaimsettle:${arg}: no roster spot to aim at`);
     else console.log('gfaimsettle:', JSON.stringify(aimed));
-    await page.waitForTimeout(250);
-    await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+    if (aimed) {
+      if (Number(delayMs) > 0) await page.waitForTimeout(Number(delayMs));
+      // Engage in place — deliberately NO re-park: the pilot has not chased
+      // the town around the globe, and must not need to.
+      const until = Date.now() + 9000;
+      let committed = false;
+      while (Date.now() < until) {
+        committed = await page.evaluate(() => {
+          if (window.__tcSurface?.state()?.phase != null) return true;
+          window.__tcFlight.input.engage = true;
+          return false;
+        });
+        if (committed) break;
+        await page.waitForTimeout(150);
+      }
+      await page.evaluate(() => { window.__tcFlight.input.engage = false; });
+      if (!committed) errors.push(`gfaimsettle:${arg}: the dive never committed`);
+    }
   } else if (kind === 'gfland' && arg) {
     // gfland:i — park over the i-th LANDABLE body (0 = hero; revealed
     // settled worlds follow) and press engage for real. The near-system
