@@ -64,7 +64,10 @@ export const CERTIFICATIONS: readonly CertTrackDef[] = [
         unlock:
           'the SHELTER — a warm camp the whiteout can be survived from — and the sled deploys wherever you stand',
       },
-      { title: 'Longwalker', unlock: 'a title, and the Guide’s quiet respect' },
+      {
+        title: 'Longwalker',
+        unlock: 'routecraft — connect standing beacons into a named field route',
+      },
     ],
   },
   {
@@ -103,7 +106,10 @@ export const CERTIFICATIONS: readonly CertTrackDef[] = [
         title: 'Assayer',
         unlock: 'reading the sand — the field pulse raises buried seams without waiting for a dust front',
       },
-      { title: 'Deep-Reader', unlock: 'a title the rocks would respect, if they could' },
+      {
+        title: 'Deep-Reader',
+        unlock: 'site appraisal — certify a scanned seam for extraction, preservation, or construction',
+      },
     ],
   },
   {
@@ -121,7 +127,10 @@ export const CERTIFICATIONS: readonly CertTrackDef[] = [
         title: 'Consul',
         unlock: 'the civic call — attending a settlement in person lifts its standing, once a stay',
       },
-      { title: 'Neighbour', unlock: 'a title, and a standing invitation nobody wrote down' },
+      {
+        title: 'Neighbour',
+        unlock: 'local sponsorship — designate a visited settlement as the civic contact for system work',
+      },
     ],
   },
 ];

@@ -5,6 +5,7 @@ import { C } from '../../content/constants';
 import { format } from '../../engine/num';
 import { DOSSIER_BY_ID } from '../../content/dossiers';
 import { CHARTER_BY_ID } from '../../content/charters';
+import { charterGroundEvidence } from '../charterEvidence';
 
 /**
  * Articles waiting to be signed, one per system that has just formed.
@@ -34,6 +35,7 @@ function CharterArticles() {
           {ids.map((id) => {
             const def = CHARTER_BY_ID[id];
             if (!def) return null;
+            const evidence = charterGroundEvidence(s, Number(index), id);
             return (
               <button
                 key={id}
@@ -42,6 +44,10 @@ function CharterArticles() {
               >
                 <b>{def.name}</b>
                 <p>{def.text}</p>
+                <span className={`charter-evidence${evidence.influenced ? ' active' : ''}`}>
+                  <strong>{evidence.label}</strong>
+                  <span>{evidence.detail}</span>
+                </span>
               </button>
             );
           })}

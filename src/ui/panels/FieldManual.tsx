@@ -13,6 +13,13 @@ import { MEGAPROJECTS } from '../../content/megaprojects';
 import { STANDING_FLOOR } from '../../engine/situations';
 import { GROUND_MISSION_SALVAGE } from '../../engine/bridge';
 import { SETDOWN_ARM_M } from '../../engine/atmoflight';
+import {
+  FIELD_ATLAS_REPUTATION,
+  FIELD_ATLAS_SALVAGE,
+  FIELD_ATLAS_THRESHOLD,
+  FIELD_ATLAS_TOTAL,
+  FAMILIARITY_MAX,
+} from '../../engine/fieldProjects';
 
 /**
  * The Guide's practical entry on playing the game. Every number is read from
@@ -276,6 +283,69 @@ export function FieldManual() {
           </p>
         </Entry>
 
+        <Entry title="Field projects: learn a system by changing it">
+          <p>
+            Once five compatible worlds form a system, one of them can raise a{' '}
+            <b>field project</b>. The chain is a small piece of applied planetary science,
+            not a shopping list. First visit the receiving settlement and consult its
+            terminal: that tells you what is failing locally. The instrument then asks for
+            three readings far apart because one reading is a number; three separated
+            readings reveal a gradient. The HUD explains what the comparison is meant to
+            prove as well as which control performs it.
+          </p>
+          <p>
+            The second leg names another real world whose geology or ecology can answer
+            that local problem. A cryogenic core proves stable cold-chain material; a
+            preserved shoreline proves living habitat without destroying it. Return that
+            evidence and take the final calibration reading. The receiving settlement
+            gains a visible greenhouse, exchanger, wetland, harbour beacon, or seed bank.
+          </p>
+          <p>
+            These services change revisits. Greenhouses and heat exchangers steady the
+            scanner through bad weather near town; the exchanger also shortens rough-field
+            extraction. Wetlands and seed banks let the local ecology desk file regional
+            life when you visit. A tideglass harbour beacon permits a much tighter safe
+            set-down around its district.
+          </p>
+          <p>
+            The source and receiver gain a <b>named route</b>, and the freight board starts
+            posting work along routes you established. Projects pay only the flight
+            economy&rsquo;s salvage and faction reputation; they never accelerate TU,
+            Science, or aspect gauges. The lasting reward is the service and connection
+            on the ground. A linked pattern of two beacons and a survey station becomes
+            its own named field circuit at Mobility III.
+          </p>
+        </Entry>
+
+        <Entry title="The Field Atlas, familiarity, and safe field caches">
+          <p>
+            A world&rsquo;s <b>Field Atlas</b> measures breadth: survey, sample, life,
+            landmark, weather, and a civic or network contribution. File any{' '}
+            {FIELD_ATLAS_THRESHOLD} of {FIELD_ATLAS_TOTAL}; rare ecology is an alternate
+            path, not a mandatory spawn hunt. The one-time filing pays{' '}
+            {FIELD_ATLAS_SALVAGE} salvage and {FIELD_ATLAS_REPUTATION} Magrathean
+            reputation, then changes the world&rsquo;s Guide biography permanently.
+          </p>
+          <p>
+            Distinct firsts also build <b>local familiarity</b>, capped at{' '}
+            {FAMILIARITY_MAX}. Familiarity is not a hidden production multiplier. It
+            opens practical return briefs, local weather notes, field-desk recognition,
+            and the service created by a completed project.
+          </p>
+          <p>
+            Mechanically, each familiarity rank extends that world&rsquo;s field-pulse
+            range. At rank five, local dispatch speeds terminal consultations and permits
+            closer approved set-downs. The suit HUD shows the next missing Atlas category,
+            so exploration has a reason without becoming a route of marching orders.
+          </p>
+          <p>
+            Meaningful fieldwork is cached into the normal autosave before it is paid.
+            If a reload interrupts a shore party, return to that world and board the
+            runabout to file the recovered cache through the same verification path.
+            Checkpoints never pay by themselves, so closing the game cannot duplicate a
+            sample, a mark, or a project stage.
+          </p>
+        </Entry>
         <Entry title="Low flight: a landing is a region, not a spot">
           <p>
             Fit the <b>Atmospheric Handling Package</b> and boarding stops meaning

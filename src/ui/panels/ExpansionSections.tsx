@@ -10,9 +10,11 @@
 import { MEGAPROJECTS } from '../../content/megaprojects';
 import { FREIGHT_BY_ID, SEAM_BY_ID } from '../../content/freight';
 import { FACTION_META } from '../../content/contracts';
+import { FIELD_PROJECT_BY_ID } from '../../content/fieldProjects';
 import { D, format, formatDuration } from '../../engine/num';
 import { buildProgress, canStart, isBuilding, isBuilt } from '../../engine/megaprojects';
 import { openPhase } from '../../engine/programmes';
+import type { FieldProjectStage, GameState } from '../../engine/types';
 
 /**
  * The question a phase is waiting on.
@@ -47,6 +49,8 @@ function PhaseQuestion({ id }: { id: string }) {
 import {
   cargoCapacity,
   currentManifestLeg,
+  freightRouteMatch,
+  freightWorldProfile,
   rigCapacity,
   rigLimit,
   rigsStanding,
@@ -250,6 +254,36 @@ export function FreightSection() {
                 const expires = Math.max(0, job.expiresAtMs - s.gameTimeMs);
                 const faction = FACTION_META[def.faction];
                 const rep = def.kind === 'passenger' ? 2 : 1;
+                const fromWorld = s.run.completedPlanets.find(
+                  (world) => world.lifetimeIndex === job.from,
+                );
+                const toWorld = s.run.completedPlanets.find(
+                  (world) => world.lifetimeIndex === job.to,
+                );
+                const match = fromWorld && toWorld
+                  ? freightRouteMatch(
+                      def,
+                      freightWorldProfile(s, fromWorld),
+                      freightWorldProfile(s, toWorld),
+                    )
+                  : null;
+                const namedRoute = Object.values(exp.routes).find(
+                  (route) =>
+                    (route.from === job.from && route.to === job.to)
+                    || (route.from === job.to && route.to === job.from),
+                );
+                const routeReasons = match?.reasons.slice(0, 3).map((reason) => {
+                  const place = reason.side === 'origin' ? 'origin' : 'destination';
+                  const signal = {
+                    type: `${reason.value} world`,
+                    bottleneck: `${reason.value} bottleneck`,
+                    installation: reason.value,
+                    trait: reason.value.replace('-', ' '),
+                    history: reason.value.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase(),
+                    survey: 'survey on file',
+                  }[reason.signal];
+                  return `${place}: ${signal}`;
+                }) ?? [];
                 return (
                   <article key={job.uid} className={`mission-job${fits ? ' job-ready' : ''}`}>
                     <div className="mission-type-row">
@@ -261,6 +295,12 @@ export function FreightSection() {
                     <div className="mission-route">
                       <b>{job.fromName}</b><i>→</i><b>{job.toName}</b><span>{def.mass}t</span>
                     </div>
+                    {(namedRoute || routeReasons.length > 0) && (
+                      <p className="mission-route-reason">
+                        <b>{namedRoute ? `Established lane: ${namedRoute.name}` : 'Why this route'}</b>
+                        {routeReasons.length > 0 && <span>{routeReasons.join('; ')}</span>}
+                      </p>
+                    )}
                     {!fits && (
                       <p className="mission-blocked">
                         Requires {def.mass}t capacity · your hold carries {capacity}t
@@ -280,6 +320,143 @@ export function FreightSection() {
           )}
         </>
       )}
+    </section>
+  );
+}
+
+const FIELD_STAGE_ORDER = ['investigate', 'source', 'return'] as const;
+const FIELD_STAGE_LABEL = {
+  investigate: '1 of 3 / Investigate',
+  source: '2 of 3 / Source evidence',
+  return: '3 of 3 / Return and calibrate',
+  complete: 'Complete',
+} satisfies Record<FieldProjectStage, string>;
+
+function operationWorldName(state: GameState, lifetimeIndex: number): string {
+  return state.run.completedPlanets.find((world) => world.lifetimeIndex === lifetimeIndex)?.name
+    ?? state.operations.heritageWorlds.find((world) => world.lifetimeIndex === lifetimeIndex)?.name
+    ?? state.worldRecords[String(lifetimeIndex)]?.name
+    ?? `World ${lifetimeIndex}`;
+}
+
+/** The saved field ledger: every open multi-world project and every route it has authored. */
+export function FieldOperationsSection() {
+  const rev = useGame((g) => g.rev);
+  void rev;
+  const { s } = useGame.getState();
+  const activeProjects = Object.values(s.expedition.fieldProjects)
+    .filter((project) => project.stage !== 'complete')
+    .sort((a, b) => a.systemIndex - b.systemIndex || a.startedAtMs - b.startedAtMs);
+  const routes = Object.values(s.expedition.routes)
+    .sort((a, b) => b.establishedAtMs - a.establishedAtMs || a.name.localeCompare(b.name));
+
+  return (
+    <section className="field-operations-registry" aria-label="Planetary projects and established field routes">
+      <div className="field-registry-title">
+        <span>
+          <b>Field Operations Registry</b>
+          <em>SAVED PROJECT AND ROUTE LEDGER</em>
+        </span>
+        <span className="field-registry-count">
+          {activeProjects.length} OPEN | {routes.length} ROUTES
+        </span>
+      </div>
+      <p className="field-registry-intro">
+        Field projects join two real worlds. The current stage names where the next useful work
+        happens; completion leaves a local service and a route that freight can use again.
+      </p>
+
+      <div className="field-registry-group">
+        <div className="field-registry-subhead">
+          <b>Active planetary projects</b>
+          <span>{activeProjects.length === 1 ? '1 CASE' : `${activeProjects.length} CASES`}</span>
+        </div>
+        {activeProjects.length === 0 ? (
+          <p className="field-registry-empty">
+            No field project is waiting on a landing. Formed systems file projects when two of
+            their worlds can exchange something useful.
+          </p>
+        ) : (
+          <div className="field-project-list">
+            {activeProjects.map((project) => {
+              const def = FIELD_PROJECT_BY_ID[project.id];
+              const source = operationWorldName(s, project.source);
+              const receiver = operationWorldName(s, project.receiver);
+              const targetIndex = project.stage === 'source' ? project.source : project.receiver;
+              const target = operationWorldName(s, targetIndex);
+              const currentStage = FIELD_STAGE_ORDER.indexOf(
+                project.stage as (typeof FIELD_STAGE_ORDER)[number],
+              );
+              return (
+                <article className="field-project-card" key={project.key}>
+                  <div className="field-project-head">
+                    <span>SYSTEM {project.systemIndex + 1}</span>
+                    <strong>{FIELD_STAGE_LABEL[project.stage]}</strong>
+                  </div>
+                  <h3>{def.name}</h3>
+                  <div className="field-stage-rail" aria-label={`Current stage: ${FIELD_STAGE_LABEL[project.stage]}`}>
+                    {FIELD_STAGE_ORDER.map((stage, index) => (
+                      <span
+                        key={stage}
+                        className={index < currentStage ? 'passed' : index === currentStage ? 'current' : ''}
+                      >
+                        {stage === 'investigate' ? 'Investigate' : stage === 'source' ? 'Source' : 'Return'}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="field-project-route" aria-label={`Project route from ${source} to ${receiver}`}>
+                    <span><small>SOURCE</small><b>{source}</b></span>
+                    <i aria-hidden>to</i>
+                    <span><small>RECEIVER</small><b>{receiver}</b></span>
+                  </div>
+                  <dl className="field-project-details">
+                    <div><dt>Next destination</dt><dd>{target}</dd></div>
+                    <div><dt>Lasting service</dt><dd>{def.service}</dd></div>
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="field-registry-group">
+        <div className="field-registry-subhead">
+          <b>Established routes</b>
+          <span>{routes.length === 1 ? '1 ROUTE' : `${routes.length} ROUTES`}</span>
+        </div>
+        {routes.length === 0 ? (
+          <p className="field-registry-empty">
+            No route has been established yet. Complete a field project, or certify a linked
+            beacon-and-station circuit, to put one on this ledger.
+          </p>
+        ) : (
+          <div className="field-route-list">
+            {routes.map((route) => {
+              const source = operationWorldName(s, route.from);
+              const receiver = operationWorldName(s, route.to);
+              const def = route.kind === 'field-corridor' ? null : FIELD_PROJECT_BY_ID[route.kind];
+              const service = def?.service ?? 'linked field circuit and return navigation service';
+              return (
+                <article className="field-route-card" key={route.id}>
+                  <div className="field-route-head">
+                    <h3>{route.name}</h3>
+                    <strong>{route.trips} {route.trips === 1 ? 'TRIP' : 'TRIPS'}</strong>
+                  </div>
+                  <p className="field-route-endpoints">
+                    {route.from === route.to ? (
+                      <><b>{source}</b><span>local circuit</span></>
+                    ) : (
+                      <><b>{source}</b><i aria-hidden>to</i><b>{receiver}</b></>
+                    )}
+                  </p>
+                  <p className="field-route-service"><b>Service</b> {service}</p>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

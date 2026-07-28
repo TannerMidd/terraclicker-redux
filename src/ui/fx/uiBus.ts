@@ -1,5 +1,11 @@
 import { create } from 'zustand';
 import type { PlanetType } from '../../engine/types';
+import type { GroundProjectSite } from '../../engine/types';
+import type {
+  FieldAtlasSummary,
+  FieldProjectView,
+  GroundNetworkSummary,
+} from '../../engine/fieldProjects';
 
 /**
  * One shore leave, captured at the moment of commitment. The type lives here
@@ -49,6 +55,19 @@ export interface GroundfallSession {
   openRequests: readonly { uid: number; id: string; name: string }[];
   /** Field Certification ranks at commitment. */
   certs: Readonly<Record<string, number>>;
+  /** Formed-system context that gives this place a civic identity. */
+  systemIndex: number | null;
+  charterId: string | null;
+  systemSpecialty: string | null;
+  /** The currently relevant multi-world project and its persistent result. */
+  project: FieldProjectView | null;
+  projectSites: readonly GroundProjectSite[];
+  /** Knowledge earned on earlier visits, never a production multiplier. */
+  familiarity: number;
+  familiarityService: string | null;
+  atlas: FieldAtlasSummary;
+  network: GroundNetworkSummary;
+  routes: readonly { id: string; name: string; from: number; to: number }[];
 }
 
 export interface Toast {

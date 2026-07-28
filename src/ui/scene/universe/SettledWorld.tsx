@@ -107,9 +107,10 @@ export function SettlementLights({
   // on screen the moment it happens.
   const standing = useGame((g) => standingOf(g.s, record.lifetimeIndex));
   const life = useGame((g) => worldRecord(g.s, record.lifetimeIndex));
+  const rev = useGame((g) => g.rev);
   const traits = useMemo(
-    () => (life ? worldTraits(life, standing) : []),
-    [life, standing],
+    () => (life ? worldTraits(life, standing, useGame.getState().s) : []),
+    [life, standing, rev],
   );
   const spots = useMemo(
     () => settlementSpots(record, variant, standing, traits),

@@ -91,6 +91,12 @@ import { weatherAt, WEATHER_LABEL } from '../../engine/weather';
 import { openRequestsAt } from '../../engine/bridge';
 import { standingOf } from '../../engine/situations';
 import { worldRecord, worldTraits } from '../../engine/worldRecords';
+import {
+  fieldAtlas,
+  fieldProjectAt,
+  familiarityService,
+  groundNetwork,
+} from '../../engine/fieldProjects';
 import { beginGroundfall, entryProgress, stepSurface, surfaceLive } from './surface/surfaceControl';
 import {
   SETTLEMENT_CLOSEUP_MULT,
@@ -1177,7 +1183,7 @@ function stepDeepField(dt: number, forward: Vector3, live: boolean): void {
                 roster.length,
                 record,
                 SETTLEMENT_CLOSEUP_MULT,
-                settlementCharacter(life ? worldTraits(life, standing) : []),
+                settlementCharacter(life ? worldTraits(life, standing, st) : []),
                 standing,
               );
             doorstepOffer = {
@@ -1369,6 +1375,14 @@ function commitGroundfall(body: FlightBody): void {
     : st.run.completedPlanets.find((r) => r.lifetimeIndex === land.lifetimeIndex) ?? null;
   const standing = land.hero ? 1 : standingOf(st, land.lifetimeIndex);
   const life = land.hero ? null : worldRecord(st, land.lifetimeIndex);
+  const completedPosition = land.hero
+    ? -1
+    : st.run.completedPlanets.findIndex((world) => world.lifetimeIndex === land.lifetimeIndex);
+  const systemIndex = completedPosition >= 0
+    ? Math.floor(completedPosition / C.PLANETS_PER_SYSTEM)
+    : null;
+  const groundRecord = st.expedition.groundWorlds[land.key];
+  const project = fieldProjectAt(st, land.lifetimeIndex);
 
   const session: GroundfallSession = {
     worldKey: land.key,
@@ -1388,11 +1402,32 @@ function commitGroundfall(body: FlightBody): void {
     completed: !land.hero,
     gameTimeMs: st.gameTimeMs,
     standing,
-    traits: life ? worldTraits(life, standing) : [],
+    traits: life ? worldTraits(life, standing, st) : [],
     installations: record ? [...record.installations] : [],
     quirks: land.hero ? [...st.planet.quirks] : record ? [...record.quirks] : [],
     openRequests: openRequestsAt(st, land.lifetimeIndex),
     certs: { ...st.expedition.certs },
+    systemIndex,
+    charterId: systemIndex === null ? null : st.run.charters[String(systemIndex)] ?? null,
+    systemSpecialty:
+      systemIndex === null ? null : st.operations.systemSpecialties[String(systemIndex)] ?? null,
+    project,
+    projectSites: Object.values(groundRecord?.projectSites ?? {})
+      .map((site) => ({ ...site }))
+      .sort((a, b) => a.atMs - b.atMs || a.id.localeCompare(b.id)),
+    familiarity: groundRecord?.familiarity ?? 0,
+    familiarityService: familiarityService(groundRecord),
+    atlas: fieldAtlas(groundRecord),
+    network: groundNetwork(groundRecord),
+    routes: Object.values(st.expedition.routes)
+      .filter((route) => route.from === land.lifetimeIndex || route.to === land.lifetimeIndex)
+      .map((route) => ({
+        id: route.id,
+        name: route.name,
+        from: route.from,
+        to: route.to,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
   };
 
   // The dive is flown from the canopy; a chase boom through a fireball is

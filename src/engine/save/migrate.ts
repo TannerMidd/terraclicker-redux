@@ -564,6 +564,55 @@ export const MIGRATIONS: readonly Migration[] = [
       return { ...raw, expedition: next };
     },
   },
+  {
+    // v23 -> v24: the ground ledger becomes an atlas and long-form planetary
+    // projects gain their own deterministic state. Existing expeditions keep
+    // every survey, sample, species, mark, and payout; newly observable facts
+    // begin empty because older saves never recorded them.
+    from: 23,
+    migrate: (raw) => {
+      const exp =
+        typeof raw['expedition'] === 'object' && raw['expedition'] !== null
+          ? (raw['expedition'] as Record<string, unknown>)
+          : {};
+      const ground =
+        typeof exp['groundWorlds'] === 'object' && exp['groundWorlds'] !== null
+          ? (exp['groundWorlds'] as Record<string, unknown>)
+          : {};
+      const groundWorlds: Record<string, unknown> = {};
+      for (const [key, entry] of Object.entries(ground)) {
+        const world =
+          typeof entry === 'object' && entry !== null
+            ? (entry as Record<string, unknown>)
+            : {};
+        groundWorlds[key] = {
+          ...world,
+          landmarks:
+            typeof world['landmarks'] === 'object' && world['landmarks'] !== null
+              ? world['landmarks']
+              : {},
+          weather:
+            typeof world['weather'] === 'object' && world['weather'] !== null
+              ? world['weather']
+              : {},
+          civicVisits:
+            typeof world['civicVisits'] === 'number' ? world['civicVisits'] : 0,
+          familiarity:
+            typeof world['familiarity'] === 'number' ? world['familiarity'] : 0,
+          atlasCompletedAtMs:
+            typeof world['atlasCompletedAtMs'] === 'number' ? world['atlasCompletedAtMs'] : null,
+          projectSites:
+            typeof world['projectSites'] === 'object' && world['projectSites'] !== null
+              ? world['projectSites']
+              : {},
+        };
+      }
+      return {
+        ...raw,
+        expedition: { ...exp, groundWorlds, fieldProjects: {}, routes: {}, groundCheckpoints: {} },
+      };
+    },
+  },
 ];
 
 export function runMigrations(raw: Record<string, unknown>): Record<string, unknown> {

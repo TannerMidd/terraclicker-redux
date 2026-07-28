@@ -31,6 +31,8 @@ export const WORLD_BIOGRAPHY: Composition = {
         { id: 'thin', text: 'Sparsely built and unbothered by it.', requires: ['austere'] },
         { id: 'dimming', text: 'Fewer lights each survey.', requires: ['neglected'] },
         { id: 'odd', text: 'Reported as habitable, with reservations.', requires: ['peculiar'] },
+        { id: 'known', text: 'Mapped from the ground, not merely described from orbit.', requires: ['well-known'] },
+        { id: 'joined', text: 'Connected now, in the practical rather than sentimental sense.', requires: ['connected'] },
       ],
     },
     {
@@ -96,6 +98,21 @@ export const WORLD_BIOGRAPHY: Composition = {
           id: 'marked',
           text: 'A mark stands on it that somebody walked out and planted, which the maps mention first.',
           requires: ['waymarked'],
+        },
+        {
+          id: 'restored',
+          text: 'A project built from two worlds is working here now, and has acquired a waiting list.',
+          requires: ['restored'],
+        },
+        {
+          id: 'connected',
+          text: 'Its named route appears on local signs before the world name does.',
+          requires: ['connected'],
+        },
+        {
+          id: 'atlas',
+          text: "The Guide entry includes field notes, weather, life and somebody's muddy bootprint.",
+          requires: ['well-known'],
         },
         {
           id: 'stopped',

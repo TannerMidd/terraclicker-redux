@@ -94,7 +94,7 @@ function World() {
             );
             const record = worldRecord(s, world.lifetimeIndex);
             const standing = standingOf(s, world.lifetimeIndex);
-            const traits = record ? worldTraits(record, standing) : [];
+            const traits = record ? worldTraits(record, standing, s) : [];
             return (
               <div key={`${world.lifetimeIndex}-${world.seed}`} className="dr-world">
                 <div className="dr-world-head">
@@ -107,7 +107,7 @@ function World() {
                   </span>
                   {traits.map((t) => <span key={t}>{t}</span>)}
                 </div>
-                {record && <p className="dr-world-bio">{worldBiography(record, standing)}</p>}
+                {record && <p className="dr-world-bio">{worldBiography(record, standing, s)}</p>}
                 <div className="dr-world-foot">
                   {isCandidate && <span className="dr-chip" style={{ borderColor: 'rgba(90,215,232,.4)', color: 'var(--atmo)' }}>CURRENT CANDIDATE</span>}
                   {isArchived && <span className="dr-chip">HERITAGE WORLD</span>}

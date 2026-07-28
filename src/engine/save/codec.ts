@@ -59,7 +59,42 @@ function cloneExpedition(expedition: GameState['expedition']): GameState['expedi
           sites: Object.fromEntries(Object.entries(w.sites).map(([id, s]) => [id, { ...s }])),
           samples: { ...w.samples },
           species: { ...w.species },
+          landmarks: { ...w.landmarks },
+          weather: { ...w.weather },
+          projectSites: Object.fromEntries(
+            Object.entries(w.projectSites).map(([id, site]) => [id, { ...site }]),
+          ),
           marks: w.marks.map((m) => ({ ...m, dir: [...m.dir] as [number, number, number] })),
+        },
+      ]),
+    ),
+    fieldProjects: Object.fromEntries(
+      Object.entries(expedition.fieldProjects).map(([key, project]) => [key, { ...project }]),
+    ),
+    routes: Object.fromEntries(
+      Object.entries(expedition.routes).map(([id, route]) => [id, { ...route }]),
+    ),
+    groundCheckpoints: Object.fromEntries(
+      Object.entries(expedition.groundCheckpoints).map(([key, checkpoint]) => [
+        key,
+        {
+          ...checkpoint,
+          haul: checkpoint.haul.map((item) => ({ ...item })),
+          sites: { ...checkpoint.sites },
+          species: [...checkpoint.species],
+          evidence: {
+            ...checkpoint.evidence,
+            landmarks: checkpoint.evidence.landmarks ? [...checkpoint.evidence.landmarks] : undefined,
+            readingDirs: checkpoint.evidence.readingDirs?.map((dir) => [...dir] as [number, number, number]),
+            chartedIds: checkpoint.evidence.chartedIds
+              ? [...checkpoint.evidence.chartedIds]
+              : undefined,
+            weathered: checkpoint.evidence.weathered ? [...checkpoint.evidence.weathered] : undefined,
+            marks: checkpoint.evidence.marks?.map((mark) => ({
+              ...mark,
+              dir: [...mark.dir] as [number, number, number],
+            })),
+          },
         },
       ]),
     ),

@@ -107,7 +107,7 @@ import {
   type LocalWeather,
   type WeatherKind,
 } from '../../../engine/weather';
-import type { GroundEvidence, GroundMark, GroundSiteOutcome, SampleHaul } from '../../../engine/types';
+import type { GroundCheckpointState, GroundEvidence, GroundMark, GroundProjectKind, GroundSiteOutcome, SampleHaul } from '../../../engine/types';
 import * as audio from '../../audio/audio';
 
 export type { GroundfallSession };
@@ -127,7 +127,7 @@ export const MINING_VERBS: readonly MiningVerb[] = ['break', 'core', 'prospect',
  * pulse always, and — as certification opens the verbs — the marks. The
  * wheel chooses, exactly as it does at a seam.
  */
-export type FieldVerb = 'pulse' | 'beacon' | 'station' | 'shelter' | 'repair';
+export type FieldVerb = 'pulse' | 'reading' | 'beacon' | 'station' | 'shelter' | 'repair';
 /** Holding engage this long plants the selected mark at your feet. */
 export const MARK_PLANT_SECONDS = 1.6;
 /** Standing this close to a named landmark counts as having reached it. */
@@ -140,6 +140,14 @@ const MARK_REGION_M = 30_000;
 const RESONATOR_RANGE = 7;
 /** Reading the resonance is deliberate work — twice a seam's dwell. */
 const RESONATOR_READ_SECONDS = 1.8;
+/** The settlement terminal is a place, not a town-wide radio button. */
+export const PROJECT_TERMINAL_RANGE_M = 32;
+/** Long enough to read the brief, short enough not to punish curiosity. */
+export const PROJECT_CONTACT_SECONDS = 1.6;
+/** One attended instrument cycle. */
+export const PROJECT_READING_SECONDS = 1.25;
+/** Readings closer than this are repetition, not a comparison. */
+export const PROJECT_READING_SEPARATION_M = 120;
 
 // ————— Tuning —————
 
@@ -185,7 +193,8 @@ export function verbHits(verb: MiningVerb, richness: number): number {
  * crack on the crystal and the moment it gives can never disagree.
  */
 export function verbHitsNow(verb: MiningVerb, richness: number): number {
-  return Math.max(1, verbHits(verb, richness) - surfaceLive.weather.hitsBonus);
+  const serviceBonus = projectServiceNear('heat-exchanger') ? 1 : 0;
+  return Math.max(1, verbHits(verb, richness) - surfaceLive.weather.hitsBonus - serviceBonus);
 }
 /** Samples a completed verb hands the suit. */
 export function verbYield(verb: MiningVerb, richness: number): number {
@@ -406,6 +415,22 @@ export const surfaceLive = {
   weathered: new Set<string>(),
   /** The walker entered a settlement's heart this stay. */
   civicStood: false,
+  /** The settlement's project terminal was deliberately consulted this stay. */
+  contacted: false,
+  /** Accepted project readings this stay. Kept explicit for HUD/dev counters. */
+  readings: 0,
+  /** Local positions make the 120 m comparison rule inspectable and deterministic. */
+  readingPositions: [] as { x: number; z: number }[],
+  /** Planet-space source of truth for spacing across a recovered landing. */
+  readingDirs: [] as [number, number, number][],
+  /** Bumped when an instrument reading files; visual layers may key off it. */
+  readingNonce: 0,
+  /**
+   * Which project dwell currently owns scanCharge, preventing charge leakage.
+   */
+  projectDwell: null as 'terminal' | 'reading' | null,
+  /** A completed dwell must be released before the next instrument cycle. */
+  projectNeedsRelease: false,
   /** A buried seam was worked this stay (a Geology first). */
   buriedWorked: false,
 
@@ -499,6 +524,10 @@ let priorSpecies: Set<string> = new Set();
 let priorStates: Map<string, GroundSiteOutcome> = new Map();
 /** DEV harness only: pin the sky to a kind for visual verification. */
 let weatherOverride: WeatherKind | null = null;
+/** Change-only autosave cadence for evidence gathered by proximity or flight. */
+const FIELD_CHECKPOINT_INTERVAL_S = 2;
+let checkpointElapsed = 0;
+let checkpointFingerprint = '';
 /** Bake resolution. Tests shrink it; the game never touches it. */
 let tierSpecs: { near: { texels: number; extent: number }; far: { texels: number; extent: number } } = {
   near: TIER_NEAR,
@@ -548,6 +577,24 @@ export function surfaceLead(): { x: number; z: number; stage: 1 | 2 } | null {
   return { ...surfaceLive.leadAt, stage: surfaceLive.leadStage };
 }
 
+type ReceiverProjectWork = {
+  project: NonNullable<GroundfallSession['project']>;
+  required: 1 | 3;
+};
+
+/** Receiver-side work that can honestly be performed on this landing. */
+function receiverProjectWork(): ReceiverProjectWork | null {
+  const project = session?.project;
+  if (!project || project.role !== 'receiver') return null;
+  if (project.stage === 'investigate') return { project, required: 3 };
+  if (project.stage === 'return') return { project, required: 1 };
+  return null;
+}
+
+/** Live reading goal for HUD, tests, and the headless verification hook. */
+export function projectReadingGoal(): 0 | 1 | 3 {
+  return receiverProjectWork()?.required ?? 0;
+}
 /**
  * The field verbs this walker is certified for, `pulse` always first. Repair
  * joins only within reach of a settlement — the verb exists where the town
@@ -557,6 +604,7 @@ export function fieldVerbs(): FieldVerb[] {
   const s = session;
   const out: FieldVerb[] = ['pulse'];
   if (!s) return out;
+  if (surfaceLive.contacted && receiverProjectWork()) out.push('reading');
   const certs = s.certs;
   if ((certs['mobility'] ?? 0) >= 1) out.push('beacon');
   if ((certs['survey'] ?? 0) >= 1) out.push('station');
@@ -573,6 +621,14 @@ function nearSettlementD(): number {
     if (dd < best) best = dd;
   }
   return best;
+}
+/** Completed civic works are usable facilities, not merely settlement props. */
+const PROJECT_SERVICE_RADIUS_M = 220;
+function completedProjectService(kind: GroundProjectKind): boolean {
+  return Boolean(session?.projectSites.some((site) => site.kind === kind && site.state === 'complete'));
+}
+function projectServiceNear(kind: GroundProjectKind): boolean {
+  return completedProjectService(kind) && nearSettlementD() <= PROJECT_SERVICE_RADIUS_M;
 }
 /** A repair is offered a little inside its validity, so the refusal is rare. */
 const REPAIR_OFFER_M = 150;
@@ -628,6 +684,166 @@ export function surfaceProspects(): DepositSpec[] {
   });
 }
 
+function surfaceSitesSnapshot(): Record<string, GroundSiteOutcome> {
+  return Object.fromEntries(surfaceLive.outcomes);
+}
+
+function surfaceEvidenceSnapshot(): GroundEvidence {
+  return {
+    landmarks: [...surfaceLive.landmarksStood],
+    civic: surfaceLive.civicStood,
+    weathered: [...surfaceLive.weathered],
+    marks: surfaceLive.marksPlaced.map((mark) => ({ kind: mark.kind, dir: [...mark.dir] as [number, number, number] })),
+    buriedWorked: surfaceLive.buriedWorked,
+    contacted: surfaceLive.contacted,
+    readings: surfaceLive.readings,
+    readingDirs: surfaceLive.readingDirs.map((dir) => [...dir] as [number, number, number]),
+    lead: surfaceLive.leadDone,
+    flew: surfaceLive.flew,
+    setdowns: surfaceLive.setdowns,
+    charted: surfaceLive.charted.size,
+    chartedIds: [...surfaceLive.charted],
+    rangeM: Math.round(surfaceLive.rangeM),
+  };
+}
+
+function hasSurfaceReport(
+  haul: readonly SampleHaul[],
+  sites: Readonly<Record<string, GroundSiteOutcome>>,
+  species: readonly string[],
+  evidence: GroundEvidence,
+): boolean {
+  return haul.length > 0
+    || Object.keys(sites).length > 0
+    || species.length > 0
+    || (evidence.landmarks?.length ?? 0) > 0
+    || Boolean(evidence.civic)
+    || Boolean(evidence.contacted)
+    || (evidence.readings ?? 0) > 0
+    || (evidence.weathered?.length ?? 0) > 0
+    || (evidence.marks?.length ?? 0) > 0
+    || Boolean(evidence.buriedWorked)
+    || Boolean(evidence.lead)
+    || Boolean(evidence.flew)
+    || (evidence.setdowns ?? 0) > 0
+    || (evidence.charted ?? 0) > 0
+    || (evidence.rangeM ?? 0) > 0;
+}
+
+function surfaceReportFingerprint(
+  haul: readonly SampleHaul[],
+  sites: Readonly<Record<string, GroundSiteOutcome>>,
+  species: readonly string[],
+  evidence: GroundEvidence,
+): string {
+  return JSON.stringify({
+    haul: haul.map((item) => ({ ...item })).sort((a, b) => `${a.kind}:${a.method}`.localeCompare(`${b.kind}:${b.method}`)),
+    sites: Object.entries(sites).sort(([a], [b]) => a.localeCompare(b)),
+    species: [...species].sort(),
+    evidence,
+  });
+}
+
+/** Persist an unbanked report without paying it or advancing any system. */
+function checkpointSurface(force = false): void {
+  const s = session;
+  const live = surfaceLive;
+  if (!s || !['walk', 'skim', 'fly'].includes(live.phase)) return;
+  if (force) checkpointElapsed = 0;
+  const haul = live.haul.map((item) => ({ ...item }));
+  const sites = surfaceSitesSnapshot();
+  const species = [...live.speciesSeen];
+  const evidence = surfaceEvidenceSnapshot();
+  if (!hasSurfaceReport(haul, sites, species, evidence)) return;
+  const fingerprint = surfaceReportFingerprint(haul, sites, species, evidence);
+  if (fingerprint === checkpointFingerprint) return;
+  actions.checkpointGround(s.worldKey, haul, sites, species, evidence);
+  checkpointFingerprint = fingerprint;
+}
+
+/** Rehydrate the suit ledger; the ordinary boarding path still verifies and pays it. */
+function restoreSurfaceCheckpoint(checkpoint: GroundCheckpointState): void {
+  const live = surfaceLive;
+  const evidence = checkpoint.evidence;
+  live.haul = checkpoint.haul.map((item) => ({ ...item }));
+  live.samples = live.haul.reduce((sum, item) => sum + item.n, 0);
+  live.outcomes.clear();
+  live.mined.clear();
+  for (const [id, outcome] of Object.entries(checkpoint.sites)) {
+    live.outcomes.set(id, outcome);
+    if (outcome === 'worked' || outcome === 'prospected') live.mined.add(id);
+  }
+  live.surveyCredit = live.haul.reduce(
+    (sum, item) => sum + item.n * (item.method === 'core' ? 2 : 1),
+    [...live.outcomes.values()].filter((outcome) => outcome === 'preserved').length,
+  );
+  live.speciesSeen = new Set(checkpoint.species);
+  live.speciesNonce = live.speciesSeen.size > 0 ? 1 : 0;
+  live.landmarksStood = new Set(evidence.landmarks ?? []);
+  live.weathered = new Set(evidence.weathered ?? []);
+  live.civicStood = Boolean(evidence.civic);
+  live.buriedWorked = Boolean(evidence.buriedWorked);
+  live.contacted = Boolean(evidence.contacted);
+  live.readingDirs = (evidence.readingDirs ?? [])
+    .filter((dir) => dir.length === 3 && dir.every(Number.isFinite))
+    .slice(0, 3)
+    .map((dir) => [...dir] as [number, number, number]);
+  live.readingPositions = [];
+  if (params) {
+    for (const dir of live.readingDirs) {
+      DRY_DIR.set(dir[0], dir[1], dir[2]);
+      dirToLocal(params, DRY_DIR, PAD_LOCAL);
+      if (!Number.isFinite(PAD_LOCAL.x) || !Number.isFinite(PAD_LOCAL.z)) continue;
+      live.readingPositions.push({ x: PAD_LOCAL.x, z: PAD_LOCAL.z });
+    }
+  }
+  live.readings = Math.min(3, Math.max(evidence.readings ?? 0, live.readingDirs.length));
+  live.readingNonce = live.readings;
+  live.leadDone = Boolean(evidence.lead);
+  live.leadNonce = live.leadDone ? 1 : 0;
+  live.flew = Boolean(evidence.flew);
+  live.setdowns = Math.max(0, Math.floor(evidence.setdowns ?? 0));
+  live.charted = new Set(evidence.chartedIds ?? []);
+  while (live.charted.size < Math.max(0, Math.floor(evidence.charted ?? 0))) {
+    live.charted.add(`checkpoint:${live.charted.size}`);
+  }
+  live.sweepNonce = live.charted.size > 0 ? 1 : 0;
+  live.rangeM = Math.max(0, evidence.rangeM ?? 0);
+  live.marksPlaced = [];
+  if (params) {
+    for (const mark of evidence.marks ?? []) {
+      DRY_DIR.set(mark.dir[0], mark.dir[1], mark.dir[2]);
+      dirToLocal(params, DRY_DIR, PAD_LOCAL);
+      const visible = Number.isFinite(PAD_LOCAL.x)
+        && Number.isFinite(PAD_LOCAL.z)
+        && Math.hypot(PAD_LOCAL.x, PAD_LOCAL.z) <= MARK_REGION_M;
+      const x = visible ? PAD_LOCAL.x : 0;
+      const z = visible ? PAD_LOCAL.z : 0;
+      live.marksPlaced.push({
+        kind: mark.kind,
+        dir: [...mark.dir] as [number, number, number],
+        x,
+        z,
+      });
+      if (visible) {
+        regionMarks.push({
+          kind: mark.kind,
+          x,
+          y: tiers ? heightAt(params, tiers, x, z) : 0,
+          z,
+          fresh: true,
+        });
+      }
+    }
+  }
+  live.markNonce = live.marksPlaced.length;
+  checkpointFingerprint = surfaceReportFingerprint(
+    live.haul,
+    surfaceSitesSnapshot(),
+    [...live.speciesSeen],
+    surfaceEvidenceSnapshot(),
+  );
+}
 // ————— Entry / exit —————
 
 /**
@@ -732,7 +948,7 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.scanned.clear();
   live.scanCharge = 0;
   live.scanning = false;
-  live.scanRange = surfaceScanRange(st.expedition);
+  live.scanRange = surfaceScanRange(st.expedition) * (1 + Math.min(0.24, s.familiarity * 0.04));
   live.verbIdx = 0;
   live.target = null;
   live.mineProgress = 0;
@@ -764,6 +980,13 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.buriedWorked = false;
   live.leadStage = (leadTargetAt(st, s.lifetimeIndex) ?? 0) as 0 | 1 | 2;
   live.leadAt = null;
+  live.contacted = false;
+  live.readings = 0;
+  live.readingPositions = [];
+  live.readingDirs = [];
+  live.readingNonce = 0;
+  live.projectDwell = null;
+  live.projectNeedsRelease = false;
   live.leadDone = false;
   live.leadNonce = 0;
   regionMarks = [];
@@ -808,6 +1031,8 @@ export function beginGroundfall(s: GroundfallSession): void {
   surfaceInput.descend = false;
   surfaceInput.view = false;
 
+  checkpointElapsed = 0;
+  checkpointFingerprint = '';
   useUiBus.getState().setGroundfall(s);
   audio.entryRoarStart();
 }
@@ -887,20 +1112,8 @@ export function beginLift(): void {
 function bankSamples(): void {
   const s = session;
   if (!s) return;
-  const sites: Record<string, GroundSiteOutcome> = {};
-  for (const [id, outcome] of surfaceLive.outcomes) sites[id] = outcome;
-  const evidence: GroundEvidence = {
-    landmarks: [...surfaceLive.landmarksStood],
-    civic: surfaceLive.civicStood,
-    weathered: [...surfaceLive.weathered],
-    marks: surfaceLive.marksPlaced.map((m) => ({ kind: m.kind, dir: m.dir })),
-    buriedWorked: surfaceLive.buriedWorked,
-    lead: surfaceLive.leadDone,
-    flew: surfaceLive.flew,
-    setdowns: surfaceLive.setdowns,
-    charted: surfaceLive.charted.size,
-    rangeM: Math.round(surfaceLive.rangeM),
-  };
+  const sites = surfaceSitesSnapshot();
+  const evidence = surfaceEvidenceSnapshot();
   actions.bankGroundSamples(
     s.worldKey,
     s.name,
@@ -922,8 +1135,17 @@ function bankSamples(): void {
   surfaceLive.leadDone = false;
   surfaceLive.flew = false;
   surfaceLive.setdowns = 0;
+  surfaceLive.contacted = false;
+  surfaceLive.readings = 0;
+  surfaceLive.readingPositions = [];
+  surfaceLive.readingDirs = [];
+  surfaceLive.readingNonce = 0;
+  surfaceLive.projectDwell = null;
+  surfaceLive.projectNeedsRelease = false;
   surfaceLive.charted.clear();
   surfaceLive.rangeM = 0;
+  checkpointElapsed = 0;
+  checkpointFingerprint = '';
 }
 
 /** Hard exit — takeoff finished, or the session must end now. */
@@ -996,9 +1218,11 @@ function stepGeneration(): number {
       if (record) {
         for (const [id, st] of Object.entries(record.sites)) priorStates.set(id, st.s);
       }
-      deposits = allSites.filter(
-        (d) => siteMinable(record?.sites[d.id]) && (!d.buried || surfaceLive.buriedRevealed),
-      );
+      deposits = allSites.filter((d) => {
+        const active = surfaceLive.outcomes.get(d.id);
+        const known = active === undefined ? record?.sites[d.id] : { s: active, atMs: 0 };
+        return siteMinable(known) && (!d.buried || surfaceLive.buriedRevealed);
+      });
       // The coarse lattice: the region's memorable places.
       landmarks = landmarkSites(params, tiers, session?.quirks ?? []);
       // A delivered world's settlements, projected from the roster the
@@ -1044,6 +1268,20 @@ function stepGeneration(): number {
             }
           }
         }
+      }
+      const checkpoint = session
+        ? useGame.getState().s.expedition.groundCheckpoints[session.worldKey]
+        : undefined;
+      if (checkpoint) {
+        restoreSurfaceCheckpoint(checkpoint);
+        rebuildWorkableField();
+        useUiBus.getState().addToast({
+          kind: 'info',
+          kicker: 'FIELD CACHE RECOVERED',
+          title: 'Your unfiled shore-party report is back in the suit ledger',
+          body: 'Samples, site decisions, project readings, marks, species, and flight evidence remain unbanked. Board the runabout to verify and file them.',
+          ttlMs: 7200,
+        });
       }
       // The resonator, where this landing is the lead's open question.
       if (surfaceLive.leadStage > 0) placeResonator();
@@ -1246,12 +1484,13 @@ export interface SurfaceStepResult {
 
 /** Recompute the workable field from the census and the stay's own ledger. */
 function rebuildWorkableField(): void {
-  deposits = allSites.filter(
-    (d) =>
-      siteMinable(
-        priorStates.has(d.id) ? { s: priorStates.get(d.id)!, atMs: 0 } : undefined,
-      ) && (!d.buried || surfaceLive.buriedRevealed),
-  );
+  deposits = allSites.filter((d) => {
+    const active = surfaceLive.outcomes.get(d.id);
+    const known = active === undefined && priorStates.has(d.id)
+      ? { s: priorStates.get(d.id)!, atMs: 0 }
+      : active === undefined ? undefined : { s: active, atMs: 0 };
+    return siteMinable(known) && (!d.buried || surfaceLive.buriedRevealed);
+  });
 }
 
 /** Seconds between outlook refreshes — a forecast is not a per-frame need. */
@@ -1273,11 +1512,13 @@ let ecologyAt = -100;
 function catalogueSpecies(ids: readonly string[]): void {
   const live = surfaceLive;
   const fresh: string[] = [];
+  const speciesBefore = live.speciesSeen.size;
   for (const id of ids) {
     if (live.speciesSeen.has(id)) continue;
     live.speciesSeen.add(id);
     if (!priorSpecies.has(id)) fresh.push(id);
   }
+  if (live.speciesSeen.size > speciesBefore) checkpointSurface(true);
   if (fresh.length === 0) return;
   live.speciesNonce++;
   const first = SPECIES_BY_ID[fresh[0]!];
@@ -1320,9 +1561,11 @@ function stepEcology(): void {
     // a dark district notices visitors MORE (Phase 5). The civic species
     // still need the lights; nothing nocturnal lives on a porch.
     live.civicStood = true;
-    if (sd.lit && civicSpecies.length > 0) {
-      catalogueSpecies(civicSpecies.map((s) => s.id));
+    const ecologyDesk = completedProjectService('wetland') || completedProjectService('seed-bank');
+    if ((sd.lit || ecologyDesk) && civicSpecies.length > 0) {
+      catalogueSpecies(civicSpecies.map((species) => species.id));
     }
+    if (ecologyDesk) catalogueSpecies(ambientSpecies.map((species) => species.id));
     break;
   }
   // Reached is reached: standing at a named place is Mobility's business.
@@ -1358,7 +1601,9 @@ function stepWeather(gameTimeMs: number): void {
   // Aboard a rank-2 skimmer the mast holds the instrument steady: weather
   // may still FEED the pulse (storms), it may no longer choke it. The rail
   // survives whiteouts the same way — see the HUD's compass.
-  live.stabilised = live.phase === 'skim' && live.skimRank >= SKIM_STABILISED_RANK;
+  const civicWeatherService = projectServiceNear('greenhouse') || projectServiceNear('heat-exchanger');
+  live.stabilised = (live.phase === 'skim' && live.skimRank >= SKIM_STABILISED_RANK)
+    || civicWeatherService;
   live.scanRangeNow =
     live.scanRange *
     (live.stabilised ? Math.max(1, live.weather.scanRangeMult) : live.weather.scanRangeMult);
@@ -1499,6 +1744,13 @@ export function stepSurface(dt: number, t: number): SurfaceStepResult {
         return { done: restore };
       }
       break;
+    }
+  }
+  if (live.phase === 'walk' || live.phase === 'skim' || live.phase === 'fly') {
+    checkpointElapsed += dt;
+    if (checkpointElapsed >= FIELD_CHECKPOINT_INTERVAL_S) {
+      checkpointElapsed = 0;
+      checkpointSurface();
     }
   }
   void t;
@@ -1991,11 +2243,15 @@ function airSurfaceY(p: SurfaceParams, ground: number): number {
 
 /** Nobody sets a runabout down in somebody's plaza. */
 function districtBlocked(x: number, z: number): boolean {
-  for (const d of settlements) {
-    if (Math.hypot(d.x - x, d.z - z) < SETDOWN_DISTRICT_CLEAR_M) return true;
+  const serviceMult = completedProjectService('harbour-beacon')
+    ? 0.45
+    : (session?.familiarity ?? 0) >= 5 ? 0.75 : 1;
+  for (const district of settlements) {
+    if (Math.hypot(district.x - x, district.z - z) < SETDOWN_DISTRICT_CLEAR_M * serviceMult) return true;
   }
   return false;
 }
+
 
 let setdownPollAt = -1;
 let setdownHold = 0;
@@ -2204,6 +2460,7 @@ function stepFlyScript(dt: number): void {
       live.flyScript = null;
       live.vel.set(0, 0, 0);
       live.flew = true;
+      checkpointSurface(true);
     }
     audio.surfaceWindSet(0.35 + e * 0.3, live.sunUp);
     return;
@@ -2253,6 +2510,7 @@ function finishSetdown(x: number, z: number): void {
   audio.touchdownThud();
   audio.surfaceWindSet(0.5, live.sunUp);
   live.setdowns++;
+  checkpointSurface(true);
 }
 
 /**
@@ -2332,6 +2590,183 @@ function collectYield(d: DepositSpec, verb: MiningVerb): void {
   live.mineNonce++;
   audio.crystalShatter();
   audio.sampleChime();
+  checkpointSurface(true);
+}
+
+/** Give project work sole ownership of the shared hold-progress ring. */
+function enterProjectDwell(mode: 'terminal' | 'reading'): void {
+  const live = surfaceLive;
+  if (live.projectDwell === mode) return;
+  live.projectDwell = mode;
+  live.scanCharge = 0;
+}
+
+/** Hand the ring back cleanly to seams, the resonator, marks, or the pulse. */
+function leaveProjectDwell(): void {
+  const live = surfaceLive;
+  if (live.projectDwell === null) return;
+  live.projectDwell = null;
+  live.scanCharge = 0;
+}
+
+/** Nearest prior instrument, so every accepted reading is pairwise separated. */
+function nearestProjectReadingM(x: number, z: number): number {
+  const p = params;
+  if (p && surfaceLive.readingDirs.length > 0) {
+    localToDir(p, x, z, DRY_DIR);
+    let nearest = Infinity;
+    for (const prior of surfaceLive.readingDirs) {
+      const dot = Math.max(-1, Math.min(1, DRY_DIR.x * prior[0] + DRY_DIR.y * prior[1] + DRY_DIR.z * prior[2]));
+      nearest = Math.min(nearest, p.radiusM * Math.acos(dot));
+    }
+    return nearest;
+  }
+  let nearest = Infinity;
+  for (const prior of surfaceLive.readingPositions) {
+    nearest = Math.min(nearest, Math.hypot(x - prior.x, z - prior.z));
+  }
+  return nearest;
+}
+
+function acceptProjectContact(work: ReceiverProjectWork): void {
+  const live = surfaceLive;
+  live.contacted = true;
+  live.projectNeedsRelease = true;
+  live.civicStood = true;
+  live.readings = 0;
+  live.readingPositions = [];
+  live.readingDirs = [];
+  live.scanCharge = 0;
+  live.fieldNote = null;
+  live.fieldNoteUntil = 0;
+  const kit = fieldVerbs();
+  live.fieldIdx = Math.max(0, kit.indexOf('reading'));
+  audio.subEthaBlip(true);
+  useUiBus.getState().addToast({
+    kind: 'info',
+    kicker: 'PROJECT TERMINAL',
+    title: `${work.project.name} - field brief accepted`,
+    body:
+      work.required === 3
+        ? `Take three readings at least ${PROJECT_READING_SEPARATION_M} m apart. The separation lets the office distinguish a district-wide pattern from one noisy patch. Reading is now selected on the field kit.`
+        : "Take one local calibration reading to tie the source evidence to this settlement's instruments. Reading is now selected on the field kit.",
+    ttlMs: 7000,
+  });
+  checkpointSurface(true);
+}
+
+/** Accept one reading if it adds genuinely new spatial evidence. */
+function acceptProjectReading(work: ReceiverProjectWork): boolean {
+  const live = surfaceLive;
+  if (!live.contacted || live.readings >= work.required) return false;
+  const nearest = nearestProjectReadingM(live.pos.x, live.pos.z);
+  if (nearest < PROJECT_READING_SEPARATION_M) return false;
+
+  if (!params) return false;
+  live.readingPositions.push({ x: live.pos.x, z: live.pos.z });
+  localToDir(params, live.pos.x, live.pos.z, DRY_DIR);
+  live.readingDirs.push([DRY_DIR.x, DRY_DIR.y, DRY_DIR.z]);
+  live.readings = live.readingDirs.length;
+  live.readingNonce++;
+  live.projectNeedsRelease = true;
+  live.scanCharge = 0;
+  audio.subEthaBlip(true);
+  const remaining = work.required - live.readings;
+  useUiBus.getState().addToast({
+    kind: 'info',
+    kicker: 'PROJECT READING',
+    title: `Reading ${live.readings}/${work.required} filed`,
+    body:
+      remaining > 0
+        ? `Move at least ${PROJECT_READING_SEPARATION_M} m before the next reading. Separation turns measurements into a comparison.`
+        : work.required === 1
+          ? 'Calibration captured. Board the runabout to file it with the terminal consultation.'
+          : 'The local comparison is complete. Board the runabout to file all three readings.',
+    ttlMs: 5200,
+  });
+  checkpointSurface(true);
+  return true;
+}
+
+/** The project terminal has priority only after ship, resonator, and deposit. */
+function stepProjectTerminal(dt: number, work: ReceiverProjectWork): boolean {
+  const live = surfaceLive;
+  if (live.contacted || nearSettlementD() > PROJECT_TERMINAL_RANGE_M) return false;
+  enterProjectDwell('terminal');
+  live.scanning = false;
+  live.prompt = {
+    verb: 'scan',
+    label:
+      work.required === 3
+        ? `consult settlement terminal - ${work.project.name} - why three separated readings matter`
+        : `consult settlement terminal - ${work.project.name} - calibrate the returned evidence`,
+  };
+  if (surfaceInput.engage) {
+    const contactSeconds = (session?.familiarity ?? 0) >= 5
+      ? PROJECT_CONTACT_SECONDS * 0.7
+      : PROJECT_CONTACT_SECONDS;
+    live.scanCharge += dt / contactSeconds;
+    if (live.scanCharge >= 1) acceptProjectContact(work);
+  } else {
+    live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+  }
+  return true;
+}
+
+/** One selected field-kit reading, with an explanatory spatial refusal. */
+function stepProjectReading(dt: number, work: ReceiverProjectWork): void {
+  const live = surfaceLive;
+  enterProjectDwell('reading');
+  live.scanning = false;
+
+  if (live.projectNeedsRelease) {
+    live.scanCharge = 0;
+    live.prompt = {
+      verb: 'scan',
+      label: `project reading ${live.readings}/${work.required}`,
+      blocked: `release engage - then take reading ${live.readings + 1}/${work.required}`,
+    };
+    if (!surfaceInput.engage) live.projectNeedsRelease = false;
+    return;
+  }
+
+  const counter = `${live.readings}/${work.required}`;
+  if (live.readings >= work.required) {
+    live.scanCharge = 0;
+    live.prompt = {
+      verb: 'scan',
+      label: `project readings ${counter}`,
+      blocked: `${work.project.name} - readings ${counter} complete - board to file the result`,
+    };
+    return;
+  }
+
+  const nearest = nearestProjectReadingM(live.pos.x, live.pos.z);
+  if (nearest < PROJECT_READING_SEPARATION_M) {
+    live.scanCharge = 0;
+    const farther = Math.ceil(PROJECT_READING_SEPARATION_M - nearest);
+    live.prompt = {
+      verb: 'scan',
+      label: `project reading ${counter}`,
+      blocked:
+        `reading ${counter} - only ${Math.round(nearest)} m from prior instrument - move ${farther} m farther so this measures a new patch`,
+    };
+    return;
+  }
+
+  live.prompt = {
+    verb: 'scan',
+    label:
+      live.readings === 0
+        ? `take project reading - ${counter} - establish the local baseline`
+        : `take project reading - ${counter} - test whether the pattern travels`,
+  };
+  if (surfaceInput.engage) {
+    live.scanCharge += dt / PROJECT_READING_SECONDS;
+    if (live.scanCharge >= 1) acceptProjectReading(work);
+  } else {
+    live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
+  }
 }
 
 /** The engage key's edge, for decisions that are a press rather than work. */
@@ -2392,6 +2827,7 @@ function stepWork(dt: number): void {
   const boardable = shipD < BOARD_RANGE;
 
   if (boardable) {
+    leaveProjectDwell();
     live.scanning = false;
     stepBoardChoice(dt, '');
     return;
@@ -2402,6 +2838,7 @@ function stepWork(dt: number): void {
   if (live.leadAt && !live.leadDone) {
     const dd = Math.hypot(live.leadAt.x - live.pos.x, live.leadAt.z - live.pos.z);
     if (dd <= RESONATOR_RANGE) {
+      leaveProjectDwell();
       live.prompt = { verb: 'scan', label: 'read the resonance' };
       live.swinging = false;
       live.swing = Math.max(0, live.swing - dt * 2.6);
@@ -2424,6 +2861,7 @@ function stepWork(dt: number): void {
                 : 'The other half of the conversation, mid-sentence. Board the runabout to file the reading — the Guide is waiting with the folder open.',
             ttlMs: 6000,
           });
+          checkpointSurface(true);
         }
       } else {
         live.scanCharge = Math.max(0, live.scanCharge - dt * 2);
@@ -2433,6 +2871,7 @@ function stepWork(dt: number): void {
   }
 
   if (best) {
+    leaveProjectDwell();
     live.scanning = false;
 
     // Stage one: the scan. Composition, stability, rarity — and only then
@@ -2473,6 +2912,7 @@ function stepWork(dt: number): void {
         live.outcomes.set(best.id, 'preserved');
         live.surveyCredit += 1;
         audio.sampleChime();
+        checkpointSurface(true);
       }
       return;
     }
@@ -2521,6 +2961,9 @@ function stepWork(dt: number): void {
   live.mineProgress = 0;
   live.prompt = null;
 
+  const projectWork = receiverProjectWork();
+  if (projectWork && stepProjectTerminal(dt, projectWork)) return;
+
   // Nothing in reach: the engage key belongs to the FIELD KIT. The wheel
   // chooses — the pulse always, and whichever marks certification has
   // opened (Phase 5). A refusal note holds the line for a couple of
@@ -2528,6 +2971,17 @@ function stepWork(dt: number): void {
   const kit = fieldVerbs();
   if (live.fieldIdx >= kit.length) live.fieldIdx = 0; // repair walked out of reach
   const fieldVerb = kit[live.fieldIdx] ?? 'pulse';
+
+  if (fieldVerb === 'reading') {
+    if (projectWork) stepProjectReading(dt, projectWork);
+    else {
+      live.fieldIdx = 0;
+      leaveProjectDwell();
+    }
+    return;
+  }
+
+  leaveProjectDwell();
 
   if (fieldVerb !== 'pulse') {
     live.prompt =
@@ -2664,6 +3118,7 @@ function plantMark(kind: GroundMark['kind']): void {
     art: EXPEDITION_ART.mark(kind),
     ttlMs: 5200,
   });
+  checkpointSurface(true);
 }
 
 // ————— Camera —————
@@ -2855,6 +3310,12 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       landmarksStood: [...surfaceLive.landmarksStood],
       weathered: [...surfaceLive.weathered],
       civicStood: surfaceLive.civicStood,
+      projectTutorial: {
+        contacted: surfaceLive.contacted,
+        readings: surfaceLive.readings,
+        goal: projectReadingGoal(),
+        positions: surfaceLive.readingPositions.map((p) => ({ ...p })),
+      },
       certs: session ? { ...session.certs } : {},
       lead: {
         stage: surfaceLive.leadStage,
@@ -3034,6 +3495,25 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
       return surfaceLive.marksPlaced.length > before
         ? { ...surfaceLive.marksPlaced[surfaceLive.marksPlaced.length - 1]! }
         : { refused: surfaceLive.fieldNote };
+    },
+    /** DEV: accept the current receiver project's terminal brief. */
+    consultProject: () => {
+      const work = receiverProjectWork();
+      if (!work) return null;
+      acceptProjectContact(work);
+      return { contacted: surfaceLive.contacted, goal: work.required };
+    },
+    /** DEV: take a reading at the current boots through the real spacing rule. */
+    readProject: () => {
+      const work = receiverProjectWork();
+      if (!work || !surfaceLive.contacted) return null;
+      const accepted = acceptProjectReading(work);
+      return {
+        accepted,
+        readings: surfaceLive.readings,
+        goal: work.required,
+        nearestM: nearestProjectReadingM(surfaceLive.pos.x, surfaceLive.pos.z),
+      };
     },
     /** DEV: read the resonator without walking to it. */
     readLead: () => {

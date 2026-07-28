@@ -40,7 +40,7 @@ function WorldLife({ lifetimeIndex }: { lifetimeIndex: number }) {
   const record = worldRecord(s, lifetimeIndex);
   if (!record) return null;
   const standing = standingOf(s, lifetimeIndex);
-  const traits = worldTraits(record, standing);
+  const traits = worldTraits(record, standing, s);
   return (
     <div className="wm-life">
       <div className="wm-traits">
@@ -50,7 +50,7 @@ function WorldLife({ lifetimeIndex }: { lifetimeIndex: number }) {
           </span>
         ))}
       </div>
-      <p className="wm-bio">{worldBiography(record, standing)}</p>
+      <p className="wm-bio">{worldBiography(record, standing, s)}</p>
       {record.history.length > 0 && (
         <div className="wm-filed">
           {record.history.length} {record.history.length === 1 ? 'entry' : 'entries'} on file

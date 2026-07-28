@@ -11,7 +11,43 @@
  * spends salvage. That seal is the oldest rule this layer has.
  */
 
+import type {
+  AspectId,
+  ExpeditionRoute,
+  PlanetType,
+  WorldRecordEvent,
+} from '../engine/types';
+
 export type PayloadKind = 'freight' | 'passenger';
+
+/**
+ * Facts about one end of a route that make a payload more likely to be
+ * offered there. These are affinities, not requirements: the board is still
+ * allowed to post an odd job, but a world now mostly exports what it can make
+ * and imports what its history says it needs.
+ */
+export interface FreightWorldAffinity {
+  types?: readonly PlanetType[];
+  bottlenecks?: readonly AspectId[];
+  installations?: readonly string[];
+  traits?: readonly (
+    | 'well-attended'
+    | 'neglected'
+    | 'engineered'
+    | 'austere'
+    | 'peculiar'
+    | 'storied'
+    | 'tended'
+    | 'waymarked'
+  )[];
+  history?: readonly WorldRecordEvent['kind'][];
+  surveyed?: boolean;
+}
+
+export interface FreightRouteAffinity {
+  origin?: FreightWorldAffinity;
+  destination?: FreightWorldAffinity;
+}
 
 export interface FreightDef {
   id: string;
@@ -38,6 +74,19 @@ export interface FreightDef {
    * your hands on the stick. See engine/handling.ts.
    */
   handling?: readonly ('fragile' | 'awkward' | 'secret' | 'improbable')[];
+  /**
+   * Why this payload belongs on a particular route. Kept with the authored
+   * cargo rather than in the board generator so adding a manifest line does
+   * not require another switch statement in the engine.
+   */
+  route?: FreightRouteAffinity;
+  /**
+   * Player-authored lanes where this payload is the characteristic work.
+   * When the board honours an established route it selects from this set,
+   * making the lane's history visible in the manifest rather than merely in
+   * its endpoints.
+   */
+  routeKinds?: readonly ExpeditionRoute['kind'][];
 }
 
 export const FREIGHT: readonly FreightDef[] = [
@@ -117,6 +166,124 @@ export const FREIGHT: readonly FreightDef[] = [
     weight: 8,
     faction: 'magrathea',
     handling: ['fragile'],
+    routeKinds: ['system-seed-bank'],
+  },
+  {
+    id: 'cryobrine',
+    kind: 'freight',
+    label: 'Cryobrine cultures, refrigerated',
+    note: 'Collected below the frost line and addressed to a condenser that has developed opinions about water.',
+    mass: 12,
+    salvage: 8,
+    weight: 6,
+    faction: 'mice',
+    handling: ['fragile'],
+    routeKinds: ['cold-chain'],
+    route: {
+      origin: {
+        types: ['ice', 'ocean'],
+        installations: ['hydroSeeder', 'quantumExcavator'],
+      },
+      destination: {
+        types: ['desert', 'volcanic'],
+        bottlenecks: ['hydro', 'atmo'],
+        traits: ['austere', 'tended'],
+      },
+    },
+  },
+  {
+    id: 'heat-exchangers',
+    kind: 'freight',
+    label: 'Geothermal exchange assemblies',
+    note: 'Still warm from testing. The destination has been asked to provide somewhere colder and has exceeded expectations.',
+    mass: 18,
+    salvage: 9,
+    weight: 6,
+    faction: 'magrathea',
+    handling: ['awkward'],
+    routeKinds: ['heat-without-fire'],
+    route: {
+      origin: {
+        types: ['volcanic'],
+        installations: ['geoTap', 'stellarForge', 'magratheanWorkshop'],
+        traits: ['engineered'],
+      },
+      destination: {
+        types: ['ice', 'ocean'],
+        bottlenecks: ['thermal'],
+        traits: ['austere', 'neglected', 'tended'],
+        history: ['repairMade'],
+      },
+    },
+  },
+  {
+    id: 'solar-glass',
+    kind: 'freight',
+    label: 'Dust-hardened solar glass',
+    note: 'Guaranteed transparent in ordinary spectra and several spectra the warranty department will not discuss.',
+    mass: 8,
+    salvage: 7,
+    weight: 6,
+    faction: 'magrathea',
+    handling: ['fragile'],
+    routeKinds: ['glass-for-the-tide'],
+    route: {
+      origin: {
+        types: ['desert'],
+        installations: ['orbitalMirror', 'stellarForge'],
+      },
+      destination: {
+        types: ['ice', 'ocean'],
+        bottlenecks: ['thermal', 'atmo'],
+        installations: ['atmoProcessor'],
+      },
+    },
+  },
+  {
+    id: 'field-relays',
+    kind: 'freight',
+    label: 'Field relay masts, collapsible',
+    note: 'Collapsible according to the catalogue. The loading crew have demonstrated only the first half of that claim.',
+    mass: 15,
+    salvage: 8,
+    weight: 6,
+    faction: 'mice',
+    handling: ['awkward'],
+    routeKinds: ['field-corridor'],
+    route: {
+      origin: {
+        installations: ['researchLab', 'deepThought', 'magratheanWorkshop'],
+        traits: ['engineered'],
+      },
+      destination: {
+        traits: ['waymarked', 'tended', 'austere', 'neglected'],
+        history: ['markPlaced', 'repairMade'],
+      },
+    },
+  },
+  {
+    id: 'reef-cuttings',
+    kind: 'freight',
+    label: 'Living reef cuttings',
+    note: 'A travelling memory of salt water, packed damp and accompanied by more handling notes than cargo.',
+    mass: 7,
+    salvage: 7,
+    weight: 6,
+    faction: 'mice',
+    handling: ['fragile'],
+    routeKinds: ['reef-memory'],
+    route: {
+      origin: {
+        types: ['ocean'],
+        traits: ['tended', 'storied'],
+        surveyed: true,
+      },
+      destination: {
+        types: ['terrestrial'],
+        bottlenecks: ['bio', 'hydro'],
+        history: ['projectCompleted'],
+      },
+    },
   },
   {
     id: 'hitchhiker',

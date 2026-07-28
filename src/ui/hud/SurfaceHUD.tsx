@@ -39,6 +39,13 @@ import {
   WEATHER_LABEL,
 } from '../../engine/weather';
 import { SAMPLE_BY_ID } from '../../content/groundSamples';
+import { SPECIES_BY_ID } from '../../content/groundSpecies';
+import {
+  FIELD_PROJECT_BY_ID,
+  type FieldProjectDef,
+} from '../../content/fieldProjects';
+import { CHARTER_BY_ID } from '../../content/charters';
+import { FAMILIARITY_MAX, FIELD_ATLAS_THRESHOLD } from '../../engine/fieldProjects';
 import { EXPEDITION_ART } from '../assets';
 import { flightPrefs, keyLabel } from '../scene/flightBindings';
 import { useGame } from '../../state/store';
@@ -77,6 +84,7 @@ const VERB_LABELS: Record<MiningVerb, string> = {
 
 const FIELD_LABELS: Record<FieldVerb, string> = {
   pulse: 'field scan',
+  reading: 'field reading',
   beacon: 'beacon',
   station: 'station',
   shelter: 'shelter',
@@ -348,6 +356,288 @@ function weatherLine(): string | null {
   return line;
 }
 
+function projectLiveProgress(): { contacted: boolean; readings: number } {
+  return {
+    contacted: surfaceLive.contacted,
+    readings: Math.max(0, Math.floor(surfaceLive.readings)),
+  };
+}
+
+function titleFromId(value: string): string {
+  return value
+    .split('-')
+    .map((part) => part ? `${part[0]!.toUpperCase()}${part.slice(1)}` : part)
+    .join(' ');
+}
+
+function readableList(items: readonly string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0]!;
+  return `${items.slice(0, -1).join(', ')} or ${items[items.length - 1]}`;
+}
+
+function sourceMethod(def: FieldProjectDef, source: string): string {
+  const methods: string[] = [];
+  if (def.sourceSamples?.length) {
+    const names = def.sourceSamples.map((id) => SAMPLE_BY_ID[id]?.name ?? titleFromId(id));
+    methods.push(`identify ${readableList(names)} with the field scan, then recover one documented sample`);
+  }
+  if (def.sourceSpecies?.length) {
+    const names = def.sourceSpecies.map((id) => SPECIES_BY_ID[id]?.name ?? titleFromId(id));
+    methods.push(`record ${readableList(names)} with the biologger`);
+  }
+  if (def.allowPreserve) methods.push('mark one viable habitat for preservation instead of extracting it');
+  return methods.length > 0
+    ? `On ${source}, ${readableList(methods)}. A single compatible record is enough because this leg establishes suitability, not volume.`
+    : `On ${source}, document one compatible field source. The record establishes suitability; this is not a bulk-material order.`;
+}
+
+function sourceEvidence(def: FieldProjectDef): { done: boolean; note: string } {
+  const sample = def.sourceSamples?.find((kind) =>
+    surfaceLive.haul.some((item) => item.kind === kind && item.n > 0));
+  if (sample) return { done: true, note: `${SAMPLE_BY_ID[sample]?.name ?? titleFromId(sample)} documented` };
+
+  const species = def.sourceSpecies?.find((id) => surfaceLive.speciesSeen.has(id));
+  if (species) return { done: true, note: `${SPECIES_BY_ID[species]?.name ?? titleFromId(species)} recorded` };
+
+  if (def.allowPreserve && [...surfaceLive.outcomes.values()].some((outcome) => outcome === 'preserved')) {
+    return { done: true, note: 'intact habitat preserved' };
+  }
+  return { done: false, note: 'no compatible source documented this stay' };
+}
+
+interface ProjectLesson {
+  step: string;
+  proves: string;
+  method: string;
+  needsTerminal: boolean;
+  readingsNeeded: number;
+  sourceCheck: boolean;
+}
+
+function projectLesson(session: GroundfallSession, def: FieldProjectDef): ProjectLesson {
+  const project = session.project!;
+  const here = project.role === 'receiver' ? project.receiver.name : project.source.name;
+  switch (project.stage) {
+    case 'investigate':
+      if (project.role === 'receiver') {
+        return {
+          step: 'Diagnose the receiving world',
+          proves: 'The terminal supplies the civic problem; three separated readings show that it is a district-scale pattern rather than one faulty fixture.',
+          method: `Consult the settlement terminal at ${here}. Select Field Reading with the wheel, take a reading, then move to a clearly different part of the district before repeating. Separation is what makes the comparison useful.`,
+          needsTerminal: true,
+          readingsNeeded: 3,
+          sourceCheck: false,
+        };
+      }
+      return {
+        step: 'Define the problem before choosing its answer',
+        proves: `Evidence from ${project.source.name} is only useful after ${project.receiver.name} has established what must be solved. This prevents a convenient sample from becoming a solution in search of a problem.`,
+        method: `The active investigation is on ${project.receiver.name}. Return there, consult its settlement terminal, and compare three district readings; this source world becomes relevant on the next leg.`,
+        needsTerminal: false,
+        readingsNeeded: 0,
+        sourceCheck: false,
+      };
+    case 'source':
+      if (project.role === 'source') {
+        return {
+          step: 'Establish a compatible source',
+          proves: `A named sample, species record, or preserved habitat ties ${project.source.name}'s real conditions to the need measured on ${project.receiver.name}. The project needs provenance, not an anonymous resource counter.`,
+          method: sourceMethod(def, project.source.name),
+          needsTerminal: false,
+          readingsNeeded: 0,
+          sourceCheck: true,
+        };
+      }
+      return {
+        step: 'Follow the diagnosis to its source',
+        proves: `The local readings now define the requirement. The next question is whether ${project.source.name} can satisfy it under observed field conditions.`,
+        method: `Travel to ${project.source.name}. ${sourceMethod(def, project.source.name)}`,
+        needsTerminal: false,
+        readingsNeeded: 0,
+        sourceCheck: false,
+      };
+    case 'return':
+      if (project.role === 'receiver') {
+        return {
+          step: 'Test the answer where it will live',
+          proves: 'The returning field evidence is not accepted on reputation alone. One local calibration reading verifies that it behaves under the receiving settlement’s actual conditions.',
+          method: `Consult the terminal at ${project.receiver.name} to attach the source record, then take one Field Reading near the project scaffold. Boarding files the calibration and completes the installation.`,
+          needsTerminal: true,
+          readingsNeeded: 1,
+          sourceCheck: false,
+        };
+      }
+      return {
+        step: 'Carry the evidence back to the receiver',
+        proves: `${project.source.name}'s evidence is secured. The remaining test is local calibration on ${project.receiver.name}; source conditions alone cannot prove the installation will work there.`,
+        method: `Return to ${project.receiver.name}, consult its settlement terminal, and take one Field Reading near the scaffold before boarding.`,
+        needsTerminal: false,
+        readingsNeeded: 0,
+        sourceCheck: false,
+      };
+    case 'complete':
+      return {
+        step: 'A working relationship, not a completed checklist',
+        proves: `${def.complete} The result persists because both the source evidence and receiving-world calibration are now on file.`,
+        method: `Revisiting either world now reveals what the project left behind: ${def.service}, joined by the named ${def.routeNoun}.`,
+        needsTerminal: false,
+        readingsNeeded: 0,
+        sourceCheck: false,
+      };
+  }
+}
+
+const PROJECT_STAGE_LABEL: Record<NonNullable<GroundfallSession['project']>['stage'], string> = {
+  investigate: '1 of 3 - diagnose',
+  source: '2 of 3 - establish source',
+  return: '3 of 3 - calibrate',
+  complete: 'result in service',
+};
+
+const SPECIALTY_LABEL: Record<string, string> = {
+  thermal: 'thermal works',
+  atmo: 'atmospheric works',
+  hydro: 'water systems',
+  bio: 'living systems',
+  science: 'field science',
+  production: 'civic production',
+};
+
+function BriefProgress({ done, label, note }: { done: boolean; label: string; note: string }) {
+  return (
+    <div className={`sh-brief-progress${done ? ' done' : ''}`}>
+      <i aria-hidden>{done ? 'OK' : 'NEXT'}</i>
+      <span><b>{label}</b><em>{note}</em></span>
+    </div>
+  );
+}
+
+/** A lesson carried into the field, plus the durable knowledge already earned here. */
+function FieldNotebook({ session }: { session: GroundfallSession }) {
+  const project = session.project;
+  const def = project ? FIELD_PROJECT_BY_ID[project.id] : null;
+  const liveProgress = projectLiveProgress();
+  const lesson = project && def ? projectLesson(session, def) : null;
+  const source = project && def && lesson?.sourceCheck ? sourceEvidence(def) : null;
+  const projectSite = project ? session.projectSites.find((site) => site.id === project.key) : null;
+  const charter = session.charterId ? CHARTER_BY_ID[session.charterId] : null;
+  const systemName = session.systemIndex === null ? null : `System ${session.systemIndex + 1}`;
+  const specialty = session.systemSpecialty
+    ? SPECIALTY_LABEL[session.systemSpecialty] ?? titleFromId(session.systemSpecialty)
+    : null;
+  const atlasRequired = FIELD_ATLAS_THRESHOLD;
+  const nextAtlas = session.atlas.complete
+    ? session.atlas.score >= session.atlas.total
+      ? 'filed; all six categories recorded'
+      : `filed; optional: ${session.atlas.missing[0] ?? 'record the sixth field category'}`
+    : `next required: ${session.atlas.missing[0] ?? 'one more field category'}`;
+  const atlasPct = atlasRequired > 0
+    ? Math.min(100, (session.atlas.score / atlasRequired) * 100)
+    : 0;
+  const networkName = session.routes.find((route) => route.id.startsWith('corridor:'))?.name
+    ?? (session.network.linked ? `${session.name} Linked Field Circuit` : null);
+  const projectRoute = project
+    ? session.routes.find((route) => route.id.includes(project.key))?.name
+      ?? `${def?.routeNoun ?? 'Field route'}: ${project.source.name} to ${project.receiver.name}`
+    : null;
+  const otherRoutes = session.routes.filter((route) => !project || !route.id.includes(project.key));
+  const hasContext = Boolean(
+    project
+    || session.atlas.score > 0
+    || session.familiarity > 0
+    || session.network.services.length > 0
+    || session.routes.length > 0
+    || systemName,
+  );
+  if (!hasContext) return null;
+
+  return (
+    <aside className={`sh-field-brief${project ? '' : ' compact'}`} aria-label="field brief and atlas">
+      {project && def && lesson && (
+        <section className="sh-project-lesson">
+          <header>
+            <span className="sh-brief-kicker">FIELD CASE</span>
+            <span className={`sh-brief-stage ${project.stage}`}>{PROJECT_STAGE_LABEL[project.stage]}</span>
+            <h2>{def.name}</h2>
+            <p className="sh-brief-route">{project.source.name} <span aria-hidden>to</span> {project.receiver.name}</p>
+          </header>
+
+          <div className="sh-brief-why">
+            <b>Why this matters</b>
+            <p>{def.guide}</p>
+          </div>
+          <div className="sh-brief-teach">
+            <b>{lesson.step}</b>
+            <p><strong>What it proves.</strong> {lesson.proves}</p>
+            <p><strong>How the method works.</strong> {lesson.method}</p>
+          </div>
+
+          {(lesson.needsTerminal || lesson.readingsNeeded > 0 || source) && (
+            <div className="sh-brief-progress-list" aria-label="live field evidence">
+              {lesson.needsTerminal && (
+                <BriefProgress
+                  done={liveProgress.contacted}
+                  label="Settlement context"
+                  note={liveProgress.contacted ? 'terminal consulted this stay' : 'consult the settlement terminal'}
+                />
+              )}
+              {lesson.readingsNeeded > 0 && (
+                <BriefProgress
+                  done={liveProgress.readings >= lesson.readingsNeeded}
+                  label="Separated readings"
+                  note={`${Math.min(lesson.readingsNeeded, liveProgress.readings)}/${lesson.readingsNeeded} recorded this stay`}
+                />
+              )}
+              {source && (
+                <BriefProgress done={source.done} label="Source provenance" note={source.note} />
+              )}
+            </div>
+          )}
+
+          <footer className="sh-brief-outcome">
+            <span><b>{project.stage === 'complete' ? 'Result' : 'What this unlocks'}</b> {def.service}</span>
+            <span><b>Route</b> {projectRoute}</span>
+            <span><b>{project.stage === 'complete' ? 'Filed' : 'On completion'}</b> {def.salvage} salvage + {def.reputation} {titleFromId(def.faction)} reputation</span>
+            {projectSite && <span><b>Site</b> {projectSite.state === 'complete' ? 'installation operating' : 'scaffold standing at the receiver'}</span>}
+          </footer>
+        </section>
+      )}
+
+      <section className="sh-field-record" aria-label="local field record">
+        <div className="sh-record-heading">
+          <span className="sh-brief-kicker">FIELD RECORD</span>
+          {systemName && <b>{systemName}</b>}
+        </div>
+        {(charter || specialty) && (
+          <p className="sh-system-identity">
+            {charter?.name ?? titleFromId(session.charterId ?? '')}
+            {specialty ? ` / ${specialty}` : ''}
+          </p>
+        )}
+        <div className="sh-atlas-row">
+          <span><b>Atlas {Math.min(session.atlas.score, atlasRequired)}/{atlasRequired}{session.atlas.complete ? ' / FILED' : ''}</b><em>{nextAtlas}</em></span>
+          <i className="sh-atlas-track" role="progressbar" aria-valuenow={Math.min(session.atlas.score, atlasRequired)} aria-valuemax={atlasRequired}>
+            <i style={{ width: `${atlasPct}%` }} />
+          </i>
+        </div>
+        <div className="sh-record-grid">
+          <span><b>Familiarity {session.familiarity}/{FAMILIARITY_MAX}</b><em>{session.familiarityService ?? 'learn this place through distinct field firsts'}</em></span>
+          <span>
+            <b>{networkName ?? 'Field network'}</b>
+            <em>{session.network.services.length > 0 ? session.network.services.join(' / ') : 'beacons, stations, shelters, and repairs become local services'}</em>
+          </span>
+        </div>
+        {otherRoutes.length > 0 && (
+          <p className="sh-known-routes">
+            <b>Known route</b> {otherRoutes[0]!.name}{otherRoutes.length > 1 ? ` + ${otherRoutes.length - 1} more` : ''}
+          </p>
+        )}
+      </section>
+    </aside>
+  );
+}
+
 export function SurfaceHUD() {
   const session = useUiBus((b) => b.groundfall);
   if (!session) return null;
@@ -435,6 +725,7 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
   return (
     <div className="sh-hud">
       <Compass heading={heading} marks={compassMarks(session.certs)} />
+      <FieldNotebook session={session} />
       {(wx || lm) && (
         <div className="sh-conditions">
           {wx && <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>}
@@ -634,6 +925,7 @@ function FlyingHUD({ session }: { session: GroundfallSession }) {
     <div className="sh-hud">
       {!live.chaseView && <Canopy steady />}
       <Compass heading={heading} marks={compassMarks(session.certs)} />
+      <FieldNotebook session={session} />
       {wx && (
         <div className="sh-conditions">
           <span className={`sh-weather${live.weather.intensity >= 0.7 ? ' hard' : ''}`}>{wx}</span>

@@ -30,6 +30,7 @@ import { waypointId } from '../../engine/waypoints';
 import { INFRASTRUCTURE, SHIP_ROLES, type InfrastructureDef } from '../../content/loadouts';
 import { ATTENDANCE_SALVAGE, attendable } from '../../engine/bridge';
 import { C } from '../../content/constants';
+import { FIELD_PROJECT_BY_ID } from '../../content/fieldProjects';
 
 /** How the console describes your velocity, in ascending order of pride. */
 function speedLabel(frac: number, boosting: boolean, station: boolean): string {
@@ -200,13 +201,62 @@ function ManifestStrip() {
     const pin = state.expedition.pinned;
     const request = attendable(state)
       .find((candidate) => waypointId('world', candidate.world) === pin);
-    if (!request) return null;
+    if (request) {
+      return (
+        <div className="fh-manifest attendance" role="status">
+          <span className="fm-label">personal attendance</span>
+          <span className="fm-step">ARRIVE TO RESOLVE</span>
+          <span className="fm-to">{request.name}</span>
+          <span className="fm-pay">+{ATTENDANCE_SALVAGE} salvage</span>
+        </div>
+      );
+    }
+
+    const project = Object.values(state.expedition.fieldProjects)
+      .filter((candidate) => candidate.stage !== 'complete')
+      .sort((a, b) => a.startedAtMs - b.startedAtMs || a.key.localeCompare(b.key))[0];
+    if (!project) return null;
+    const def = FIELD_PROJECT_BY_ID[project.id];
+    const targetLifetimeIndex = project.stage === 'source' ? project.source : project.receiver;
+    const targetName =
+      state.run.completedPlanets.find((world) => world.lifetimeIndex === targetLifetimeIndex)?.name
+      ?? state.operations.heritageWorlds.find((world) => world.lifetimeIndex === targetLifetimeIndex)?.name
+      ?? state.worldRecords[String(targetLifetimeIndex)]?.name
+      ?? `World ${targetLifetimeIndex}`;
+    const stage = {
+      investigate: '1 / INVESTIGATE',
+      source: '2 / SOURCE EVIDENCE',
+      return: '3 / RETURN + CALIBRATE',
+      complete: 'COMPLETE',
+    }[project.stage];
+    const purpose =
+      project.stage === 'investigate'
+        ? def.investigate
+        : project.stage === 'source'
+          ? def.sourceBrief
+          : def.returnBrief;
+    const targetId = waypointId('world', targetLifetimeIndex);
+    const target = helmChart(500).find((row) => row.id === targetId);
     return (
-      <div className="fh-manifest attendance" role="status">
-        <span className="fm-label">personal attendance</span>
-        <span className="fm-step">ARRIVE TO RESOLVE</span>
-        <span className="fm-to">{request.name}</span>
-        <span className="fm-pay">+{ATTENDANCE_SALVAGE} salvage</span>
+      <div
+        className="fh-manifest field-project"
+        role="status"
+        aria-label={`${def.name}. ${purpose}`}
+        title={`${purpose} Completing it leaves ${def.service} and a named route.`}
+      >
+        <span className="fm-label">{def.name}</span>
+        <span className="fm-step">{stage}</span>
+        <span className="fm-to">{targetName}</span>
+        {target && (
+          <button
+            className={`fm-pin${target.pinned ? ' on' : ''}`}
+            onClick={() => actions.setWaypoint(target.pinned ? null : target.id)}
+            title={`Carry a bearing to ${target.label}`}
+          >
+            {target.pinned ? 'objective pinned' : 'pin objective'}
+          </button>
+        )}
+        <span className="fm-pay">+{def.salvage} salvage / +{def.reputation} rep</span>
       </div>
     );
   }

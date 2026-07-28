@@ -8,6 +8,7 @@ import {
   activeWorldRecords,
   createWorldRecord,
   recordWorldEvent,
+  worldBiography,
   worldRecord,
   worldTraits,
 } from '../src/engine/worldRecords';
@@ -15,6 +16,7 @@ import { C } from '../src/content/constants';
 import { PETITIONS } from '../src/content/petitions';
 import { SITUATIONS } from '../src/content/situations';
 import { D } from '../src/engine/num';
+import { createGroundWorldRecord } from '../src/engine/groundSites';
 import { BOTS, OPTS, TICK } from '../balance/bots';
 import type { CompletedPlanetRecord, GameState } from '../src/engine/types';
 
@@ -126,6 +128,55 @@ describe('the world record store', () => {
     );
     expect(worldTraits(plain, 1).length).toBeGreaterThanOrEqual(1);
     expect(worldTraits(plain, 1).length).toBeLessThanOrEqual(3);
+  });
+
+  it('turns completed projects, established routes, and atlases into lived world copy', () => {
+    const record = createWorldRecord(sampleWorld(), 1, 0);
+    record.history.push(
+      { kind: 'projectCompleted', id: 'reef-memory', atGameMs: 1 },
+      { kind: 'routeEstablished', id: 'living-corridor', atGameMs: 2 },
+      { kind: 'atlasCompleted', id: 'w7', atGameMs: 3 },
+    );
+
+    expect(worldTraits(record, 1)).toEqual(['restored', 'connected', 'well-known']);
+    const biography = worldBiography(record, 1);
+    expect(biography).toBe(worldBiography(record, 1));
+    expect(biography).toContain('named route');
+  });
+
+  it('keeps physical field legacies after their rolling history entries are evicted', () => {
+    const state = newGame(9, 0);
+    const record = createWorldRecord(sampleWorld(), 1, 0);
+    state.worldRecords['7'] = record;
+    const ground = createGroundWorldRecord();
+    ground.projectSites['old-project'] = {
+      id: 'old-project',
+      kind: 'wetland',
+      state: 'complete',
+      atMs: 2,
+      sourceWorld: 8,
+    };
+    ground.atlasCompletedAtMs = 3;
+    state.expedition.groundWorlds.w7 = ground;
+    state.expedition.routes['living-corridor'] = {
+      id: 'living-corridor',
+      from: 7,
+      to: 8,
+      kind: 'reef-memory',
+      name: 'Living Corridor',
+      establishedAtMs: 2,
+      trips: 1,
+    };
+    recordWorldEvent(state, 7, { kind: 'projectCompleted', id: 'old-project', atGameMs: 1 });
+    recordWorldEvent(state, 7, { kind: 'routeEstablished', id: 'living-corridor', atGameMs: 2 });
+    recordWorldEvent(state, 7, { kind: 'atlasCompleted', id: 'w7', atGameMs: 3 });
+    for (let i = 0; i < WORLD_HISTORY_LIMIT; i++) {
+      recordWorldEvent(state, 7, { kind: 'visited', id: `later-${i}`, atGameMs: 10 + i });
+    }
+
+    expect(record.history.every((event) => event.kind === 'visited')).toBe(true);
+    expect(worldTraits(record, 0.5, state)).toEqual(['restored', 'connected', 'well-known']);
+    expect(worldBiography(record, 0.5, state)).toBe(worldBiography(record, 0.5, state));
   });
 
   it('survives a save round-trip intact', () => {

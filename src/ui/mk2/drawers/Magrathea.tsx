@@ -19,6 +19,7 @@ import { format } from '../../../engine/num';
 import { DOSSIER_BY_ID } from '../../../content/dossiers';
 import { CHARTER_BY_ID } from '../../../content/charters';
 import { NetworkSection } from '../../panels/NetworkSection';
+import { charterGroundEvidence } from '../../charterEvidence';
 
 const BRANCHES: PerkBranch[] = ['construction', 'improbability', 'bureaucracy'];
 
@@ -44,6 +45,7 @@ function CharterArticles() {
           {ids.map((id) => {
             const def = CHARTER_BY_ID[id];
             if (!def) return null;
+            const evidence = charterGroundEvidence(s, Number(index), id);
             return (
               <button
                 key={id}
@@ -52,6 +54,10 @@ function CharterArticles() {
               >
                 <div className="dr-card-name">{def.name}</div>
                 <div className="dr-card-body">{def.text}</div>
+                <div className={`charter-evidence${evidence.influenced ? ' active' : ''}`}>
+                  <strong>{evidence.label}</strong>
+                  <span>{evidence.detail}</span>
+                </div>
               </button>
             );
           })}

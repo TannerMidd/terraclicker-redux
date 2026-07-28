@@ -65,11 +65,12 @@ import {
   pickUpManifest,
 } from './freight';
 import { startMegaproject, stepMegaprojectSalvage } from './megaprojects';
-import { bankGroundSamples } from './groundfall';
+import { bankGroundSamples, checkpointGround } from './groundfall';
 import { creditDeferredWork } from './deferred';
 import { createWorldRecord, recordWorldEvent } from './worldRecords';
 import { deliveryEvidence, resolveGroundRequests } from './bridge';
 import { clearLead } from './leads';
+import { ensureFieldProjects, retireUnfinishedFieldProjects } from './fieldProjects';
 import { findWaypoint } from './waypoints';
 import { acceptDossier, activeDossier, declineDossier, dossierEffects, offerDossiers } from './dossiers';
 import { charterOffersFor, signCharter } from './charters';
@@ -426,6 +427,17 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
       collectRig(state, effects, input.id);
       break;
     }
+    case 'checkpointGround': {
+      checkpointGround(
+        state,
+        input.worldKey,
+        input.haul,
+        input.sites,
+        input.species ?? [],
+        input.evidence ?? {},
+      );
+      break;
+    }
     case 'bankGroundSamples': {
       bankGroundSamples(
         state,
@@ -606,6 +618,8 @@ export function doPrestige(state: GameState, effects: SimEffect[]): void {
     charterOffers: {},
   };
   state.expedition.unscheduled = {};
+  retireUnfinishedFieldProjects(state);
+  state.expedition.groundCheckpoints = {};
   clearLead(state);
   // Freight addresses belong to the portfolio that was just sold. Keeping
   // either an accepted manifest or old offers here creates routes to worlds
@@ -722,6 +736,7 @@ function completePlanet(
     // the game. Offer them an article, read from their own history.
     const formedIndex = state.run.systems - 1;
     state.run.charterOffers[String(formedIndex)] = charterOffersFor(state, formedIndex);
+    ensureFieldProjects(state, effects);
     if (state.run.systems % C.SYSTEMS_PER_GALAXY === 0) {
       state.run.galaxies += 1;
       state.lifetime.galaxies += 1;
@@ -837,6 +852,31 @@ function chronicleEffect(state: GameState, effect: SimEffect): void {
     case 'leadAdvanced':
       fileBroadcast(state, 'chronicle', CHRONICLE.leadAdvanced(effect.text));
       break;
+    case 'fieldProjectCompleted':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.fieldProjectCompleted(effect.title, effect.route),
+      );
+      break;
+    case 'fieldAtlasCompleted':
+      fileBroadcast(
+        state,
+        'chronicle',
+        CHRONICLE.fieldAtlasCompleted(effect.world, effect.score, effect.total),
+      );
+      break;
+    case 'fieldRouteEstablished':
+      fileBroadcast(state, 'chronicle', CHRONICLE.fieldRouteEstablished(effect.name, effect.world));
+      break;
+    case 'familiarityAdvanced':
+      for (const milestone of [3, 6]) {
+        if (effect.from >= milestone || effect.familiarity < milestone) continue;
+        fileBroadcast(state, 'chronicle', CHRONICLE.familiarityMilestone(
+          effect.world, milestone, effect.service ?? 'return-visitor field brief',
+        ));
+      }
+      break;
     default:
       break; // clicks, bubbles, achievements — the channel has standards
   }
@@ -920,6 +960,7 @@ export function step(
   opts: StepOptions = {},
 ): StepResult {
   const effects: SimEffect[] = [];
+  ensureFieldProjects(state);
   ensureSortieCompanyHold(state, effects);
   const offline = Boolean(opts.offline);
   const TICK = C.LOGIC_TICK_MS;

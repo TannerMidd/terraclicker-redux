@@ -40,7 +40,7 @@ import { bankGroundSamples, groundReturnValue } from '../src/engine/groundfall';
 import { newGame } from '../src/engine/sim';
 import { C } from '../src/content/constants';
 import type { GroundfallSession } from '../src/ui/fx/uiBus';
-import type { SimEffect } from '../src/engine/types';
+import type { GroundProjectSite, SimEffect } from '../src/engine/types';
 
 const ONES = { thermal: 1, atmo: 1, hydro: 1, bio: 1 };
 const RADIUS_MEDIUM = 320_000;
@@ -60,11 +60,17 @@ function bake(spec: SurfaceSpec): { p: SurfaceParams; tiers: SurfaceTiers } {
   return { p, tiers };
 }
 
+type SettlementGroundfallSession = GroundfallSession & {
+  projectSites: readonly GroundProjectSite[];
+  charterId: string | null;
+  systemSpecialty: string | null;
+};
+
 function sessionFor(
   seed: number,
   dir: [number, number, number],
-  over: Partial<GroundfallSession> = {},
-): GroundfallSession {
+  over: Partial<SettlementGroundfallSession> = {},
+): SettlementGroundfallSession {
   return {
     worldKey: 'w7',
     name: 'Testworld',
@@ -88,6 +94,16 @@ function sessionFor(
     quirks: [],
     openRequests: [],
     certs: {},
+    projectSites: [],
+    charterId: null,
+    systemSpecialty: null,
+    systemIndex: null,
+    project: null,
+    familiarity: 0,
+    familiarityService: null,
+    atlas: { score: 0, total: 6, complete: false, missing: [] },
+    network: { beacons: 0, stations: 0, shelters: 0, repairs: 0, linked: false, services: [] },
+    routes: [],
     ...over,
   };
 }
@@ -214,6 +230,46 @@ describe('districts are properties of the planet', () => {
     expect(sPlain.scaffold.length).toBe(0);
     const sFacilities = buildSettlementSeats(p, tiers, dPlain, sessionFor(seed, pad));
     expect(sFacilities.works.length).toBeGreaterThan(sPlain.works.length);
+  });
+
+  it('makes project stages and system identity visible and deterministic', () => {
+    const { seed, pad } = landableSpot();
+    const { p, tiers } = bake({ seed, type: 'terrestrial', size: 'medium', dir: pad, aspects: ONES });
+    const plain = sessionFor(seed, pad, { installations: [] });
+    const districts = settlementDistricts(p, tiers, plain);
+    const plainSeats = buildSettlementSeats(p, tiers, districts, plain);
+
+    const kinds = ['greenhouse', 'heat-exchanger', 'wetland', 'harbour-beacon', 'seed-bank'] as const;
+    const projectSites: GroundProjectSite[] = kinds.map((kind, i) => ({
+      id: `project-${i}`,
+      kind,
+      state: 'complete',
+      atMs: 100 + i,
+      sourceWorld: i + 1,
+    }));
+    const complete = sessionFor(seed, pad, {
+      installations: [],
+      projectSites,
+      charterId: 'observatory',
+      systemSpecialty: 'science',
+    });
+    const completeA = buildSettlementSeats(p, tiers, districts, complete);
+    const completeB = buildSettlementSeats(p, tiers, districts, complete);
+    const scaffold = sessionFor(seed, pad, {
+      installations: [],
+      projectSites: [{ ...projectSites[0]!, state: 'scaffold' }],
+    });
+    const scaffoldSeats = buildSettlementSeats(p, tiers, districts, scaffold);
+
+    expect(scaffoldSeats.scaffold.length).toBeGreaterThan(plainSeats.scaffold.length);
+    expect(completeA.dome.length).toBeGreaterThan(plainSeats.dome.length);
+    expect(completeA.pad.length).toBeGreaterThan(plainSeats.pad.length);
+    expect(completeA.mast.length).toBeGreaterThan(plainSeats.mast.length);
+    expect(completeA.works.length).toBeGreaterThan(plainSeats.works.length);
+    expect(completeA.beacons.length).toBeGreaterThan(plainSeats.beacons.length);
+    expect(completeA.banner.length).toBeGreaterThan(plainSeats.banner.length);
+    expect(completeA.windowCool.length).toBeGreaterThan(plainSeats.windowCool.length);
+    expect(familyDirs(p, completeB.works)).toEqual(familyDirs(p, completeA.works));
   });
 
   it('keeps every district inside sight range', () => {

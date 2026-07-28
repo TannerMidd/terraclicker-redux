@@ -525,6 +525,62 @@ function useEffectWiring(): void {
             if (e.stage === 3) audio.completeSting();
             else audio.subEthaBlip(true);
             break;
+          case 'fieldProjectAdvanced':
+            bus.addToast({
+              kind: 'info',
+              kicker:
+                e.stage === 'source'
+                  ? 'FIELD PROJECT / SOURCE LEG'
+                  : e.stage === 'return'
+                    ? 'FIELD PROJECT / RETURN LEG'
+                    : 'FIELD PROJECT BRIEF',
+              title: e.title,
+              body: e.text,
+              ttlMs: 7600,
+            });
+            audio.subEthaBlip(true);
+            break;
+          case 'fieldProjectCompleted':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: `PROJECT COMPLETE / +${e.salvage} SALVAGE / +${e.reputation} REPUTATION`,
+              title: e.title,
+              body: `${e.text} Named route established: ${e.route}.`,
+              ttlMs: 9200,
+            });
+            audio.completeSting();
+            break;
+          case 'fieldAtlasCompleted':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: `FIELD ATLAS ${e.score}/${e.total} / +${e.salvage} SALVAGE / +${e.reputation} REPUTATION`,
+              title: `${e.world}: atlas filed`,
+              body: 'You learned this place from several angles, so the Guide now treats it as a place you know rather than a pin you visited.',
+              ttlMs: 8200,
+            });
+            audio.achievementSting();
+            break;
+          case 'familiarityAdvanced':
+            bus.addToast({
+              kind: 'info',
+              kicker: `LOCAL FAMILIARITY ${e.familiarity}/6`,
+              title: e.world,
+              body: e.service
+                ? `Returning work has earned a practical local service: ${e.service}.`
+                : 'The field desk has started recognising the ship before asking for the registration twice.',
+              ttlMs: 5600,
+            });
+            break;
+          case 'fieldRouteEstablished':
+            bus.addToast({
+              kind: 'achievement',
+              kicker: 'MOBILITY III / NAMED ROUTE',
+              title: e.name,
+              body: `Your beacons and survey station now operate as one field circuit: ${e.service}.`,
+              ttlMs: 7200,
+            });
+            audio.achievementSting();
+            break;
           case 'prestiged':
             bus.flash();
             bus.warp();

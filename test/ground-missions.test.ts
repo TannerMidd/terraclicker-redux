@@ -109,7 +109,18 @@ describe('the surface resolution', () => {
     const world = landable(s);
     const uid = openPetition(s, 'ground-survey', world.lifetimeIndex, world.name);
     s.run.standing[String(world.lifetimeIndex)] = 0.6;
-    const before = s.expedition.salvage;
+    const salvageBefore = s.expedition.salvage;
+    const reputationBefore = s.operations.reputation.magrathea;
+    const sealedBefore = {
+      tu: s.tu.toString(),
+      science: s.science.toString(),
+      gauges: {
+        thermal: s.planet.gauges.thermal.toString(),
+        atmo: s.planet.gauges.atmo.toString(),
+        hydro: s.planet.gauges.hydro.toString(),
+        bio: s.planet.gauges.bio.toString(),
+      },
+    };
 
     const effects: SimEffect[] = [];
     bankGroundSamples(
@@ -126,7 +137,18 @@ describe('the surface resolution', () => {
     const best = def.options.reduce((a, o) => Math.max(a, o.outcome.standing ?? 0), 0);
     expect(standingOf(s, world.lifetimeIndex)).toBeCloseTo(0.6 + best, 5);
     // The sample pay plus the mission's own fee, which the desk cannot mint.
-    expect(s.expedition.salvage - before).toBeGreaterThanOrEqual(GROUND_MISSION_SALVAGE);
+    expect(s.operations.reputation.magrathea).toBe(reputationBefore + 1);
+    expect(s.expedition.salvage - salvageBefore).toBeGreaterThanOrEqual(GROUND_MISSION_SALVAGE);
+    expect({
+      tu: s.tu.toString(),
+      science: s.science.toString(),
+      gauges: {
+        thermal: s.planet.gauges.thermal.toString(),
+        atmo: s.planet.gauges.atmo.toString(),
+        hydro: s.planet.gauges.hydro.toString(),
+        bio: s.planet.gauges.bio.toString(),
+      },
+    }).toEqual(sealedBefore);
     const resolved = effects.find((e) => e.t === 'situationResolved');
     expect(resolved).toMatchObject({ id: 'ground-survey' });
     const history = s.worldRecords[String(world.lifetimeIndex)]!.history;
@@ -139,11 +161,13 @@ describe('the surface resolution', () => {
     const s = withWorlds(1302);
     const world = landable(s);
     const uid = openPetition(s, 'ground-survey', world.lifetimeIndex, world.name);
+    const reputationBefore = s.operations.reputation.magrathea;
     const effects: SimEffect[] = [];
     bankGroundSamples(s, effects, `w${world.lifetimeIndex}`, world.name, [
       { kind: 'field-crystal', n: 2, method: 'quick' },
     ], {});
     expect(s.run.petitions.some((p) => p.uid === uid)).toBe(true);
+    expect(s.operations.reputation.magrathea).toBe(reputationBefore);
   });
 
   it('is never settled by merely arriving in orbit', () => {

@@ -1052,6 +1052,19 @@ select.dr-btn { appearance: none; padding-right: 22px; }
 }
 .mission-route i { color: var(--atmo); font-style: normal; }
 .mission-route span { font-family: var(--mono); color: var(--ink-label); }
+.mission-job > .mission-route-reason {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--atmo) 22%, transparent);
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--atmo) 6%, transparent);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+.mission-route-reason b { color: var(--atmo); font: 650 10px var(--mono); }
+.mission-route-reason span { color: var(--ink-dim); }
 .mission-blocked { margin-bottom: 8px !important; color: var(--improbable) !important; }
 .mission-job .mission-accept,
 .mission-contract .mission-accept { width: 100%; margin-top: 8px; }

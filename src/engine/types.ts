@@ -145,7 +145,14 @@ export interface WorldRecordEvent {
     /** A GroundMark left standing (id = the mark kind). Phase 5. */
     | 'markPlaced'
     /** A facility mended where it stood, by hand. Phase 5. */
-    | 'repairMade';
+    | 'repairMade'
+    /** A multi-world field project changed what physically stands here. */
+    | 'projectStarted'
+    | 'projectCompleted'
+    /** The world's field atlas was completed by direct observation. */
+    | 'atlasCompleted'
+    /** A manually proven route now joins this world to another. */
+    | 'routeEstablished';
   /** Content id of whatever caused it, where there is one. */
   id: string;
   atGameMs: number;
@@ -238,6 +245,12 @@ export interface ExpeditionState {
    * See engine/groundSites.ts.
    */
   groundWorlds: Record<string, GroundWorldRecord>;
+  /** Sparse, deterministic multi-world work and its visible consequences. */
+  fieldProjects: Record<string, FieldProjectState>;
+  /** Routes personally established by projects or certified corridors. */
+  routes: Record<string, ExpeditionRoute>;
+  /** Unbanked shore-party work cached against reloads, one latest report per world. */
+  groundCheckpoints: Record<string, GroundCheckpointState>;
   /** Field Certification track id → rank. Ranks unlock verbs, never percentages. */
   certs: Record<string, number>;
   /**
@@ -263,11 +276,70 @@ export interface GroundWorldRecord {
   samples: Record<string, number>;
   /** Lifeform id → gameTimeMs catalogued. */
   species: Record<string, number>;
+  /** Landmark kind to gameTimeMs first reached on foot. */
+  landmarks: Record<string, number>;
+  /** Weather kind to gameTimeMs first stood in at field strength. */
+  weather: Record<string, number>;
+  /** Deliberate settlement contacts, not merely crossings of the plaza. */
+  civicVisits: number;
+  /** Personal knowledge and trust. Never a core-economy multiplier. */
+  familiarity: number;
+  /** The moment the Field Atlas reached its completion threshold. */
+  atlasCompletedAtMs: number | null;
+  /** Project modules standing here, keyed by project key. */
+  projectSites: Record<string, GroundProjectSite>;
   /** What you left behind, in planet-space so any later landing can find it. */
   marks: GroundMark[];
   /** Lifetime salvage this world's ground has paid, against the yield cap. */
   salvagePaid: number;
 }
+export type FieldProjectId =
+  | 'cold-chain'
+  | 'heat-without-fire'
+  | 'reef-memory'
+  | 'glass-for-the-tide'
+  | 'system-seed-bank';
+
+export type FieldProjectStage = 'investigate' | 'source' | 'return' | 'complete';
+
+export type GroundProjectKind =
+  | 'greenhouse'
+  | 'heat-exchanger'
+  | 'wetland'
+  | 'harbour-beacon'
+  | 'seed-bank';
+
+export interface GroundProjectSite {
+  id: string;
+  kind: GroundProjectKind;
+  state: 'scaffold' | 'complete';
+  atMs: number;
+  sourceWorld: number;
+}
+
+/** One authored chain joining two real worlds in a formed system. */
+export interface FieldProjectState {
+  key: string;
+  id: FieldProjectId;
+  systemIndex: number;
+  receiver: number;
+  source: number;
+  stage: FieldProjectStage;
+  startedAtMs: number;
+  updatedAtMs: number;
+  completedAtMs: number | null;
+}
+
+export interface ExpeditionRoute {
+  id: string;
+  from: number;
+  to: number;
+  kind: FieldProjectId | 'field-corridor';
+  name: string;
+  establishedAtMs: number;
+  trips: number;
+}
+
 
 /**
  * What became of a site. `worked` is terminal: the seam is gone and this world
@@ -301,6 +373,14 @@ export interface GroundEvidence {
   landmarks?: string[];
   /** The walker stood in a settlement's lit or dark heart this stay. */
   civic?: boolean;
+  /** The walker deliberately consulted the settlement field terminal. */
+  contacted?: boolean;
+  /** Distinct, spatially separated instrument readings taken this stay. */
+  readings?: number;
+  /** Planet-space reading directions, used only to resume an unbanked stay. */
+  readingDirs?: [number, number, number][];
+  /** Exact belly-sweep ids, used only to resume an unbanked stay. */
+  chartedIds?: string[];
   /** Weather kinds stood in at moderate strength or better. */
   weathered?: string[];
   /** Marks planted this stay, in planet-space directions. */
@@ -319,6 +399,14 @@ export interface GroundEvidence {
   rangeM?: number;
 }
 
+/** Crash-safe cache of unbanked field work. It pays nothing until boarding. */
+export interface GroundCheckpointState {
+  savedAtMs: number;
+  haul: SampleHaul[];
+  sites: Record<string, GroundSiteOutcome>;
+  species: string[];
+  evidence: GroundEvidence;
+}
 /** Samples of one kind carried aboard, and how they left the ground. */
 export interface SampleHaul {
   /** Sample kind id (content/groundSamples.ts). */
@@ -614,6 +702,14 @@ export type Input =
       /** Everything else the stay can testify to (Phase 5). */
       evidence?: GroundEvidence;
     }
+  | {
+      type: 'checkpointGround';
+      worldKey: string;
+      haul: SampleHaul[];
+      sites: Record<string, GroundSiteOutcome>;
+      species?: string[];
+      evidence?: GroundEvidence;
+    }
   | { type: 'setStandingOrders'; orders: StandingOrders }
   | { type: 'acceptDossier'; id: string }
   /** Close the brief tray and run the neutral standard commission. */
@@ -700,6 +796,49 @@ export type SimEffect =
   | { t: 'civicCalled'; world: string; standing: number }
   /** A lead advanced a stage: rumour → finding → the Guide entry. */
   | { t: 'leadAdvanced'; stage: 1 | 2 | 3; world: string; text: string }
+  | {
+      t: 'fieldProjectAdvanced';
+      key: string;
+      id: FieldProjectId;
+      stage: FieldProjectStage;
+      title: string;
+      text: string;
+      world: string;
+    }
+  | {
+      t: 'fieldProjectCompleted';
+      key: string;
+      id: FieldProjectId;
+      title: string;
+      text: string;
+      route: string;
+      salvage: number;
+      reputation: number;
+    }
+  | {
+      t: 'fieldAtlasCompleted';
+      worldKey: string;
+      world: string;
+      score: number;
+      total: number;
+      salvage: number;
+      reputation: number;
+    }
+  | {
+      t: 'familiarityAdvanced';
+      worldKey: string;
+      world: string;
+      from: number;
+      familiarity: number;
+      service: string | null;
+    }
+  | {
+      t: 'fieldRouteEstablished';
+      id: string;
+      name: string;
+      world: string;
+      service: string;
+    }
   | {
       t: 'situationResolved';
       uid: number;

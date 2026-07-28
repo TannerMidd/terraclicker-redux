@@ -5,6 +5,7 @@ import { C } from '../src/content/constants';
 
 import { initRng } from '../src/engine/rng';
 import { createExpeditionState, deepFieldSites } from '../src/engine/deepField';
+import { createGroundWorldRecord } from '../src/engine/groundSites';
 const OPTS = { utcDay: 3 };
 
 describe('save migrations', () => {
@@ -187,6 +188,12 @@ describe('save migrations', () => {
       sites: {},
       samples: {},
       species: {},
+      landmarks: {},
+      weather: {},
+      civicVisits: 0,
+      familiarity: 0,
+      atlasCompletedAtMs: null,
+      projectSites: {},
       marks: [],
       salvagePaid: 0,
     });
@@ -196,6 +203,92 @@ describe('save migrations', () => {
     // The certification ledgers arrive empty.
     expect(result.state.expedition.certs).toEqual({});
     expect(result.state.expedition.certFirsts).toEqual({});
+  });
+
+  it('v23 -> v24 preserves ground history and adds atlas/project defaults', () => {
+    const current = newGame(88, 0);
+    const raw = JSON.parse(serialize(current)) as Record<string, unknown>;
+    raw['version'] = 23;
+    const exp = raw['expedition'] as Record<string, unknown>;
+    delete exp['fieldProjects'];
+    delete exp['routes'];
+    exp['groundWorlds'] = {
+      w3: {
+        surveyedAtMs: 123_456,
+        visits: 2,
+        sites: { ridge: { s: 'preserved', atMs: 120 } },
+        samples: { basalt: 121 },
+        species: { 'verge-lichen': 122 },
+        marks: [],
+        salvagePaid: 7,
+      },
+    };
+
+    const result = deserialize(JSON.stringify(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.expedition.groundWorlds['w3']).toEqual({
+      surveyedAtMs: 123_456,
+      visits: 2,
+      sites: { ridge: { s: 'preserved', atMs: 120 } },
+      samples: { basalt: 121 },
+      species: { 'verge-lichen': 122 },
+      landmarks: {},
+      weather: {},
+      civicVisits: 0,
+      familiarity: 0,
+      atlasCompletedAtMs: null,
+      projectSites: {},
+      marks: [],
+      salvagePaid: 7,
+    });
+    expect(result.state.expedition.fieldProjects).toEqual({});
+    expect(result.state.expedition.routes).toEqual({});
+  });
+
+  it('round-trips atlas, project-site, project, and route records', () => {
+    const state = newGame(89, 0);
+    const ground = createGroundWorldRecord();
+    ground.surveyedAtMs = 50;
+    ground.familiarity = 4;
+    ground.atlasCompletedAtMs = 75;
+    ground.landmarks = { 'stone-arch': 60 };
+    ground.weather = { rain: 61 };
+    ground.projectSites['r1:s0:reef-memory'] = {
+      id: 'r1:s0:reef-memory',
+      kind: 'wetland',
+      state: 'complete',
+      atMs: 70,
+      sourceWorld: 8,
+    };
+    state.expedition.groundWorlds['w7'] = ground;
+    state.expedition.fieldProjects['r1:s0:reef-memory'] = {
+      key: 'r1:s0:reef-memory',
+      id: 'reef-memory',
+      systemIndex: 0,
+      receiver: 7,
+      source: 8,
+      stage: 'complete',
+      startedAtMs: 10,
+      updatedAtMs: 70,
+      completedAtMs: 70,
+    };
+    state.expedition.routes['project:r1:s0:reef-memory'] = {
+      id: 'project:r1:s0:reef-memory',
+      from: 8,
+      to: 7,
+      kind: 'reef-memory',
+      name: 'Living Corridor: World 8 to World 7',
+      establishedAtMs: 70,
+      trips: 1,
+    };
+
+    const result = deserialize(serialize(state));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.state.expedition.groundWorlds['w7']).toEqual(ground);
+    expect(result.state.expedition.fieldProjects).toEqual(state.expedition.fieldProjects);
+    expect(result.state.expedition.routes).toEqual(state.expedition.routes);
   });
 
   it('v6 -> v7 opens the channel with its own stream and an empty log', () => {

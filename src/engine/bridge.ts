@@ -257,6 +257,11 @@ export function resolveGroundRequests(
       resolved++;
       state.lifetime.situationsAnswered += 1;
       payStandingBest(state, def, inst.world);
+      // Request definitions do not yet carry a commissioning faction. Match
+      // the desk-answer rule until they do: helpful work is noticed by
+      // Magrathea, one point per positively resolved request.
+      const best = def.options.reduce((a, o) => Math.max(a, o.outcome.standing ?? 0), 0);
+      if (best > 0 && inst.world > 0) state.operations.reputation.magrathea += 1;
       state.expedition.salvage += GROUND_MISSION_SALVAGE;
       recordWorldEvent(state, inst.world, {
         kind: 'visited',
@@ -269,7 +274,6 @@ export function resolveGroundRequests(
         atGameMs: state.gameTimeMs,
       });
       recordCertFirst(state, effects, `liaison:answered:${inst.id}`);
-      const best = def.options.reduce((a, o) => Math.max(a, o.outcome.standing ?? 0), 0);
       effects.push({
         t: 'situationResolved',
         uid: inst.uid,

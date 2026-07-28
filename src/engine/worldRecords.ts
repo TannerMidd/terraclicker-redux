@@ -29,9 +29,10 @@
  * ## Determinism
  *
  * Everything here is a pure function of state plus explicit arguments. Traits
- * are derived from the world's own delivery facts and its recorded history, so
- * the same universe always produces the same biography (engine law #1). No rng
- * stream is consumed: a trait is a consequence, not a roll.
+ * are derived from the world's own delivery facts, recorded history, and the
+ * durable field facts that history summarises. The same universe therefore
+ * always produces the same biography (engine law #1). No rng stream is
+ * consumed: a trait is a consequence, not a roll.
  */
 import { compose } from '../content/composer';
 import { WORLD_BIOGRAPHY, worldContextTags } from '../content/biography';
@@ -62,6 +63,9 @@ export const WORLD_TRAITS = [
   'storied', // simply has a lot of history
   'tended', // something was mended here, by hand (Phase 5)
   'waymarked', // carries standing marks — beacons, stations, camps (Phase 5)
+  'restored', // a multi-world project left a working civic module
+  'connected', // a route now joins this world to another place or its own field circuit
+  'well-known', // a broad Field Atlas was filed here
 ] as const;
 
 export type WorldTrait = (typeof WORLD_TRAITS)[number];
@@ -118,10 +122,41 @@ export function worldIsActive(state: GameState, lifetimeIndex: number): boolean 
  * time. A world with nothing to say gets one trait rather than none — every
  * place is at least somewhere.
  */
-export function worldTraits(record: WorldRecord, standing: number): WorldTrait[] {
+export function worldTraits(
+  record: WorldRecord,
+  standing: number,
+  state?: GameState,
+): WorldTrait[] {
   const traits: WorldTrait[] = [];
   const answered = record.history.filter((e) => e.kind === 'petitionAnswered').length;
   const ignored = record.history.filter((e) => e.kind === 'petitionIgnored').length;
+  const ground = state?.expedition.groundWorlds[`w${record.lifetimeIndex}`];
+  const projects = Object.values(state?.expedition.fieldProjects ?? {});
+  const routes = Object.values(state?.expedition.routes ?? {});
+
+  const restored =
+    record.history.some((e) => e.kind === 'projectCompleted')
+    || Object.values(ground?.projectSites ?? {}).some((site) => site.state === 'complete')
+    || projects.some(
+      (project) =>
+        project.stage === 'complete'
+        && (project.receiver === record.lifetimeIndex || project.source === record.lifetimeIndex),
+    );
+  const connected =
+    record.history.some((e) => e.kind === 'routeEstablished')
+    || routes.some(
+      (route) => route.from === record.lifetimeIndex || route.to === record.lifetimeIndex,
+    );
+  const wellKnown =
+    record.history.some((e) => e.kind === 'atlasCompleted')
+    || ground?.atlasCompletedAtMs != null;
+
+  // These are physical and filed legacies, not the latest three interesting
+  // things in a rolling log. Give them the first three slots so a busy world
+  // cannot silently lose its Atlas or a structure that still stands.
+  if (restored) traits.push('restored');
+  if (connected) traits.push('connected');
+  if (wellKnown) traits.push('well-known');
 
   if (ignored > answered && ignored > 0) traits.push('neglected');
   else if (answered > 0 && standing >= 1) traits.push('well-attended');
@@ -162,8 +197,12 @@ export function bottleneckOf(record: WorldRecord): AspectId {
  * something actually happens to it — the description of a place should move
  * when the place does, and not otherwise.
  */
-export function worldBiography(record: WorldRecord, standing: number): string {
-  const traits = worldTraits(record, standing);
+export function worldBiography(
+  record: WorldRecord,
+  standing: number,
+  state?: GameState,
+): string {
+  const traits = worldTraits(record, standing, state);
   return compose(
     WORLD_BIOGRAPHY,
     record.lifetimeIndex * 2654435761 + record.history.length,

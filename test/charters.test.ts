@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { newGame, step, computeDerived } from '../src/engine/sim';
 import {
+  charterOfferSignature,
+  charterOfferWeightsFor,
   charterEffects,
   charterOffersFor,
+  refreshUnsignedCharterOffers,
   charterStandingFloor,
   systemCharacter,
+  systemFieldProfile,
 } from '../src/engine/charters';
+import { bankGroundSamples } from '../src/engine/groundfall';
 import { CHARTERS, CHARTER_BY_ID, CHARTER_OFFER_COUNT } from '../src/content/charters';
 import { createWorldRecord } from '../src/engine/worldRecords';
+import { createGroundWorldRecord } from '../src/engine/groundSites';
 import { standingOf, STANDING_FLOOR } from '../src/engine/situations';
 import { serialize, deserialize } from '../src/engine/save/codec';
 import { C } from '../src/content/constants';
@@ -34,6 +40,43 @@ function systemWith(history: WorldRecordEvent['kind'][], installations = 3): Gam
   }
   s.run.systems = 1;
   return s;
+}
+
+function addFieldPractice(state: GameState): void {
+  state.expedition.groundWorlds.w1 = {
+    ...createGroundWorldRecord(),
+    surveyedAtMs: 10,
+    visits: 2,
+    sites: {
+      'site:preserved': { s: 'preserved', atMs: 11 },
+      'site:worked': { s: 'worked', atMs: 12 },
+    },
+    samples: { basalt: 10, crystal: 11 },
+    species: { moth: 12 },
+    marks: [{ kind: 'station', dir: [1, 0, 0], atMs: 13 }],
+    salvagePaid: 0,
+  };
+  state.expedition.groundWorlds.w2 = {
+    ...createGroundWorldRecord(),
+    surveyedAtMs: 20,
+    visits: 2,
+    sites: {
+      'site:preserved': { s: 'preserved', atMs: 21 },
+      'site:prospected': { s: 'prospected', atMs: 22 },
+    },
+    samples: { brine: 20, glass: 21 },
+    species: { lichen: 22 },
+    marks: [
+      { kind: 'beacon', dir: [0, 1, 0], atMs: 23 },
+      { kind: 'repair', dir: [0, 0, 1], atMs: 24 },
+    ],
+    salvagePaid: 0,
+  };
+  state.worldRecords['2']!.history.push({
+    kind: 'repairMade',
+    id: 'repair',
+    atGameMs: 24,
+  });
 }
 
 describe('System Charters', () => {
@@ -65,6 +108,134 @@ describe('System Charters', () => {
     expect(offers.length).toBe(CHARTER_OFFER_COUNT);
     expect(new Set(offers).size).toBe(CHARTER_OFFER_COUNT);
     expect(charterOffersFor(b, 0)).toEqual(offers);
+  });
+
+  it('derives system-wide field character from existing expedition records', () => {
+    const s = systemWith([]);
+    addFieldPractice(s);
+
+    expect(systemFieldProfile(s, 0)).toEqual({
+      visitedWorlds: 2,
+      surveyedWorlds: 2,
+      sampleKinds: 4,
+      speciesKinds: 2,
+      preservedSites: 2,
+      prospectedSites: 1,
+      workedSites: 1,
+      marks: 3,
+      repairs: 1,
+      signals: ['charted', 'stewarded', 'waymarked', 'prospected'],
+    });
+  });
+
+  it('does not let one very busy landing define an entire system', () => {
+    const s = systemWith([]);
+    addFieldPractice(s);
+    delete s.expedition.groundWorlds.w2;
+    s.worldRecords['2']!.history = [];
+
+    expect(systemFieldProfile(s, 0).signals).toEqual([]);
+  });
+
+  it('uses field character to open and weight compatible articles', () => {
+    const plain = systemWith([]);
+    const fielded = systemWith([]);
+    addFieldPractice(fielded);
+
+    const plainWeights = Object.fromEntries(
+      charterOfferWeightsFor(plain, 0).map((entry) => [entry.id, entry]),
+    );
+    const fieldWeights = Object.fromEntries(
+      charterOfferWeightsFor(fielded, 0).map((entry) => [entry.id, entry]),
+    );
+
+    // The no-ground pool remains the original neutral pool.
+    expect(Object.keys(plainWeights).sort()).toEqual(
+      CHARTERS.filter((charter) => charter.when === 'always').map((charter) => charter.id).sort(),
+    );
+
+    // Survey practice strengthens a neutral research article.
+    expect(fieldWeights.observatory!.weight).toBeGreaterThan(plainWeights.observatory!.weight);
+    expect(fieldWeights.observatory!.fieldSignals).toEqual(['charted']);
+
+    // Stewardship, routes, and geology can open compatible articles even
+    // when petition/build history alone reached no verdict.
+    expect(fieldWeights['mutual-aid']!.fieldSignals).toEqual(['stewarded', 'waymarked']);
+    expect(fieldWeights['works-committee']!.fieldSignals).toEqual(['prospected', 'waymarked']);
+    expect(fieldWeights['salvage-rights']!.fieldSignals).toEqual(['prospected']);
+
+    // Neutral choice never disappears.
+    expect(CHARTERS.filter((charter) => charter.when === 'always')
+      .every((charter) => fieldWeights[charter.id] !== undefined)).toBe(true);
+  });
+
+  it('draws field-authored offers deterministically', () => {
+    const a = systemWith([]);
+    const b = systemWith([]);
+    addFieldPractice(a);
+    addFieldPractice(b);
+
+    expect(charterOffersFor(a, 0)).toEqual(charterOffersFor(b, 0));
+  });
+
+  it('refreshes a formed system pending table when banked field work changes its signature', () => {
+    const s = systemWith([]);
+    s.expedition.groundWorlds.w1 = {
+      ...createGroundWorldRecord(),
+      surveyedAtMs: 10,
+      visits: 1,
+      samples: { basalt: 10 },
+    };
+    const previousSignature = charterOfferSignature(s, 0);
+    s.run.charterOffers['0'] = charterOffersFor(s, 0);
+
+    bankGroundSamples(
+      s,
+      [],
+      'w2',
+      'World 2',
+      [{ kind: 'field-crystal', n: C.GROUND_SURVEY_SAMPLES, method: 'quick' }],
+    );
+
+    expect(previousSignature).toBe('always|');
+    expect(charterOfferSignature(s, 0)).toBe('always|charted');
+    const offers = s.run.charterOffers['0']!;
+    expect(offers).toHaveLength(CHARTER_OFFER_COUNT);
+    expect(
+      charterOfferWeightsFor(s, 0)
+        .find((entry) => entry.id === offers[0])!
+        .fieldSignals,
+    ).toContain('charted');
+  });
+
+  it('does not churn a pending table or advance RNG when its signature is unchanged', () => {
+    const s = systemWith([]);
+    s.run.charterOffers['0'] = charterOffersFor(s, 0);
+    const offers = s.run.charterOffers['0']!;
+    const rng = { ...s.rng };
+    const signature = charterOfferSignature(s, 0);
+
+    expect(refreshUnsignedCharterOffers(s, 0, signature)).toBe(false);
+    expect(s.run.charterOffers['0']).toBe(offers);
+    expect(s.rng).toEqual(rng);
+  });
+
+  it('never refreshes a signed charter, even after the system field signature changes', () => {
+    const s = systemWith([]);
+    const previousSignature = charterOfferSignature(s, 0);
+    s.run.charters['0'] = 'observatory';
+    // Keep a stale pending table too: even malformed legacy state must defer
+    // to the filed article and must not consume a draw.
+    const staleOffers = ['thermal-compact', 'water-board'];
+    s.run.charterOffers['0'] = staleOffers;
+    const rng = { ...s.rng };
+    addFieldPractice(s);
+
+    expect(charterOfferSignature(s, 0)).not.toBe(previousSignature);
+    expect(refreshUnsignedCharterOffers(s, 0, previousSignature)).toBe(false);
+    expect(s.run.charters['0']).toBe('observatory');
+    expect(s.run.charterOffers['0']).toBe(staleOffers);
+    expect(s.rng).toEqual(rng);
   });
 
   it('signs one article per system, once, and only from its offers', () => {

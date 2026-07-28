@@ -279,6 +279,13 @@ export const actions = {
   setFlag: (id: string, value: number) => dispatch({ type: 'setFlag', id, value }),
   completeFirstSortie: () => dispatch({ type: 'completeFirstSortie' }),
   setStandingOrders: (orders: StandingOrders) => dispatch({ type: 'setStandingOrders', orders }),
+  checkpointGround: (
+    worldKey: string,
+    haul: SampleHaul[],
+    sites: Record<string, GroundSiteOutcome>,
+    species: string[] = [],
+    evidence: GroundEvidence = {},
+  ) => dispatch({ type: 'checkpointGround', worldKey, haul, sites, species, evidence }),
   bankGroundSamples: (
     worldKey: string,
     worldName: string,

@@ -26,7 +26,7 @@ import { specialtiesForSystem } from '../../../engine/operations';
 import { C } from '../../../content/constants';
 import { formatDuration } from '../../../engine/num';
 import { AspectGlyph } from '../../assets';
-import { MegaprojectSection, FreightSection, RigSection } from '../../panels/ExpansionSections';
+import { FieldOperationsSection, MegaprojectSection, FreightSection, RigSection } from '../../panels/ExpansionSections';
 
 const TABS = ['missions', 'projects', 'dispatch', 'heritage'] as const;
 type Tab = (typeof TABS)[number];
@@ -376,6 +376,7 @@ export function Operations() {
       )}
       {tab === 'projects' && (
         <>
+          <FieldOperationsSection />
           <MegaprojectSection />
           <RigSection />
         </>

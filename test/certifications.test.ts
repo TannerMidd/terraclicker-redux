@@ -21,7 +21,7 @@ import {
   validateMark,
 } from '../src/engine/groundMarks';
 import { ensureGroundWorld } from '../src/engine/groundSites';
-import { CERT_THRESHOLDS } from '../src/content/certifications';
+import { CERT_BY_ID, CERT_THRESHOLDS } from '../src/content/certifications';
 import { standingOf } from '../src/engine/situations';
 import { BUILDINGS } from '../src/content/buildings';
 import { buildSurfaceParams, dirToLocal, localToDir } from '../src/ui/scene/surface/terrainField';
@@ -57,6 +57,12 @@ function settledWorld(s: GameState): { lifetimeIndex: number; dir: [number, numb
 }
 
 describe('the firsts ledger', () => {
+  it('rank III grants concrete horizontal capabilities, not titles alone', () => {
+    expect(CERT_BY_ID.mobility!.ranks[2].unlock).toMatch(/routecraft.*beacons.*route/i);
+    expect(CERT_BY_ID.geology!.ranks[2].unlock).toMatch(/appraisal.*seam/i);
+    expect(CERT_BY_ID.liaison!.ranks[2].unlock).toMatch(/sponsorship.*settlement/i);
+  });
+
   it('pays each first once, and ranks up at the thresholds', () => {
     const s = newGame(1201, 0);
     const effects: SimEffect[] = [];

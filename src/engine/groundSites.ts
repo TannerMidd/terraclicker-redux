@@ -33,6 +33,12 @@ export function createGroundWorldRecord(): GroundWorldRecord {
     sites: {},
     samples: {},
     species: {},
+    landmarks: {},
+    weather: {},
+    civicVisits: 0,
+    familiarity: 0,
+    atlasCompletedAtMs: null,
+    projectSites: {},
     marks: [],
     salvagePaid: 0,
   };

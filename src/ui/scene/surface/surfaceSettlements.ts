@@ -34,6 +34,7 @@ import {
   type SettlementSpot,
 } from '../../../engine/settlements';
 import type { GroundfallSession } from '../../fx/uiBus';
+import type { GroundProjectSite } from '../../../engine/types';
 import {
   dirToLocal,
   heightAt,
@@ -51,6 +52,37 @@ const STILT_MAX_DEPTH_M = 3.2;
 const DECK_OVER_SEA_M = 0.9;
 /** The touchdown's right of way: no structure crowds the airlock. */
 const PAD_CLEAR_M = 26;
+/** Hard ceiling on civic project dressing per district. */
+const PROJECT_SITE_CAP = 5;
+
+/**
+ * Compatibility view of the world/system facts frozen into groundfall.
+ * The session producer owns these fields; keeping the view local lets the
+ * renderer remain independently testable while that producer is wired.
+ */
+interface SurfaceCivicSignals {
+  readonly projectSites?: readonly GroundProjectSite[];
+  readonly charterId?: string | null;
+  readonly systemSpecialty?: string | null;
+}
+
+/** Small stable hash: layout identity, never simulation randomness. */
+function signalHash(value: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h ^= value.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+const PROJECT_FOOTPRINT: Record<GroundProjectSite['kind'], readonly [number, number, number]> = {
+  greenhouse: [9, 7, 5.5],
+  'heat-exchanger': [8, 6, 7],
+  wetland: [10, 8, 3.2],
+  'harbour-beacon': [6, 6, 10],
+  'seed-bank': [8, 6, 5.5],
+};
 
 export interface DistrictSpec {
   /** Planet-fixed id: `S{roster index}`. */
@@ -262,6 +294,219 @@ function stiltsFor(seats: SettlementSeats, f: Foot, yaw: number, w: number, d: n
   }
 }
 
+/** Offset in a projected seat frame: right across, forward along yaw. */
+function offsetXZ(f: Foot, yaw: number, right: number, forward: number): { x: number; z: number } {
+  return {
+    x: f.x + Math.cos(yaw) * right + Math.sin(yaw) * forward,
+    z: f.z - Math.sin(yaw) * right + Math.cos(yaw) * forward,
+  };
+}
+
+/**
+ * Find a dry/deckable project foot on the civic outer ring. The short,
+ * deterministic fan means one unlucky flooded texel cannot erase a whole
+ * project, while the answer remains identical on every visit.
+ */
+function projectRingFoot(
+  p: SurfaceParams,
+  tiers: SurfaceTiers,
+  bearing: number,
+  reach: number,
+): { f: Foot; u: number; v: number; bearing: number } | null {
+  for (let attempt = 0; attempt < 9; attempt++) {
+    const wave = attempt === 0 ? 0 : Math.ceil(attempt / 2) * (attempt % 2 === 1 ? 1 : -1);
+    const a = bearing + wave * 0.31;
+    const r = Math.max(56, reach - (attempt >= 6 ? 8 : 0));
+    const u = Math.cos(a) * r;
+    const v = Math.sin(a) * r;
+    const f = foot(p, tiers, u, v);
+    if (f) return { f, u, v, bearing: a };
+  }
+  return null;
+}
+
+/** A light box-frame around an unfinished project foundation. */
+function projectScaffold(
+  seats: SettlementSeats,
+  f: Foot,
+  yaw: number,
+  w: number,
+  d: number,
+  h: number,
+): void {
+  for (const right of [-w * 0.44, w * 0.44]) {
+    for (const forward of [-d * 0.44, d * 0.44]) {
+      const at = offsetXZ(f, yaw, right, forward);
+      seat(seats.scaffold, at.x, f.deck + h * 0.5, at.z, yaw, 0, 0, 0.13, h, 0.13);
+    }
+  }
+  for (const level of [h * 0.34, h * 0.67, h * 0.96]) {
+    seat(seats.scaffold, f.x, f.deck + level, f.z, yaw, 0, 0, w, 0.12, 0.12);
+    seat(seats.scaffold, f.x, f.deck + level, f.z, yaw, 0, 0, 0.12, 0.12, d);
+  }
+}
+
+/**
+ * One field-project module, composed only from already-batched settlement
+ * primitives. Scaffold and complete states deliberately have different
+ * silhouettes, so returning to finish the work changes the skyline.
+ */
+function buildProjectModule(
+  seats: SettlementSeats,
+  f: Foot,
+  yaw: number,
+  site: GroundProjectSite,
+  variant: number,
+): void {
+  const [w, d, h] = PROJECT_FOOTPRINT[site.kind];
+  if (site.state === 'scaffold') {
+    seat(seats.pad, f.x, f.deck + 0.09, f.z, yaw, 0, 0, w * 0.52, 0.18, d * 0.52);
+    switch (site.kind) {
+      case 'greenhouse':
+        seat(seats.dome, f.x, f.deck + 0.18, f.z, yaw, 0, 0, w * 0.28, 1.2, d * 0.28);
+        break;
+      case 'heat-exchanger':
+        for (const right of [-1.8, 1.8]) {
+          const at = offsetXZ(f, yaw, right, 0);
+          seat(seats.works, at.x, f.deck + 1.3, at.z, yaw, 0, 0, 1.1, 2.6, 1.1);
+        }
+        break;
+      case 'wetland':
+        for (const right of [-2.5, 2.5]) {
+          const at = offsetXZ(f, yaw, right, 0);
+          seat(seats.pad, at.x, f.deck + 0.14, at.z, yaw, 0, 0, 2.1, 0.16, 3.2);
+        }
+        break;
+      case 'harbour-beacon':
+        seat(seats.mast, f.x, f.deck + h * 0.28, f.z, yaw, 0, 0, 0.32, h * 0.56, 0.32);
+        break;
+      case 'seed-bank':
+        seat(seats.works, f.x, f.deck + 0.9, f.z, yaw, 0, 0, w * 0.58, 1.8, d * 0.58);
+        break;
+    }
+    projectScaffold(seats, f, yaw, w, d, h);
+    stiltsFor(seats, f, yaw, w, d);
+    return;
+  }
+
+  switch (site.kind) {
+    case 'greenhouse': {
+      seat(seats.pad, f.x, f.deck + 0.13, f.z, yaw, 0, 0, 4.8, 0.26, 3.8);
+      seat(seats.dome, f.x, f.deck + 0.38, f.z, yaw, 0, 0, 5.3, 3.4, 4.2);
+      const door = offsetXZ(f, yaw, 0, 4.25);
+      seat(seats.works, door.x, f.deck + 1.1, door.z, yaw, 0, 0, 1.8, 2.2, 1.4);
+      const pane = offsetXZ(f, yaw, 0, 5.01);
+      seat(seats.windowWarm, pane.x, f.deck + 1.25, pane.z, yaw, 0, 0, 1, 0.72, 0.06);
+      break;
+    }
+    case 'heat-exchanger':
+      seat(seats.pad, f.x, f.deck + 0.12, f.z, yaw, 0, 0, 4.2, 0.24, 3.3);
+      for (let i = 0; i < 3; i++) {
+        const at = offsetXZ(f, yaw, (i - 1) * 2.4, 0);
+        const towerH = 4.5 + ((variant >>> (i * 3)) & 3) * 0.5;
+        seat(seats.works, at.x, f.deck + towerH * 0.5, at.z, yaw, 0, 0, 1.25, towerH, 1.25);
+      }
+      seat(seats.mast, f.x, f.deck + 3.1, f.z, yaw, 0, Math.PI * 0.5, 0.24, 6.2, 0.24);
+      break;
+    case 'wetland':
+      for (let i = 0; i < 3; i++) {
+        const at = offsetXZ(f, yaw, (i - 1) * 3.1, (i % 2) * 0.8);
+        seat(seats.pad, at.x, f.deck + 0.1, at.z, yaw + i * 0.28, 0, 0, 2.5, 0.2, 3.5);
+      }
+      for (let i = 0; i < 5; i++) {
+        const at = offsetXZ(f, yaw, -3.5 + i * 1.7, -2.4 + (i % 2) * 4.8);
+        const reedH = 1.8 + ((variant >>> (i * 2)) & 3) * 0.3;
+        seat(seats.mast, at.x, f.deck + reedH * 0.5, at.z, yaw, 0, 0, 0.09, reedH, 0.09);
+      }
+      break;
+    case 'harbour-beacon': {
+      seat(seats.pad, f.x, f.deck + 0.16, f.z, yaw, 0, 0, 3.2, 0.32, 3.2);
+      seat(seats.works, f.x, f.deck + 0.9, f.z, yaw, 0, 0, 2.4, 1.8, 2.4);
+      const beaconH = 11.5 + (variant & 3) * 0.5;
+      seat(seats.mast, f.x, f.deck + 1.8 + beaconH * 0.5, f.z, yaw, 0, 0, 0.38, beaconH, 0.38);
+      seats.beacons.push({ x: f.x, y: f.deck + 2.2 + beaconH, z: f.z });
+      break;
+    }
+    case 'seed-bank': {
+      seat(seats.pad, f.x, f.deck + 0.12, f.z, yaw, 0, 0, 4.2, 0.24, 3.2);
+      seat(seats.works, f.x, f.deck + 1.35, f.z, yaw, 0, 0, 6.8, 2.7, 4.8);
+      seat(seats.dome, f.x, f.deck + 2.4, f.z, yaw, 0, 0, 3.5, 2.1, 2.6);
+      const pane = offsetXZ(f, yaw, 0, 2.48);
+      seat(seats.windowCool, pane.x, f.deck + 1.45, pane.z, yaw, 0, 0, 2.2, 0.72, 0.06);
+      break;
+    }
+  }
+  stiltsFor(seats, f, yaw, w, d);
+}
+
+/**
+ * A plaza-scale civic signature. Charter identity controls its bearing and
+ * pylon rhythm; the specialty adds one restrained, readable motif.
+ */
+function buildCivicFingerprint(
+  seats: SettlementSeats,
+  p: SurfaceParams,
+  plaza: Foot | null,
+  charterId: string | null,
+  specialty: string | null,
+  seed: number,
+  districtIndex: number,
+): void {
+  if (!plaza || (!charterId && !specialty)) return;
+  const hash = signalHash([charterId ?? '', specialty ?? '', seed, districtIndex].join('|'));
+  const bearing = (hash / 0x100000000) * Math.PI * 2;
+  const yaw = projectYaw(p, 0, 0, bearing, plaza);
+  const centre = offsetXZ(plaza, yaw, 0, 6.4);
+  const f: Foot = { ...plaza, x: centre.x, z: centre.z };
+
+  if (charterId) {
+    seat(seats.works, f.x, f.deck + 0.18, f.z, yaw, 0, 0, 2.6, 0.36, 1.15);
+    const pylons = 2 + (hash & 1);
+    for (let i = 0; i < pylons; i++) {
+      const at = offsetXZ(f, yaw, (i - (pylons - 1) * 0.5) * 0.72, 0);
+      const ph = 1.1 + ((hash >>> (i * 3 + 3)) & 3) * 0.22;
+      seat(seats.mast, at.x, f.deck + 0.36 + ph * 0.5, at.z, yaw, 0, 0, 0.08, ph, 0.08);
+      seat(seats.banner, at.x, f.deck + 0.38 + ph, at.z, yaw, 0.1, 0, 0.34, 0.26, 0.04);
+    }
+  }
+
+  switch (specialty) {
+    case 'thermal':
+      for (const right of [-0.75, 0, 0.75]) {
+        const at = offsetXZ(f, yaw, right, -0.9);
+        seat(seats.works, at.x, f.deck + 0.75, at.z, yaw, 0, 0, 0.18, 1.5, 0.72);
+      }
+      break;
+    case 'atmo':
+      seat(seats.dome, f.x, f.deck + 0.2, f.z, yaw, 0, 0, 1.15, 0.8, 1.15);
+      break;
+    case 'hydro':
+      seat(seats.pad, f.x, f.deck + 0.2, f.z, yaw, 0, 0, 1.25, 0.12, 1.25);
+      break;
+    case 'bio':
+      for (let i = 0; i < 3; i++) {
+        const at = offsetXZ(f, yaw, (i - 1) * 0.7, -0.8);
+        seat(seats.banner, at.x, f.deck + 0.8 + (i % 2) * 0.35, at.z, yaw + i * 0.35, 0.25, 0, 0.42, 0.52, 0.05);
+      }
+      break;
+    case 'science': {
+      seat(seats.works, f.x, f.deck + 0.85, f.z, yaw, 0, 0, 0.7, 1.7, 0.7);
+      const pane = offsetXZ(f, yaw, 0, 0.38);
+      seat(seats.windowCool, pane.x, f.deck + 1.1, pane.z, yaw, 0, 0, 0.34, 0.28, 0.04);
+      break;
+    }
+    case 'production':
+      for (const right of [-0.65, 0.65]) {
+        const at = offsetXZ(f, yaw, right, -0.55);
+        seat(seats.works, at.x, f.deck + 0.55, at.z, yaw, 0, 0, 0.8, 1.1, 0.8);
+      }
+      break;
+    default:
+      if (specialty) seat(seats.works, f.x, f.deck + 0.45, f.z, yaw, 0, 0, 0.6, 0.9, 0.6);
+      break;
+  }
+}
+
 /** Ground-suited installations, in the order they take the outer ring. */
 const GROUND_FACILITIES = [
   'seedProbe',
@@ -313,6 +558,12 @@ export function buildSettlementSeats(
   const storied = session.traits.includes('storied');
   const peculiar = session.traits.includes('peculiar');
   const openWork = session.openRequests.length > 0;
+  const civic = session as GroundfallSession & SurfaceCivicSignals;
+  const projectSites = [...(civic.projectSites ?? [])]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, PROJECT_SITE_CAP);
+  const charterId = civic.charterId ?? null;
+  const specialty = civic.systemSpecialty ?? null;
 
   for (const d of districts) {
     const spot = roster[d.index];
@@ -520,6 +771,29 @@ export function buildSettlementSeats(
         }
       }
     });
+
+    // — Planetary projects: world-level civic works have no invented
+    //   coordinate, so every district carries the same compact service
+    //   module. Hash placement keeps each programme planet-fixed.
+    for (const site of projectSites) {
+      const variant = signalHash([session.seed, site.id, site.kind].join(':'));
+      const bearing = (variant / 0x100000000) * Math.PI * 2;
+      const reach = 64 + ((variant >>> 28) & 3) * 3;
+      const placed = projectRingFoot(p, tiers, bearing, reach);
+      if (!placed) continue;
+      const yaw = projectYaw(p, placed.u, placed.v, placed.bearing + Math.PI, placed.f);
+      buildProjectModule(seats, placed.f, yaw, site, variant);
+    }
+
+    buildCivicFingerprint(
+      seats,
+      p,
+      plaza,
+      charterId,
+      specialty,
+      session.seed,
+      d.index,
+    );
 
     // — Memory and oddity: the storied get an avenue, the peculiar a leaning
     //   obelisk nobody explains. —

@@ -33,11 +33,17 @@ import {
   type FreightDef,
   type SeamDef,
 } from '../content/freight';
+import type { FreightWorldAffinity } from '../content/freight';
 import { CARGO_CAPACITY, REFIT_BY_ID, RIG_LIMIT, DETERRENT_POWER } from '../content/refit';
 import type { DeepFieldDef } from '../content/deepField';
 import { C } from '../content/constants';
 import { loadoutEffects } from './loadouts';
 import { mulberry, pickWeighted, randRange } from './rng';
+import { worldTraits } from './worldRecords';
+import type {
+  CompletedPlanetRecord,
+  WorldRecordEvent,
+} from './types';
 import type { ExpeditionState, GameState, ManifestState, SimEffect } from './types';
 
 // ————— Refit-derived capabilities —————
@@ -127,6 +133,128 @@ export function massFactor(expedition: ExpeditionState): number {
 
 // ————— The board —————
 
+export type FreightRouteSide = 'origin' | 'destination';
+export type FreightRouteSignal =
+  | 'type'
+  | 'bottleneck'
+  | 'installation'
+  | 'trait'
+  | 'history'
+  | 'survey';
+
+/** The route facts visible to the freight matcher, with save-history optional. */
+export interface FreightWorldProfile {
+  type: CompletedPlanetRecord['type'];
+  bottleneck: CompletedPlanetRecord['bottleneck'];
+  installations: readonly string[];
+  traits: readonly string[];
+  history: readonly WorldRecordEvent['kind'][];
+  surveyed: boolean;
+}
+
+export interface FreightRouteReason {
+  side: FreightRouteSide;
+  signal: FreightRouteSignal;
+  value: string;
+}
+
+export interface FreightRouteMatch {
+  /** Multiplier applied to the authored base weight. */
+  multiplier: number;
+  /** Final deterministic board weight. */
+  weight: number;
+  /** Structured explanation for tests and future board copy. */
+  reasons: readonly FreightRouteReason[];
+}
+
+const ROUTE_BASE_MULTIPLIER = 0.6;
+const ROUTE_MAX_MULTIPLIER = 4.5;
+const ROUTE_SIGNAL_BONUS: Record<FreightRouteSignal, number> = {
+  type: 0.9,
+  bottleneck: 0.65,
+  installation: 0.75,
+  trait: 0.55,
+  history: 0.45,
+  survey: 0.4,
+};
+
+/**
+ * Gather only durable world facts. A pre-record world still contributes its
+ * type, delivery bottleneck, installations and survey; civic traits and
+ * history simply join the profile when that later-life record exists.
+ */
+export function freightWorldProfile(
+  state: GameState,
+  world: CompletedPlanetRecord,
+): FreightWorldProfile {
+  const key = String(world.lifetimeIndex);
+  const record = state.worldRecords[key];
+  return {
+    type: world.type,
+    bottleneck: world.bottleneck,
+    installations: world.installations,
+    traits: record ? worldTraits(record, state.run.standing[key] ?? 1, state) : [],
+    history: record?.history.map((event) => event.kind) ?? [],
+    surveyed: (record?.survey ?? world.survey) !== null,
+  };
+}
+
+function firstShared(expected: readonly string[] | undefined, actual: readonly string[]): string | null {
+  return expected?.find((value) => actual.includes(value)) ?? null;
+}
+
+function affinityBonus(
+  affinity: FreightWorldAffinity | undefined,
+  world: FreightWorldProfile,
+  side: FreightRouteSide,
+  reasons: FreightRouteReason[],
+): number {
+  if (!affinity) return 0;
+  let bonus = 0;
+  const matched = (
+    signal: FreightRouteSignal,
+    value: string | null,
+  ): void => {
+    if (value === null) return;
+    bonus += ROUTE_SIGNAL_BONUS[signal];
+    reasons.push({ side, signal, value });
+  };
+
+  matched('type', affinity.types?.includes(world.type) ? world.type : null);
+  matched(
+    'bottleneck',
+    affinity.bottlenecks?.includes(world.bottleneck) ? world.bottleneck : null,
+  );
+  matched('installation', firstShared(affinity.installations, world.installations));
+  matched('trait', firstShared(affinity.traits, world.traits));
+  matched('history', firstShared(affinity.history, world.history));
+  matched(
+    'survey',
+    affinity.surveyed !== undefined && affinity.surveyed === world.surveyed
+      ? (world.surveyed ? 'surveyed' : 'unsurveyed')
+      : null,
+  );
+  return bonus;
+}
+
+/**
+ * Score authored cargo against an ordered origin/destination pair. Affinities
+ * make a job common, never mandatory: even a poor match retains a small base
+ * weight, preserving the occasional bureaucratically inexplicable shipment.
+ */
+export function freightRouteMatch(
+  def: FreightDef,
+  origin: FreightWorldProfile,
+  destination: FreightWorldProfile,
+): FreightRouteMatch {
+  if (!def.route) return { multiplier: 1, weight: def.weight, reasons: [] };
+  const reasons: FreightRouteReason[] = [];
+  const bonus = affinityBonus(def.route.origin, origin, 'origin', reasons)
+    + affinityBonus(def.route.destination, destination, 'destination', reasons);
+  const multiplier = Math.min(ROUTE_MAX_MULTIPLIER, ROUTE_BASE_MULTIPLIER + bonus);
+  return { multiplier, weight: def.weight * multiplier, reasons };
+}
+
 /** Distance between two seats, used for the distance component of the fee. */
 export function jobPay(def: FreightDef, distance: number): number {
   return Math.max(1, Math.round(def.salvage + distance * FREIGHT_DISTANCE_PAY));
@@ -153,20 +281,59 @@ function routeDistance(a: number, b: number): number {
 export function refreshJobBoard(state: GameState): void {
   const exp = state.expedition;
   const worlds = state.run.completedPlanets;
+  const worldPosition = new Map(worlds.map((world, index) => [world.lifetimeIndex, index]));
+  const establishedRoutes = Object.values(exp.routes)
+    .filter((route) => worldPosition.has(route.from) && worldPosition.has(route.to))
+    .sort((a, b) => a.establishedAtMs - b.establishedAtMs || a.id.localeCompare(b.id));
   exp.jobs = exp.jobs.filter((j) => j.expiresAtMs > state.gameTimeMs);
   if (worlds.length < 2) return;
+  const routeForPair = (from: number, to: number) => establishedRoutes.find((route) =>
+    route.from === route.to
+      ? route.from === from || route.from === to
+      : (route.from === from && route.to === to)
+        || (route.from === to && route.to === from));
+  let boardHasEstablishedLane = exp.jobs.some((job) =>
+    routeForPair(job.from, job.to) !== undefined);
 
   while (exp.jobs.length < JOB_BOARD_SIZE) {
+    let a: number;
+    let b: number;
+    let establishedRoute: (typeof establishedRoutes)[number] | undefined;
+    // Keep one authored lane visible even when an expiring offer only opens a
+    // partial board slot. Existing lane work is preserved rather than
+    // duplicated; the other slots retain the universe's seeded variety.
+    if (!boardHasEstablishedLane && establishedRoutes.length > 0) {
+      const route = establishedRoutes[
+        Math.floor(randRange(state.rng, 'freight', 0, establishedRoutes.length))
+      ]!;
+      establishedRoute = route;
+      a = worldPosition.get(route.from)!;
+      b = route.from === route.to
+        ? (a + 1 + Math.floor(randRange(state.rng, 'freight', 0, worlds.length - 1))) % worlds.length
+        : worldPosition.get(route.to)!;
+    } else {
+      a = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
+      b = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
+      if (b === a) b = (b + 1) % worlds.length;
+      establishedRoute = routeForPair(worlds[a]!.lifetimeIndex, worlds[b]!.lifetimeIndex);
+    }
+    const from = worlds[a]!;
+    const to = worlds[b]!;
     // The first board always includes work the company-standard rank-one hold
     // can carry; later slots and later boards retain the complete mix.
     const starterSlot = exp.deliveries === 0 && exp.jobs.length === 0;
     const pool = starterSlot ? FREIGHT.filter((candidate) => candidate.mass <= CARGO_CAPACITY[1]) : FREIGHT;
-    const def = pickWeighted(state.rng, 'freight', pool);
-    const a = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
-    let b = Math.floor(randRange(state.rng, 'freight', 0, worlds.length));
-    if (b === a) b = (b + 1) % worlds.length;
-    const from = worlds[a]!;
-    const to = worlds[b]!;
+    const lanePool = establishedRoute
+      ? pool.filter((candidate) => candidate.routeKinds?.includes(establishedRoute.kind))
+      : [];
+    const offerPool = lanePool.length > 0 ? lanePool : pool;
+    const origin = freightWorldProfile(state, from);
+    const destination = freightWorldProfile(state, to);
+    const weightedPool = offerPool.map((candidate) => ({
+      def: candidate,
+      weight: freightRouteMatch(candidate, origin, destination).weight,
+    }));
+    const def = pickWeighted(state.rng, 'freight', weightedPool).def;
     const distance = routeDistance(a, b);
     exp.jobs.push({
       uid: ++state.timers.nextIdCounter,
@@ -179,6 +346,7 @@ export function refreshJobBoard(state: GameState): void {
       salvage: jobPay(def, distance),
       expiresAtMs: state.gameTimeMs + JOB_TTL_MS,
     });
+    if (establishedRoute) boardHasEstablishedLane = true;
   }
 }
 
@@ -218,6 +386,12 @@ export function deliverManifest(state: GameState, effects: SimEffect[]): void {
   exp.deliveries += 1;
   state.lifetime.deliveries += 1;
   exp.salvage += m.salvage;
+  for (const route of Object.values(exp.routes)) {
+    const samePair =
+      (route.from === m.from && route.to === m.to)
+      || (route.from === m.to && route.to === m.from);
+    if (samePair) route.trips += 1;
+  }
   // Reputation is the one thing that crosses the seal, and only in this
   // direction: flying for somebody makes them trust you, which unlocks
   // contracts and megaprojects. No TU, no Science — trust is not currency.

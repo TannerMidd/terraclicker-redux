@@ -301,6 +301,14 @@ export const CHRONICLE = {
   civicCalled: (world: string) =>
     `A call was paid on ${world} in person. Nothing was asked for and nothing was signed, which the residents found deeply suspicious and then rather touching.`,
   leadAdvanced: (text: string) => text,
+  fieldProjectCompleted: (title: string, route: string) =>
+    `${title} is complete and working. ${route} has entered the charts as a route somebody actually proved.`,
+  fieldAtlasCompleted: (world: string, score: number, total: number) =>
+    `${world}'s Field Atlas is filed at ${score}/${total}: observed from the ground, not inferred from orbit.`,
+  fieldRouteEstablished: (name: string, world: string) =>
+    `${name} is established on ${world}. Its beacons now agree on where they are.`,
+  familiarityMilestone: (world: string, familiarity: number, service: string) =>
+    `${world} now knows the field crew at familiarity ${familiarity}. Local service: ${service}.`,
   megaprojectFinished: (name: string) =>
     `${name} is finished and standing. It will outlast this commission, the next one, and very probably you.`,
   /**
