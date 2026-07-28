@@ -1,8 +1,9 @@
 # The Blender pipeline
 
 How a 3D model gets from Blender into this game. Written for someone who has
-not used Blender before; the runabout hull is the worked example, and it is
-currently the only Blender-authored asset in the pack.
+not used Blender before; the runabout hull is the worked example throughout,
+but the same path now carries the skimmer, the settlement kit, the wildlife,
+the crystal seams and the cloud banks.
 
 ---
 
@@ -33,8 +34,12 @@ lighting, animation. Those live in code (`shipKit.tsx`) and are shared.
 | `assets-source/uplift/blender/kitlib.py` | Shared machinery: geometry verbs, UVs, export, self-measurement. |
 | `assets-source/uplift/blender/runabout.py` | **A source of truth.** Palette + builders for the ship. |
 | `assets-source/uplift/blender/skimmer.py` | Same, for the survey sled. |
+| `assets-source/uplift/blender/settlements.py` | 16 building assets, with variants. |
+| `assets-source/uplift/blender/creatures.py` | Wildlife and static fauna — the animated kit. |
+| `assets-source/uplift/blender/ore.py` | The crystal seam cluster. |
+| `assets-source/uplift/blender/clouds.py` | Cloud banks for the flight band. |
 | `assets-source/uplift/blender/*.blend` | The Blender files, *output* of those scripts. Open, look, edit. |
-| `public/assets/uplift/meshes/ships/*.glb` | The game assets. This is what ships to players. |
+| `public/assets/uplift/meshes/**/*.glb` | The game assets. This is what ships to players. |
 | `scripts/uplift/build-ship.mjs` | The driver: runs Blender, then checks the result. |
 
 ```bash
@@ -89,11 +94,12 @@ map controls how that texture lands, but you never assign it in Blender.
 These are not style guidance. Break one and the ship silently vanishes or
 arrives mangled.
 
-**4.1 — Two object names are an API.**
-`runabout` (the root empty) and `hull-nose` (the prow). The code looks them up
-by string. `hull-nose` is fetched *separately* to draw the nose in front of the
-cockpit camera. Rename either and that part of the game renders nothing, with
-no error.
+**4.1 — Asset names are an API.**
+The TSX looks assets up by string, so a rename makes that part of the game
+render nothing, with no error. The ship has two: `runabout` (the whole hull)
+and `hull-nose`, fetched *separately* to draw the prow in front of the cockpit
+camera. Every kit lists its names at the top of its script, and the `ASSETS`
+registry in `build-ship.mjs` asserts they exist.
 
 **4.2 — Only the base colour survives.**
 Roughness, metalness, textures, node graphs, shader setups: all discarded. To
@@ -127,10 +133,35 @@ Practically: model with the nose pointing toward **−Y** and up as **+Z** (the
 normal Blender way — the nose faces you in Front view), and apply transforms
 (`Ctrl+A → All Transforms`) before exporting.
 
-**4.6 — Triangle budget: 4000.** The ship is on screen constantly. The build
-prints the count and shouts if you go over. Current: 3888.
+**4.6 — Triangle budgets, and they differ.**
+4000 for the ship (currently 3888). **900 per asset** for anything instanced —
+settlements, creatures, clouds. 140 for a seam shard, which is drawn four times
+per seam across kilometres of census. The build prints every count and shouts
+when one goes over.
 
-**4.7 — Low-end machines never load it.** On quality `low` the pack is skipped
+**4.7 — Colour means different things in different kits.**
+*Ships*: the vertex colour IS the paint — author the real hull colours.
+*Settlements and clouds*: it is a **multiplier** on a palette-derived family
+colour, so author bodies near-white (they take the world's palette) and trim
+dark (it reads as ironwork against it). *Crystal seams*: ignored entirely — the
+material is one glow with a noise pulse, so only silhouette reaches the game.
+Check what the call site's material does before picking a palette.
+
+**4.8 — Animation lives in the shader, not in Blender.**
+A rig cannot survive the merge — it flattens the hierarchy, so there is nothing
+left to key — and a skinned mesh would give up instancing. So an animated kit
+bakes a **motion mask** into a second UV set instead: `uv1 = (weight, phase)`
+per part, where weight grades along the limb (a callable of vertex position, so
+a wing bends from the shoulder instead of hinging like a door) and phase says
+which limb it is (0 and 0.5 are an opposed pair — a gait, or a wingbeat). The
+material's vertex stage reads that and does the moving. See `creatures.py` and
+`animate()` in `Ecology.tsx`.
+
+Once **any** part of a kit carries a mask, **every** part must — a rigid part is
+weight 0, not absent, or the attribute sets differ and the merge returns null.
+`build-ship.mjs` asserts `uv1` survived for that kit.
+
+**4.9 — Low-end machines never load it.** On quality `low` the pack is skipped
 entirely and the hand-built primitive fallback draws instead. That fallback
 lives in the `.tsx` files and must keep working.
 
@@ -140,13 +171,14 @@ lives in the `.tsx` files and must keep working.
 
 `build-ship.mjs` doesn't just run Blender. It loads the exported `.glb` in
 Node, runs a **literal transcription of the game's `kitGeometry()`**, performs
-the same box fit for all three call sites, and asserts:
+the same box fit for every call site in its `ASSETS` registry, and asserts:
 
-- both required names exist;
+- every required name exists (they are an API, §4.1);
 - every mesh has the same attributes, so the merge cannot return `null`;
-- the prow ends up on `+Z` (i.e. the ship is not backwards or sideways);
-- the triangle count is under budget;
-- the fit is near-uniform.
+- any attribute a kit *depends* on is present — `uv1` for the animated ones;
+- a vehicle's forward part ends up on `+Z` (i.e. it is not backwards);
+- triangle counts are under budget, per asset where the kit is instanced;
+- the fit is near-uniform **where that means anything** — see §6.
 
 It also prints the fitted coordinates of the three glowing bits — nav lamps,
 beacon, engine exhausts — which are *not* part of the merged model (they need
