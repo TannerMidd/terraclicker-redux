@@ -49,6 +49,7 @@ import { SurfaceWeather } from './WeatherFX';
 import { Landmarks } from './Landmarks';
 import { Settlements } from './Settlements';
 import { Ecology } from './Ecology';
+import { CloudBanks } from './CloudBanks';
 import { Marks } from './Marks';
 import { Decals } from './Decals';
 import {
@@ -747,6 +748,16 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             <mesh ref={cloudDeck} material={built.cloudsB.mat} rotation={[-Math.PI / 2, 0, 0]} frustumCulled={false}>
               <planeGeometry args={[64_000, 64_000, 1, 1]} />
             </mesh>
+            {/* Modelled banks in the band BELOW that deck — the part of the
+                sky low flight actually passes through. They read the deck's
+                own uniforms, so one weather drives both. */}
+            <CloudBanks
+              p={built.p}
+              tiers={built.tiers}
+              palette={palette}
+              coverage={built.cloudsB.uniforms.coverage as { value: number }}
+              day={built.cloudsB.uniforms.day as { value: number }}
+            />
 
             <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} seed={session.seed} />
 

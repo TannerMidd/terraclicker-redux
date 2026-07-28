@@ -573,6 +573,7 @@ export function preloadUplift(): void {
   prefetchKit('meshes/marks/mark-kit.glb');
   upliftPrefetch('textures/marks/mark-atlas.ktx2', { repeat: true, srgb: true });
   prefetchKit('meshes/seams/crystal-seam-kit.glb');
+  prefetchKit('meshes/sky/cloud-banks.glb');
   prefetchKit('meshes/deep-field/deep-field-kit.glb');
   upliftPrefetch('textures/deep-field/deep-field-atlas.ktx2', { repeat: true, srgb: true });
   // Sky and weather (Tier 4).

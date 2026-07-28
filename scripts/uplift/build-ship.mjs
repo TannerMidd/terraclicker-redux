@@ -139,6 +139,19 @@ const ASSETS = [
       { label: 'seam shards     (extent fit)', asset: 'crystal-shard', min: [-0.7, -0.7, -0.7], max: [0.7, 0.7, 0.7] },
     ],
   },
+  {
+    id: 'clouds',
+    script: 'clouds.py',
+    blend: 'clouds.blend',
+    glb: 'meshes/sky/cloud-banks.glb',
+    names: ['cloud-bank-a', 'cloud-bank-b', 'cloud-bank-c'],
+    perAsset: 600,
+    budget: 1600,
+    skewLimit: null, // instanced at wildly different sizes by the frame loop
+    sites: [
+      { label: 'banks           (extent fit)', asset: 'cloud-bank-a', min: [-1, -1, -1], max: [1, 1, 1] },
+    ],
+  },
 ];
 
 function findBlender() {
