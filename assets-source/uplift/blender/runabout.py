@@ -32,13 +32,21 @@ material colour into a vertex-colour attribute. Consequences, all load-bearing:
   * Flat shading throughout: this is a faceted, low-poly kit, and the hull
     reads as folded plate rather than blown vinyl.
 
-Orientation. The loader poses parts in the ASSET ROOT's frame, so the root's
-own transform cancels out — which means Blender's usual +Y-up export
-conversion (applied to root nodes) would be undone, landing the ship in the
-scene Z-up. So the conversion is baked into the mesh data here and the
-exporter is told not to do it again (`export_yup=False`). Author in ordinary
-Blender axes — Z up, nose toward -Y — and `to_gltf_axes()` handles the rest.
-The .blend is saved BEFORE that step, so it opens the right way up.
+Orientation, and why EVERY OBJECT HERE SITS AT IDENTITY. The loader poses
+parts in the ASSET ROOT's frame, so whatever transform the root carries
+cancels out — what reaches the game is each mesh's transform relative to the
+root, times its mesh data. Blender's +Y-up export converts the vertex data as
+well as the node transforms, so with every object left at identity and its
+geometry authored in absolute coordinates, the conversion lands entirely in
+the vertex data, survives the root-cancel, and the ship arrives nose on +Z
+and up on +Y with nothing baked by hand.
+
+Put a rotation on the `runabout` empty and that stops being true: the root
+transform is cancelled but the children's are not, and the ship arrives on its
+side. (Measured, not assumed — the build refused it at 17× fit skew.) So:
+author Z up with the nose toward -Y, keep object transforms at identity, and
+put position into the geometry. A plain File → Export → glTF 2.0 with stock
+settings then produces exactly what this script does.
 
 Proportions. All three call sites box-fit this model into a fixed envelope,
 NON-uniformly. The chase and landed envelopes are both ≈ 0.92 W : 0.25 H : 1 L,
@@ -263,7 +271,7 @@ def emit(name, bm, material, bevel_amount=0.0):
         poly.use_smooth = False
     obj = bpy.data.objects.new(name, me)
     bpy.context.scene.collection.objects.link(obj)
-    obj.parent = _root
+    obj.parent = _root  # identity local transform: see the orientation note
     _parts.append(obj)
     return obj
 
@@ -559,20 +567,6 @@ def build_flanks():
 # ————— Export —————
 
 
-def to_gltf_axes():
-    """Bake Blender Z-up → glTF Y-up into the mesh data.
-
-    The loader expresses parts in the asset root's own frame, so a conversion
-    left on the root node would cancel itself out. Doing it here — and telling
-    the exporter not to repeat it — is what puts the nose on +Z and up on +Y
-    where shipKit expects them.
-    """
-    conversion = Matrix.Rotation(math.radians(-90.0), 4, "X")
-    for obj in _parts:
-        obj.data.transform(conversion)
-        obj.data.update()
-
-
 def triangles():
     total = 0
     for obj in _parts:
@@ -649,16 +643,17 @@ def main():
         print(f"  OVER BUDGET by {tris - TRI_BUDGET}")
 
     if args.blend:
-        # Saved before the axis bake, so the .blend opens Z-up like any other.
         bpy.ops.wm.save_as_mainfile(filepath=bpy.path.abspath(args.blend))
         print(f"  wrote {args.blend}")
 
     if args.glb:
-        to_gltf_axes()
+        # Stock settings on purpose: the .blend must export correctly from the
+        # GUI too, so this script may not rely on anything the File → Export
+        # dialog cannot do. The orientation is rigged, not baked.
         bpy.ops.export_scene.gltf(
             filepath=bpy.path.abspath(args.glb),
             export_format="GLB",
-            export_yup=False,          # already baked; see to_gltf_axes()
+            export_yup=True,
             export_apply=True,
             export_texcoords=True,
             export_normals=True,
