@@ -2671,7 +2671,9 @@ function plantMark(kind: GroundMark['kind']): void {
 const CAM_EUL = new Euler(0, 0, 0, 'YXZ');
 /** Chase-camera seat, lagged behind the hull so the follow is not rigid. */
 const chaseAt = new Vector3();
-const CHASE_UP = new Vector3(0, 7, 0);
+/** Camera lift above the ship. Paired with the chase distance below — drop one
+ *  without the other and the view tips into a top-down. */
+const CHASE_UP = new Vector3(0, 4.5, 0);
 let chaseAtT = 0;
 export const SURFACE_FOV = 62;
 const SURFACE_NEAR = 0.08;
@@ -2720,7 +2722,11 @@ export function applySurfaceCamera(camera: Camera, t: number): void {
       // Behind and above, on a lag, so the ship you paid for is a thing in
       // the landscape rather than a rumour about where the camera is.
       FWD.set(0, 0, -1).applyQuaternion(camera.quaternion);
-      const back = 22 + Math.min(14, live.airSpeed * 0.14);
+      // Roughly a ship and a half back, opening out with speed so there is
+      // still room to see what you are flying into. It used to sit at 22 m —
+      // two and a half lengths behind an 8.5 m ship, which read as a distant
+      // dot rather than as your ship.
+      const back = 13 + Math.min(9, live.airSpeed * 0.1);
       const lag = Math.min(0.12, Math.max(1 / 240, t - chaseAtT));
       chaseAt.lerp(
         TO_TARGET.copy(live.pos).addScaledVector(FWD, -back).add(CHASE_UP),
