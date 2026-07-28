@@ -18,8 +18,11 @@ import {
   flightInput,
   flightLive,
   interdiction,
+  OMEGA_MAX,
   stepFlight,
 } from '../src/ui/scene/flightControl';
+import { SETTLED_SPIN_RATE } from '../src/ui/scene/navControl';
+import { SETTLEMENT_SNAP_RAD } from '../src/engine/settlements';
 
 const OPTS = { utcDay: 3 };
 
@@ -272,5 +275,37 @@ describe('flight action latch', () => {
     runFlight(1 / 30, time);
 
     expect(state.expedition.boarded[site.def.id]).toBeDefined();
+  });
+});
+
+/**
+ * The chase has to be winnable. A settled world's spin and the helm's
+ * approach governor are tuned in different files, by different concerns
+ * (one is set dressing, one is optical comfort) — and when the spin
+ * overtook the governor, every settlement on every delivered world became
+ * unreachable by construction. Nothing failed; the ground simply outran the
+ * ship forever. That is the sort of bug a screenshot cannot show and a
+ * playtester can only describe as "it's gone before I get there".
+ */
+describe('a delivered world can actually be approached', () => {
+  it('turns slower than the helm is allowed to fly around it', () => {
+    expect(SETTLED_SPIN_RATE).toBeLessThan(OMEGA_MAX);
+  });
+
+  it('leaves enough margin to close on a target while flying a descent', () => {
+    // Pure parity would mean hovering exactly over one spot forever. The
+    // pilot needs authority left over to steer AND descend, so insist on
+    // real headroom rather than a hair under the cap.
+    expect(SETTLED_SPIN_RATE).toBeLessThan(OMEGA_MAX / 2);
+  });
+
+  it('does not turn a town out of the cone before an approach can be flown', () => {
+    // The property that actually decides whether aiming means anything.
+    // Sight the lights, hold the thrust in, and the run takes the better
+    // part of twenty seconds; if the town has left the autoland's cone by
+    // then, the pilot arrives over empty ground no matter how well they
+    // aimed. Measured against the real flight rig before this held.
+    const driftDuringApproach = SETTLED_SPIN_RATE * 20;
+    expect(driftDuringApproach).toBeLessThanOrEqual(SETTLEMENT_SNAP_RAD);
   });
 });

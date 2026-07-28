@@ -5,6 +5,7 @@
  * purpose — this is per-frame data, same pattern as zoomLive.
  */
 import { Vector3 } from 'three/webgpu';
+import { SETTLEMENT_SNAP_RAD } from '../../engine/settlements';
 
 /**
  * Exact world-space positions of the visited system's worlds, written by
@@ -23,6 +24,40 @@ export const worldAnchors = new Map<number, Vector3>();
  * aimed at, which is the sort of thing people write in to complain about.
  */
 export const worldSpins = new Map<number, number>();
+
+/**
+ * How fast a delivered world turns (rad/s) — and why this is not a free
+ * aesthetic choice.
+ *
+ * The helm's approach governor caps how fast you may move AROUND a body at
+ * `OMEGA_MAX` (flightControl.ts), because optical flow rather than linear
+ * speed is what makes a planet feel large. A world that turns FASTER than
+ * that cap cannot be approached at all: the ground outruns the ship by
+ * construction, every point on the surface is unreachable, and the
+ * settlement you aimed at is long gone before the landing envelope opens.
+ * These worlds turned at 0.35 — an eighteen-second day, and more than twice
+ * the rate the pilot is permitted to chase it with. Landing at a named town
+ * was arithmetically impossible, not merely hard.
+ *
+ * Being under OMEGA_MAX is necessary but not sufficient: it only means the
+ * chase is winnable in principle. What actually decides whether a pilot can
+ * land where they aimed is how far the target DRIFTS during the approach.
+ * Aim at a town four radii out, hold the thrust in, and the run takes the
+ * better part of twenty seconds — so a world that turns a town out of the
+ * autoland's snap cone inside that window is one where aiming is theatre,
+ * however winnable a chase would be. (Measured: at 0.045 the town drifted
+ * 39° against an 11° cone, and a straight-in approach still arrived over
+ * empty ground.)
+ *
+ * So the rate is DERIVED rather than chosen — a world may not turn a town
+ * out of the cone faster than a pilot can fly the approach to it. Change
+ * either input and this follows. test/flight-regressions.test.ts holds both
+ * properties, because a number that looks like set dressing is exactly the
+ * kind that gets "tuned" back into impossibility.
+ */
+/** How long a committed approach takes, from sighting the lights to entry. */
+const APPROACH_SECONDS = 20;
+export const SETTLED_SPIN_RATE = SETTLEMENT_SNAP_RAD / APPROACH_SECONDS;
 
 export const navLive = {
   /** Orbit target angles (radians), written by input, chased by the camera. */

@@ -29,7 +29,7 @@ import { inspectHandlers, makeGlowSprite, TYPE_LABEL } from './shared';
 import { useLamp } from '../SceneLamps';
 import { SettledAtmosphere } from './SettledAtmosphere';
 import { OrbitalHardware, SettlementLights, SystemShuttles } from './SettledWorld';
-import { worldSpins } from '../navControl';
+import { SETTLED_SPIN_RATE, worldSpins } from '../navControl';
 import { sharedBasicMaterial } from './pool';
 
 /** The tilted circular orbit path a slot's world actually follows.
@@ -85,7 +85,7 @@ function MiniWorld({
     group.position.copy(target);
     group.scale.setScalar(size);
     if (mesh.current) {
-      mesh.current.rotation.y = t * 0.3;
+      mesh.current.rotation.y = t * SETTLED_SPIN_RATE;
       worldSpins.set(record.lifetimeIndex, mesh.current.rotation.y);
     }
   });

@@ -26,7 +26,7 @@ import {
   systemOrbitOffset,
 } from '../universeLayout';
 import { C } from '../../../content/constants';
-import { worldAnchors, worldSpins } from '../navControl';
+import { SETTLED_SPIN_RATE, worldAnchors, worldSpins } from '../navControl';
 import { useLamp } from '../SceneLamps';
 import {
   focusOn,
@@ -164,7 +164,7 @@ function VisitWorld({
     const anchor = worldAnchors.get(globalIndex);
     if (anchor) group.getWorldPosition(anchor);
     if (planet.current) {
-      planet.current.rotation.y = universeMotion.reduced ? 0 : t * 0.35;
+      planet.current.rotation.y = universeMotion.reduced ? 0 : t * SETTLED_SPIN_RATE;
       worldSpins.set(record.lifetimeIndex, planet.current.rotation.y);
     }
     if (heritageRing.current && !universeMotion.reduced) {

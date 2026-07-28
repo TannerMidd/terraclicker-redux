@@ -191,7 +191,7 @@ const SURFACE_CAP = 0.085;
  * altitude automatically: creeping over a surface, unhurried in low orbit,
  * and back to commuting speed once the body is far enough away to be small.
  */
-const OMEGA_MAX = 0.16; // rad/s about the nearest body
+export const OMEGA_MAX = 0.16; // rad/s about the nearest body
 
 /** What the surface needs to know about a world you could stand on. */
 export interface LandableWorld {
