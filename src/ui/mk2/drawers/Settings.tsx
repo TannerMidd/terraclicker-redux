@@ -17,6 +17,7 @@ import {
   useGame,
 } from '../../../state/store';
 import { useSettings, type Quality } from '../../settings';
+import { setThemeEnabled } from '../../audio/audio';
 
 export function Settings() {
   const settings = useSettings();
@@ -38,8 +39,33 @@ export function Settings() {
           <b>Sound</b>
           <em>Genuine synthesized personalities. No files were harmed.</em>
         </span>
-        <button className="dr-btn" onClick={() => settings.setAudio(!settings.audio)}>
+        <button
+          className="dr-btn"
+          onClick={() => {
+            const on = !settings.audio;
+            settings.setAudio(on);
+            // Sound off silences the theme too; on restores it if it is wanted.
+            setThemeEnabled(on && settings.music);
+          }}
+        >
           {settings.audio ? 'ON' : 'OFF'}
+        </button>
+      </div>
+
+      <div className="dr-set">
+        <span>
+          <b>Theme</b>
+          <em>A short tune, played by nobody, on instruments that do not exist.</em>
+        </span>
+        <button
+          className="dr-btn"
+          onClick={() => {
+            const on = !settings.music;
+            settings.setMusic(on);
+            setThemeEnabled(on && settings.audio);
+          }}
+        >
+          {settings.music ? 'ON' : 'OFF'}
         </button>
       </div>
 

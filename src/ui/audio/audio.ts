@@ -9,8 +9,6 @@ import { ASPECTS } from '../../engine/types';
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let padGain: GainNode | null = null;
-let padFilter: BiquadFilterNode | null = null;
 let started = false;
 
 function ensure(): AudioContext | null {
@@ -29,57 +27,217 @@ function ensure(): AudioContext | null {
   return ctx;
 }
 
-/** Call on the first user gesture. Starts the ambient bed. */
+/**
+ * How far along the world in the window is, 0–1. The one number the music
+ * listens to.
+ */
+function planetWarmth(): number {
+  const p = useGame.getState().s.planet;
+  let frac = 0;
+  for (const a of ASPECTS) {
+    const t = p.targets[a];
+    frac += t.lte(0) ? 0.25 : Math.min(1, p.gauges[a].div(t).toNumber()) * 0.25;
+  }
+  return frac;
+}
+
+/**
+ * Call on the first user gesture.
+ *
+ * What is NOT here any more: the ambient bed. It was three oscillators at 55,
+ * 82.5 and 110 Hz held open forever — a low fifth that never rested, never
+ * resolved and never changed except to get slightly brighter. Sustained
+ * intervals are the one thing ears refuse to stop hearing, so over an idle
+ * game's session length it stopped reading as atmosphere and started reading
+ * as a fault in the building. The warmth it carried now lives in the theme,
+ * which says the same thing with notes and, crucially, with gaps between
+ * them.
+ */
 export function initAudioOnGesture(): void {
   const c = ensure();
   if (!c || !master || started) return;
   started = true;
+  startTheme();
+}
 
-  // Ambient bed: two detuned triangles + a whisper of filtered noise.
-  padGain = c.createGain();
-  padGain.gain.value = 0.0;
-  padFilter = c.createBiquadFilter();
-  padFilter.type = 'lowpass';
-  padFilter.frequency.value = 220;
-  padFilter.Q.value = 0.6;
+// ————— The theme —————
 
-  const osc1 = c.createOscillator();
-  osc1.type = 'triangle';
-  osc1.frequency.value = 55; // A1
-  const osc2 = c.createOscillator();
-  osc2.type = 'triangle';
-  osc2.frequency.value = 82.5; // E2-ish, a fifth up
-  osc2.detune.value = 6;
-  const osc3 = c.createOscillator();
-  osc3.type = 'sine';
-  osc3.frequency.value = 110;
-  osc3.detune.value = -5;
+/**
+ * A small, sincere tune, synthesized like everything else (ART_DIRECTION.md
+ * §9 — still zero audio files). It is played by a plucked lead, a soft bass
+ * and a tick that is doing its best, over four bars that come round again.
+ *
+ * Two rules keep it from becoming the thing it replaced:
+ *
+ * 1. **It rests.** Roughly a third of the beats are silence, and one bar in
+ *    four the lead sits out entirely. A loop you can hear the edges of is a
+ *    loop you stop noticing; a wall of sound is one you start resenting.
+ * 2. **It answers the game.** The world's completion opens the lead's filter
+ *    and adds the upper octave, so a finished planet genuinely sounds
+ *    brighter than a barren one — the job the old drone was doing, done by
+ *    something that is also a tune.
+ */
+const BPM = 92;
+const BEAT = 60 / BPM;
+const STEP = BEAT / 2; // eighth notes
+const STEPS_PER_BAR = 8;
+const BARS = 4;
+const LOOP_STEPS = STEPS_PER_BAR * BARS;
 
-  const o3g = c.createGain();
-  o3g.gain.value = 0.4;
-  osc1.connect(padFilter);
-  osc2.connect(padFilter);
-  osc3.connect(o3g).connect(padFilter);
-  padFilter.connect(padGain).connect(master);
-  osc1.start();
-  osc2.start();
-  osc3.start();
+/** C major, the friendly one. Roots for the four bars: C, A minor, F, G. */
+const BASS = [65.41, 55.0, 43.65, 49.0];
 
-  padGain.gain.linearRampToValueAtTime(0.05, c.currentTime + 4);
+/**
+ * The melody, in semitones above C4, one slot per eighth note; null is a
+ * rest and the rests are load-bearing. Bar three is deliberately almost
+ * empty — the tune takes a breath, and the loop stops feeling like a wheel.
+ */
+const MELODY: (number | null)[] = [
+  // C major
+  0, null, 4, 7, null, 4, null, null,
+  // A minor
+  9, null, 7, 4, null, null, 2, null,
+  // F — the breath
+  5, null, null, null, 4, null, null, null,
+  // G — the turn back round
+  7, null, 9, 11, null, 7, 4, null,
+];
 
-  // The bed tracks planet progress: barren = dark and hollow, alive = warm.
-  useGame.subscribe((st) => {
-    if (!padFilter || !padGain || !ctx) return;
-    const p = st.s.planet;
-    let frac = 0;
-    for (const a of ASPECTS) {
-      const t = p.targets[a];
-      frac += t.lte(0) ? 0.25 : Math.min(1, p.gauges[a].div(t).toNumber()) * 0.25;
+let themeTimer: number | null = null;
+let themeStep = 0;
+let nextNoteTime = 0;
+let themeGain: GainNode | null = null;
+
+function midiHz(semitonesAboveC4: number): number {
+  return 261.63 * Math.pow(2, semitonesAboveC4 / 12);
+}
+
+/** One plucked note: a triangle with a fast decay, gentle on the top end. */
+function pluck(t: number, hz: number, gain: number, dur: number, bright: number): void {
+  if (!ctx || !themeGain) return;
+  const o = ctx.createOscillator();
+  o.type = 'triangle';
+  o.frequency.value = hz;
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = 700 + bright * 2600;
+  f.Q.value = 0.7;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(gain, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(f).connect(g).connect(themeGain);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+/** The bass: a round sine that gets out of the way quickly. */
+function bassNote(t: number, hz: number): void {
+  if (!ctx || !themeGain) return;
+  const o = ctx.createOscillator();
+  o.type = 'sine';
+  o.frequency.value = hz;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.075, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  o.connect(g).connect(themeGain);
+  o.start(t);
+  o.stop(t + 0.55);
+}
+
+/** The tick: a rimshot made of one hiss, mixed low enough to be a suggestion. */
+function tick(t: number, soft: boolean): void {
+  if (!ctx || !themeGain) return;
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer(ctx);
+  const f = ctx.createBiquadFilter();
+  f.type = 'bandpass';
+  f.frequency.value = soft ? 2600 : 1500;
+  f.Q.value = 1.4;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(soft ? 0.012 : 0.022, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (soft ? 0.03 : 0.06));
+  src.connect(f).connect(g).connect(themeGain);
+  src.start(t);
+  src.stop(t + 0.08);
+}
+
+/** Schedule every note that falls inside the lookahead window. */
+function scheduleTheme(): void {
+  if (!ctx || !themeGain) return;
+  // Truth lives in the settings, not in whoever remembered to call stop.
+  const s = useSettings.getState();
+  if (!s.audio || !s.music) return;
+  // A hidden tab throttles timers; if we have fallen behind, do not try to
+  // catch up by firing a burst of notes at once — pick the clock back up.
+  if (nextNoteTime < ctx.currentTime - 0.5) nextNoteTime = ctx.currentTime + 0.05;
+
+  while (nextNoteTime < ctx.currentTime + 0.2) {
+    const t = nextNoteTime;
+    const step = themeStep % LOOP_STEPS;
+    const bar = Math.floor(step / STEPS_PER_BAR);
+    const inBar = step % STEPS_PER_BAR;
+    const loop = Math.floor(themeStep / LOOP_STEPS);
+    const warmth = planetWarmth();
+    const bright = 0.25 + warmth * 0.75;
+
+    if (inBar === 0) bassNote(t, BASS[bar]!);
+    if (inBar === 4) bassNote(t, BASS[bar]! * 1.5); // the fifth, lightly
+    if (inBar % 4 === 2) tick(t, false);
+    if (inBar % 2 === 1) tick(t, true);
+
+    // Every fourth time round, the lead sits a bar out. Nothing else changes;
+    // it is simply enough to stop the ear predicting the whole thing.
+    const resting = loop % 4 === 3 && bar === 2;
+    const note = MELODY[step];
+    if (note !== null && note !== undefined && !resting) {
+      pluck(t, midiHz(note), 0.09, 0.42, bright);
+      // A delivered world earns the octave above — audibly a brighter place.
+      if (warmth > 0.55) pluck(t + 0.008, midiHz(note + 12), 0.022 * warmth, 0.3, bright);
     }
-    const target = 200 + frac * 1400;
-    padFilter.frequency.setTargetAtTime(target, ctx.currentTime, 1.5);
-    padGain.gain.setTargetAtTime(0.04 + frac * 0.035, ctx.currentTime, 2);
-  });
+
+    nextNoteTime += STEP;
+    themeStep += 1;
+  }
+}
+
+export function startTheme(): void {
+  const c = ensure();
+  if (!c || !master || themeTimer !== null) return;
+  if (!useSettings.getState().music) return;
+  themeGain = c.createGain();
+  themeGain.gain.value = 0.0001;
+  themeGain.connect(master);
+  // Under the effects, over the silence: a lead note lands at about 0.045
+  // once master has had its say, against a click's 0.11.
+  themeGain.gain.setTargetAtTime(1, c.currentTime, 1.6);
+  themeStep = 0;
+  nextNoteTime = c.currentTime + 0.15;
+  scheduleTheme();
+  themeTimer = window.setInterval(scheduleTheme, 40);
+}
+
+export function stopTheme(): void {
+  if (themeTimer !== null) {
+    window.clearInterval(themeTimer);
+    themeTimer = null;
+  }
+  if (ctx && themeGain) {
+    themeGain.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.4);
+    const dying = themeGain;
+    window.setTimeout(() => dying.disconnect(), 2500);
+  }
+  themeGain = null;
+}
+
+/** The Settings switch, both ways, without needing a fresh gesture. */
+export function setThemeEnabled(on: boolean): void {
+  if (on) {
+    if (started) startTheme();
+  } else {
+    stopTheme();
+  }
 }
 
 function blip(freq: number, dur: number, type: OscillatorType, gain: number, when = 0): void {
