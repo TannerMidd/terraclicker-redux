@@ -28,7 +28,9 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['test/**/*.test.ts'],
+    // .mjs tests exist for the node-side asset tooling (scripts/uplift), which
+    // is plain JS and would otherwise fight the strict TS config.
+    include: ['test/**/*.test.ts', 'test/**/*.test.mjs'],
     environment: 'node',
     // Long-horizon simulation tests (offline catch-up, megaprojects, the
     // Circular) legitimately run multi-second sims; on a two-core CI runner

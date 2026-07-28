@@ -5,6 +5,14 @@ not used Blender before; the runabout hull is the worked example throughout,
 but the same path now carries the skimmer, the settlement kit, the wildlife,
 the crystal seams and the cloud banks.
 
+**A model does not need any Python to get in.** Anything that produces a
+`.glb` — the Blender GUI, a CC0 asset pack, a generator — can be registered as
+a `source:` asset, and the build repairs it to the rules below automatically.
+That route is **§8**, and it is the default for new assets. The per-asset
+Python scripts are how the six original kits are built and remain right for
+models that really are code (parametric variants, palettes shared with the
+game); everything in between is machinery both routes share.
+
 ---
 
 ## 1. The mental model
@@ -39,8 +47,12 @@ lighting, animation. Those live in code (`shipKit.tsx`) and are shared.
 | `assets-source/uplift/blender/ore.py` | The crystal seam cluster. |
 | `assets-source/uplift/blender/clouds.py` | Cloud banks for the flight band. |
 | `assets-source/uplift/blender/*.blend` | The Blender files, *output* of those scripts. Open, look, edit. |
+| `assets-source/uplift/models/` | **Imported models go here** — `.blend` or `.glb`, no script needed (§8). |
+| `scripts/uplift/normalize.mjs` | The repair pass for imported models: bakes transforms, generates UVs, strips what the merge refuses. |
+| `scripts/uplift/blend-export.py` | The one generic `.blend → .glb` export used by every `source:` .blend. |
+| `scripts/uplift/kit-contract.mjs` | The game's merge, transcribed for Node — what the build and the tests verify against. |
 | `public/assets/uplift/meshes/**/*.glb` | The game assets. This is what ships to players. |
-| `scripts/uplift/build-ship.mjs` | The driver: runs Blender, then checks the result. |
+| `scripts/uplift/build-ship.mjs` | The driver: builds (or normalizes), then checks the result. |
 
 ```bash
 npm run assets:ship
@@ -93,6 +105,13 @@ map controls how that texture lands, but you never assign it in Blender.
 
 These are not style guidance. Break one and the ship silently vanishes or
 arrives mangled.
+
+(For a `source:` asset, `normalize.mjs` repairs **4.4** and **4.5** for you —
+missing UVs are box-projected, forbidden attributes stripped, transforms baked
+to identity, mirrored parts unflipped — and it keeps 4.8's all-or-none rule by
+zero-filling the mask on rigid parts. The scripted kits satisfy the rules by
+construction. Either way, this section is what the game *needs*; only who does
+the work differs.)
 
 **4.1 — Asset names are an API.**
 The TSX looks assets up by string, so a rename makes that part of the game
@@ -243,23 +262,66 @@ which a binary `.blend` never can.
 
 ---
 
-## 8. Adding a *new* Blender asset
+## 8. Adding a *new* asset — no code required
 
-1. Write `assets-source/uplift/blender/<thing>.py`: `import kitlib as k`, a
-   palette, builder functions, and `k.run(...)` at the bottom. Copy the shape
-   of `skimmer.py` — it is the smaller of the two.
-2. Name the asset root something stable — that string is the API.
-3. Add it to the `ASSETS` registry in `scripts/uplift/build-ship.mjs`, with its
-   required names, triangle budget, and each call site's box fit. That is what
-   gets it built and verified.
-4. Add `prefetchKit('meshes/<family>/<thing>.glb')` to `preloadUplift()` in
-   `upliftAssets.ts` so it downloads with everything else.
-5. Get geometry with `kitGeometryFit(path, name, fit)` and draw it with a
-   **shared** material — one per family, never one per object. (Per-object
+Any `.glb` works: modelled in the Blender GUI, downloaded (CC0 low-poly packs
+— Kenney, Quaternius — are exactly this art style), or generated. A `.blend`
+works too; the build exports it headless with the one generic
+`blend-export.py`. You never write a Python file.
+
+1. Put the file under `assets-source/uplift/models/`.
+2. Look inside it:
+
+   ```bash
+   npm run assets:inspect -- assets-source/uplift/models/<thing>.glb
+   ```
+
+   This prints the node tree — triangles, attributes, material colours — and
+   ends with the candidate names for step 3.
+3. Register it in the `ASSETS` list in `scripts/uplift/build-ship.mjs`. The
+   minimal entry:
+
+   ```js
+   {
+     id: 'person',
+     source: 'models/person.glb',           // or models/person.blend
+     glb: 'meshes/props/person.glb',        // where it ships, under public/
+     names: ['person'],                     // the node the game asks for — the API
+     rename: { 'Armature.001': 'person' },  // teach a download that name (optional)
+     budget: 900,                           // ≤900 if it will be instanced (§4.6)
+   },
+   ```
+
+4. Build and prove it:
+
+   ```bash
+   node scripts/uplift/build-ship.mjs person
+   ```
+
+   The file is **normalized** — transforms baked to identity, missing UVs
+   box-projected at the kit density, tangents/vertex-colours/rigs stripped,
+   materials flattened to their base colour, the motion mask zero-filled on
+   rigid parts — and then **verified** through the game's own merge, exactly
+   like the scripted kits. Read the `WARN` lines: a model whose paint job was
+   a *texture* arrives one flat colour per material, and normalize cannot
+   invent the split for you.
+5. Wire it in: `prefetchKit('meshes/props/<thing>.glb')` in `preloadUplift()`
+   (`upliftAssets.ts`), draw with `kitGeometryFit(path, name, fit)` and a
+   **shared** material — one per family, never one per object (per-object
    materials link a fresh shader each, which is what used to freeze this scene
-   mid-flight.)
-6. Keep the existing procedural version as the Tier-C fallback.
-7. Extend `build-ship.mjs`, or copy it, so the new asset is verified too.
+   mid-flight). Keep a primitive fallback for quality `low` (§4.9), and add
+   `sites` to the registry entry once the call site's fit box exists, so a
+   drifting silhouette is measured instead of noticed on screen.
+
+Two honest limits. **Animation**: a motion mask (§4.8) is design, not repair —
+an imported creature arrives rigid until someone authors `uv1`, in Blender or
+in a script. **Paint**: only flat material colours survive; texture-painted
+models need their materials split by colour first.
+
+**The procedural route** — `script:` instead of `source:`, how the six
+original kits are built — is still the right tool when the model *is* code:
+parametric variants, palettes shared with the game, reviewable diffs. Copy the
+shape of `skimmer.py`; everything shared lives in `kitlib.py`.
 
 ---
 
@@ -267,8 +329,10 @@ which a binary `.blend` never can.
 
 | What you see | Almost certainly |
 |---|---|
-| Ship missing entirely; boxes instead | A mesh has no UV map, or has vertex colours/tangents — the merge returned `null` |
-| Ship on its side or backwards | A non-identity transform on the root empty (§4.5) |
+| Ship missing entirely; boxes instead | A mesh has no UV map, or has vertex colours/tangents — the merge returned `null`. (`source:` assets: normalize fixes this; if it still happens, the GLB skipped normalize) |
+| Ship on its side or backwards | A non-identity transform on the root empty (§4.5) — auto-fixed for `source:` assets |
+| Imported model is one flat colour | Its paint was a texture; normalize `WARN`ed when it stripped it — split the model into flat-coloured materials |
+| Imported creature stands rigid | No motion mask — `uv1` must be authored (§4.8); normalize only zero-fills it |
 | One part invisible | Renamed object, or it isn't parented under `runabout` |
 | Everything one flat colour | All parts share a material — colour comes from *materials*, not from Blender vertex paint |
 | Colours too bright/washed | sRGB hex used where linear was needed (§4.3) |

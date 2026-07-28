@@ -13,15 +13,18 @@
  *   node scripts/uplift/build-ship.mjs skimmer        just one
  *   node scripts/uplift/build-ship.mjs --verify       verify shipped GLBs only
  *
- * Blender is found via $BLENDER, else the usual install roots.
+ * Assets come in two ways: `script:` kits are BUILT (their Python is the
+ * model), `source:` assets are IMPORTED (any .blend or .glb, repaired by
+ * normalize.mjs — see docs/BLENDER_PIPELINE.md §8). Both end at the same
+ * verify. Blender is found via $BLENDER, else the usual install roots, and is
+ * only needed for scripts and .blend sources.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { PUBLIC_ROOT, ROOT, SOURCE_ROOT } from './helpers.mjs';
+import { PUBLIC_ROOT, ROOT, SOURCE_ROOT, TMP_ROOT, ensureDir } from './helpers.mjs';
+import { fitBox, fittedPoint, kitGeometry, loadKit } from './kit-contract.mjs';
+import { normalizeFile, printReport } from './normalize.mjs';
 
 const BLENDER_CANDIDATES = [
   process.env.BLENDER,
@@ -42,6 +45,19 @@ const BLENDER_CANDIDATES = [
  * basic-material emitters have to sit on: those meshes live in the TSX,
  * outside the merge (the shared kit material cannot glow), so they do not
  * follow the hull when it changes — the build prints where to put them.
+ *
+ * TWO WAYS IN. An asset has either
+ *   `script:` — procedural, a Python file in assets-source/uplift/blender
+ *               (the original six kits; the .blend is the script's output), or
+ *   `source:` — a FILE under assets-source/uplift: a .blend modelled in the
+ *               Blender GUI, or a .glb/.gltf from anywhere (asset pack,
+ *               generator, another tool). No Python. The file is exported
+ *               (if .blend) and then repaired by normalize.mjs — UVs, baked
+ *               transforms, stripped tangents/rigs, flat colours — before the
+ *               same verify as everyone else. `rename: { from: to }` teaches
+ *               a download the names the game asks for.
+ * New assets should use `source:`. A minimal entry is id, source, glb, names,
+ * and a budget; add `sites` once a call site exists so its fit is measured.
  */
 const ASSETS = [
   {
@@ -50,6 +66,10 @@ const ASSETS = [
     blend: 'runabout.blend',
     glb: 'meshes/ships/runabout.glb',
     names: ['runabout', 'hull-nose'],
+    // hull-nose is a duplicate VIEW of nose geometry the 'runabout' name
+    // already counts — fetched separately to draw the prow in the cockpit —
+    // so it is excluded from the file-total budget rather than counted twice.
+    alias: ['hull-nose'],
     budget: 4000,
     forward: 'hull-nose',
     sites: [
@@ -163,12 +183,11 @@ function findBlender() {
   );
 }
 
-function build(asset, blender) {
+function runBlender(blender, script, blend, glb) {
   const output = execFileSync(
     blender,
-    ['--background', '--factory-startup', '--python', resolve(SOURCE_ROOT, 'blender', asset.script),
-      '--', '--blend', resolve(SOURCE_ROOT, 'blender', asset.blend),
-      '--glb', resolve(PUBLIC_ROOT, asset.glb)],
+    ['--background', '--factory-startup', '--python', script,
+      '--', '--blend', blend, '--glb', glb],
     { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
   );
   // Blender narrates every exported primitive; only the model's own report is
@@ -180,86 +199,35 @@ function build(asset, blender) {
   }
 }
 
-/** Load a GLB the way GLTFLoader does in the browser, without a network. */
-async function loadKit(path) {
-  const buffer = readFileSync(path);
-  const array = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  const loader = new GLTFLoader();
-  const gltf = await new Promise((res, rej) => loader.parse(array, '', res, rej));
-  gltf.scene.updateMatrixWorld(true);
-  return gltf.scene;
-}
-
-/**
- * kitGeometry(), transcribed from src/ui/scene/uplift/upliftAssets.ts. Kept
- * literal on purpose: if the runtime merge would throw, this throws too.
- */
-function kitGeometry(scene, name) {
-  const root = scene.getObjectByName(name);
-  if (!root) throw new Error(`asset '${name}' is missing from the kit`);
-  const rootInverse = root.matrixWorld.clone().invert();
-  const parts = [];
-  const attributeSets = new Set();
-  root.traverse((obj) => {
-    if (!obj.isMesh) return;
-    const geo = obj.geometry.index ? obj.geometry.toNonIndexed() : obj.geometry.clone();
-    geo.applyMatrix4(new THREE.Matrix4().multiplyMatrices(rootInverse, obj.matrixWorld));
-    const color = obj.material?.color ?? new THREE.Color(1, 1, 1);
-    const count = geo.getAttribute('position').count;
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    attributeSets.add(Object.keys(geo.attributes).sort().join(','));
-    parts.push(geo);
-  });
-  if (parts.length === 0) throw new Error(`asset '${name}' has no meshes`);
-  if (attributeSets.size > 1) {
-    throw new Error(
-      `mixed vertex attributes would make mergeGeometries return null:\n  ${[...attributeSets].join('\n  ')}`,
+async function build(asset, blender) {
+  // The original route: a procedural kit whose Python IS the model.
+  if (asset.script) {
+    runBlender(
+      blender,
+      resolve(SOURCE_ROOT, 'blender', asset.script),
+      resolve(SOURCE_ROOT, 'blender', asset.blend),
+      resolve(PUBLIC_ROOT, asset.glb),
     );
+    return;
   }
-  const merged = mergeGeometries(parts, false);
-  if (!merged) throw new Error(`mergeGeometries refused '${name}'`);
-  return { merged, parts: parts.length, attributes: [...attributeSets][0] };
+  // The no-code route: a modelled file, exported if needed, then normalized.
+  const src = resolve(SOURCE_ROOT, asset.source);
+  if (!existsSync(src)) throw new Error(`${asset.id}: source file missing: ${src}`);
+  let input = src;
+  if (src.endsWith('.blend')) {
+    input = resolve(ensureDir(TMP_ROOT), `${asset.id}-export.glb`);
+    runBlender(blender, resolve(ROOT, 'scripts', 'uplift', 'blend-export.py'), src, input);
+  }
+  console.log(`${asset.id}: normalizing ${asset.source}`);
+  const { report } = await normalizeFile(input, resolve(PUBLIC_ROOT, asset.glb), {
+    rename: asset.rename,
+    names: asset.names, // optional variants may be absent; verify tolerates that
+  });
+  printReport(report);
 }
 
-/** kitGeometryFit()'s box mode, same file. Returns the fit's own frame too. */
-function fitBox(base, { min, max }, rotateY = Math.PI) {
-  const geo = base.clone();
-  if (rotateY) geo.rotateY(rotateY);
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox;
-  const size = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
-  const scale = [0, 1, 2].map((i) => (max[i] - min[i]) / Math.max(1e-5, size[i]));
-  // Read before the transform: applyMatrix4 RECOMPUTES boundingBox in place,
-  // so `bb` stops describing the pre-fit model the moment the fit is applied.
-  const bbMin = bb.min.toArray();
-  geo.applyMatrix4(
-    new THREE.Matrix4()
-      .makeTranslation(
-        min[0] - bb.min.x * scale[0],
-        min[1] - bb.min.y * scale[1],
-        min[2] - bb.min.z * scale[2],
-      )
-      .multiply(new THREE.Matrix4().makeScale(scale[0], scale[1], scale[2])),
-  );
-  return { geo, scale, bbMin };
-}
-
-/**
- * A point authored in Blender axes, in the fitted frame the TSX works in.
- * Derived from the real geometry rather than hardcoded, so it stays true when
- * the model moves. Blender (x, y, z) is glTF (x, z, -y), and the fit spins
- * that by PI first.
- */
-function fittedPoint(blender, fit) {
-  const g = [-blender[0], blender[2], blender[1]];
-  return [0, 1, 2].map((i) => fit.min[i] + (g[i] - fit.bbMin[i]) * fit.scale[i]);
-}
+// loadKit / kitGeometry / fitBox / fittedPoint — the literal transcription of
+// the game's loading path — live in kit-contract.mjs, shared with the tests.
 
 async function verify(asset) {
   const path = resolve(PUBLIC_ROOT, asset.glb);
@@ -283,7 +251,7 @@ async function verify(asset) {
       }
     }
   }
-  for (const site of asset.sites) {
+  for (const site of asset.sites ?? []) {
     const { merged, parts, attributes } = kitGeometry(scene, site.asset);
     const tris = merged.getAttribute('position').count / 3;
     const fit = fitBox(merged, site);
@@ -323,11 +291,18 @@ async function verify(asset) {
   // as its worst member, and the ones with no call site listed above are
   // exactly the ones nobody would notice breaking.
   let total = 0;
+  let aliased = 0;
   const over = [];
   for (const name of [...asset.names, ...(asset.optional ?? [])]) {
     if (!present.includes(name)) continue;
     const { merged } = kitGeometry(scene, name);
     const tris = merged.getAttribute('position').count / 3;
+    // An alias is a separately-fetched view of geometry another name already
+    // counts (the cockpit prow); real file weight, but not new scene cost.
+    if (asset.alias?.includes(name)) {
+      aliased += tris;
+      continue;
+    }
     total += tris;
     if (asset.perAsset && tris > asset.perAsset) over.push(`${name} ${tris}`);
   }
@@ -338,9 +313,13 @@ async function verify(asset) {
       console.log(`    OVER: ${over.join(', ')}`);
       failed = true;
     }
-  } else {
-    console.log(`  whole asset: ${total} triangles (budget ${asset.budget})${total > asset.budget ? '  <-- OVER' : ''}`);
+  } else if (asset.budget) {
+    const dup = aliased ? `, +${aliased} in duplicate views` : '';
+    console.log(`  whole asset: ${total} triangles (budget ${asset.budget}${dup})${total > asset.budget ? '  <-- OVER' : ''}`);
     if (total > asset.budget) failed = true;
+  } else {
+    // No budget declared yet — report the number so someone declares one.
+    console.log(`  whole asset: ${total} triangles (no budget declared)`);
   }
 
   if (asset.anchors) {
@@ -362,9 +341,13 @@ const selected = wanted.length ? ASSETS.filter((a) => wanted.includes(a.id)) : A
 if (!selected.length) throw new Error(`no such asset: ${wanted.join(', ')}`);
 
 if (!verifyOnly) {
-  const blender = findBlender();
-  console.log(`Blender: ${blender}`);
-  for (const asset of selected) build(asset, blender);
+  // Blender is only needed for scripted kits and .blend sources — a .glb
+  // source normalizes without it, so a machine with no Blender can still
+  // import downloaded models.
+  const needsBlender = selected.some((a) => a.script || a.source?.endsWith('.blend'));
+  const blender = needsBlender ? findBlender() : null;
+  if (blender) console.log(`Blender: ${blender}`);
+  for (const asset of selected) await build(asset, blender);
 }
 for (const asset of selected) await verify(asset);
 console.log('\nOK');
