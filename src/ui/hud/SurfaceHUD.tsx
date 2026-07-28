@@ -39,6 +39,7 @@ import {
   WEATHER_LABEL,
 } from '../../engine/weather';
 import { SAMPLE_BY_ID } from '../../content/groundSamples';
+import { EXPEDITION_ART } from '../assets';
 import { flightPrefs, keyLabel } from '../scene/flightBindings';
 import { useGame } from '../../state/store';
 import { isGroundSurveyed } from '../../engine/groundfall';
@@ -500,6 +501,8 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
 
       {targetScanned && targetKind && (
         <div className="sh-assay">
+          {/* The assay ledger stopped being text-only (ASSET_UPLIFT.md 6.4). */}
+          <img className="sh-assay-art" src={EXPEDITION_ART.sample(target.kind)} alt="" aria-hidden />
           <span className="sh-assay-kind">◈ {targetKind.name}</span>
           <span className="sh-assay-sub">seam of {target.richness} · {targetKind.salvage} salvage each</span>
           <div className="sh-verbs" role="radiogroup" aria-label="extraction method">
@@ -582,6 +585,27 @@ const MARK_GLYPH: Record<CompassMark['kind'], string> = {
   mark: '▪',
   sense: '·',
 };
+
+/**
+ * Rail kinds with a drawn icon in the compass sprite sheet (6.5). The sheet
+ * covers the five STANDING-mark symbols; the rail's other kinds (ship, site,
+ * life…) keep their text glyphs until the sheet grows.
+ */
+const MARK_ICON: Partial<Record<CompassMark['kind'], string>> = {
+  beacon: 'beacon',
+  prospect: 'prospect',
+  mark: 'station',
+};
+
+function railGlyph(kind: CompassMark['kind']) {
+  const icon = MARK_ICON[kind];
+  if (!icon) return MARK_GLYPH[kind];
+  return (
+    <svg className="sh-mark-icon" viewBox="0 0 24 30" aria-hidden>
+      <use href={`${EXPEDITION_ART.compassSprite}#mark-${icon}`} />
+    </svg>
+  );
+}
 
 /**
  * A sliding tape compass; ticks every 15°, cardinals where they fall, and a
@@ -714,7 +738,7 @@ function Compass({ heading, marks }: { heading: number; marks: CompassMark[] }) 
               className={`sh-mark ${m.kind}`}
               style={{ transform: `translateX(${off * PX_PER_DEG}px)` }}
             >
-              {MARK_GLYPH[m.kind]}
+              {railGlyph(m.kind)}
               <i>{dist}</i>
             </span>
           );

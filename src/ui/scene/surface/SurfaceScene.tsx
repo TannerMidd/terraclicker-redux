@@ -50,8 +50,21 @@ import { Landmarks } from './Landmarks';
 import { Settlements } from './Settlements';
 import { Ecology } from './Ecology';
 import { Marks } from './Marks';
+import { Decals } from './Decals';
+import {
+  groundBundle,
+  GROUND_TYPE_INDEX,
+  kitGeometryFit,
+  upliftActive,
+  upliftFamilyMaterial,
+  upliftTex,
+  upliftTier,
+} from '../uplift/upliftAssets';
+import { RefitPods, runaboutGeometry, shipMaterial, skimmerGeometry, type RefitPodSpec } from '../uplift/shipKit';
+import type { BufferGeometry } from 'three/webgpu';
 import {
   buildTierTextures,
+  CLOUD_SLICES,
   createCloudDeckMaterial,
   createCrystalMaterial,
   createDustRingMaterial,
@@ -150,10 +163,34 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const tiers = surfaceTiers();
     if (!p || !tiers) return null;
     const tex = buildTierTextures(tiers);
-    const terrainB = createTerrainMaterial(palette, tiers, tex);
-    const liquidB = createLiquidMaterial(palette, tiers, tex);
-    const skyB = createSkyMaterial(palette);
-    const cloudsB = createCloudDeckMaterial();
+    // The Tier-1 pack, if quality wants it AND it has finished transcoding —
+    // a session that bakes before the pack lands simply stays procedural,
+    // which is the fallback law working as written.
+    const assetTier = upliftTier();
+    const bundle = assetTier ? groundBundle() : null;
+    const ground = bundle
+      ? { bundle, typeIndex: GROUND_TYPE_INDEX[session.type] ?? 0, rich: assetTier === 'a' }
+      : null;
+    const terrainB = createTerrainMaterial(palette, tiers, tex, ground);
+    const liquidB = createLiquidMaterial(palette, tiers, tex, bundle?.shore ?? null);
+    // The sky's own pack (4.1/4.3/4.6): each piece is optional and the dome
+    // degrades to arithmetic per piece — same fallback law as the ground.
+    const skyLut = assetTier ? upliftTex('textures/sky/sky-gradient-luts.ktx2', { layers: 6, srgb: true }) : null;
+    const skyB = createSkyMaterial(
+      palette,
+      skyLut
+        ? {
+            lut: skyLut,
+            typeIndex: GROUND_TYPE_INDEX[session.type] ?? 0,
+            aurora: upliftTex('textures/sky/aurora-bioluminescence-ramp.ktx2', {}),
+          }
+        : null,
+    );
+    const cloudDeckTex = assetTier ? upliftTex('textures/sky/cloud-deck-array.ktx2', { repeat: true, layers: 4 }) : null;
+    const cloudFlowTex = assetTier ? upliftTex('textures/sky/cloud-flow.ktx2', { repeat: true }) : null;
+    const cloudsB = createCloudDeckMaterial(
+      cloudDeckTex && cloudFlowTex ? { deck: cloudDeckTex, flow: cloudFlowTex } : null,
+    );
     const crystalB = createCrystalMaterial();
     const dustB = createDustRingMaterial();
 
@@ -182,6 +219,9 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     terrainB.uniforms.vegDensity.value = a.bio * (vegType[session.type] ?? 1);
     (skyB.uniforms.density as { value: number }).value = 0.12 + a.atmo * 0.88;
     (skyB.uniforms.sunTint as { value: Color }).value = new Color(session.starHex);
+    // Aurora strength: the Biotic gauge, once it has something to glow with.
+    (skyB.uniforms.aurora as { value: number }).value =
+      session.type === 'gasgiant' ? 0 : Math.max(0, a.bio - 0.5) * 2;
     // No air, no weather: the deck only exists once the Atmo gauge does.
     const baseCoverage = Math.min(0.85, a.atmo * (0.3 + a.hydro * 0.55));
     (cloudsB.uniforms.coverage as { value: number }).value = baseCoverage;
@@ -242,6 +282,18 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const a = session.aspects;
     return a.bio * ({ terrestrial: 1, ocean: 0.8, desert: 0.42, ice: 0.25, volcanic: 0.2, gasgiant: 0 }[session.type] ?? 1);
   }, [session]);
+
+  // The mark kit's flagged prospect stake (2.6), seated exactly like the pole
+  // it replaces — centred, 1.35 m tall, the instance matrices unchanged.
+  const stakeKit = useMemo(() => {
+    if (!upliftActive()) return null;
+    const geometry = kitGeometryFit('meshes/marks/mark-kit.glb', 'prospect-stake', { mode: 'height', height: 1.35 });
+    if (!geometry) return null;
+    return {
+      geometry,
+      material: upliftFamilyMaterial({ tint: new Color(0xd98d2b), gain: 2.2, roughness: 0.8 }),
+    };
+  }, []);
 
   // Site ids are planet-fixed strings; instances are numbered seats. The slot
   // map is the bridge, built once per landing from the CENSUS order — the
@@ -422,6 +474,15 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       0.92,
       built.baseCoverage + (stormy ? wx.intensity * 0.4 : 0),
     );
+    // The weather picks which authored sheet the deck wears (4.1).
+    (built.cloudsB.uniforms.slice as { value: number }).value =
+      wx.kind === 'dust'
+        ? CLOUD_SLICES.dust
+        : stormy
+          ? CLOUD_SLICES.storm
+          : built.baseCoverage < 0.28
+            ? CLOUD_SLICES.cirrus
+            : CLOUD_SLICES.cumulus;
     (built.crystalB.uniforms.night as { value: number }).value = 1 - day;
 
     // The ground rolled under a traveller: a tier re-centre committed. Push
@@ -665,7 +726,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               <planeGeometry args={[64_000, 64_000, 1, 1]} />
             </mesh>
 
-            <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} />
+            <ChunkedProps p={built.p} tiers={built.tiers} palette={palette} type={session.type} bioK={bioK} seed={session.seed} />
 
             <instancedMesh
               ref={crystals}
@@ -676,10 +737,19 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               <octahedronGeometry args={[0.7, 0]} />
             </instancedMesh>
 
-            {/* Prospect stakes: a thin marker pole per marked seam. */}
-            <instancedMesh ref={stakes} args={[undefined, undefined, STAKE_MAX]} frustumCulled={false}>
-              <cylinderGeometry args={[0.024, 0.05, 1.35, 5]} />
-              <meshBasicMaterial color="#d98d2b" />
+            {/* Prospect stakes: the mark kit's flagged stake, or the pole. */}
+            <instancedMesh
+              ref={stakes}
+              args={[stakeKit?.geometry ?? undefined, undefined, STAKE_MAX]}
+              material={stakeKit?.material}
+              frustumCulled={false}
+            >
+              {stakeKit ? null : (
+                <>
+                  <cylinderGeometry args={[0.024, 0.05, 1.35, 5]} />
+                  <meshBasicMaterial color="#d98d2b" />
+                </>
+              )}
             </instancedMesh>
 
             <mesh ref={dustRing} visible={false} material={built.dustB.mat} rotation={[-Math.PI / 2, 0, 0]}>
@@ -689,6 +759,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               <planeGeometry args={[2, 2]} />
             </mesh>
 
+            <Decals p={built.p} tiers={built.tiers} />
             <Pickaxe />
             <SkimmerDash />
             <ParkedSkimmer p={built.p} tiers={built.tiers} />
@@ -761,13 +832,16 @@ function PropChunks({
   tiers,
   def,
   material,
+  geometry,
   children,
 }: {
   p: SurfaceParams;
   tiers: SurfaceTiers;
   def: PropFamilyDef;
   material: MeshStandardNodeMaterial;
-  children: React.ReactNode;
+  /** Kit geometry (ASSET_UPLIFT.md 2.1) — the primitive children otherwise. */
+  geometry?: BufferGeometry | null;
+  children?: React.ReactNode;
 }) {
   const mesh = useRef<InstancedMesh>(null);
   const capChunks = useMemo(() => chunkCapacity(def), [def]);
@@ -875,8 +949,13 @@ function PropChunks({
   });
 
   return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, capSeats]} material={material} frustumCulled={false}>
-      {children}
+    <instancedMesh
+      ref={mesh}
+      args={[geometry ?? undefined, undefined, capSeats]}
+      material={material}
+      frustumCulled={false}
+    >
+      {geometry ? null : children}
     </instancedMesh>
   );
 }
@@ -887,50 +966,126 @@ function ChunkedProps({
   palette,
   type,
   bioK,
+  seed,
 }: {
   p: SurfaceParams;
   tiers: SurfaceTiers;
   palette: ReturnType<typeof paletteFor>;
   type: string;
   bioK: number;
+  seed: number;
 }) {
+  // Kit geometry (2.1): one authored variant per family per world, seeded so
+  // neighbouring worlds see different rocks. LOD0 spends its triangles on
+  // Tier A only. Null (kit still in flight, or Tier C) keeps the primitives.
+  const kitGeo = useMemo(() => {
+    if (!upliftActive()) return null;
+    const variant = String(1 + (Math.abs(seed) % 5)).padStart(2, '0');
+    const lod = upliftTier() === 'a' ? 0 : 1;
+    const pick = (family: string, height: number) =>
+      kitGeometryFit(
+        `meshes/props/${family}.glb`,
+        `${type}-${family}-${variant}-lod${lod}`,
+        { mode: 'height', height },
+      );
+    return {
+      rocks: pick('rocks', 2),
+      boulders: pick('boulders', 2),
+      flora: pick('flora', 1),
+      shrubs: pick('shrubs', 1.4),
+      shards: pick('shards', 1.2),
+      vents: pick('vents', 1.4),
+    };
+  }, [type, seed]);
+
   const rockMat = useMemo(() => {
+    if (kitGeo?.rocks) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/rocks-atlas.ktx2',
+        tint: palette.high.clone().multiplyScalar(0.82),
+        roughness: 0.96,
+      });
+    }
     const m = new MeshStandardNodeMaterial();
     m.color = palette.high.clone().multiplyScalar(0.82);
     m.roughness = 0.96;
     m.flatShading = true;
     return m;
-  }, [palette]);
+  }, [palette, kitGeo]);
+  const boulderMat = useMemo(() => {
+    if (kitGeo?.boulders) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/boulders-atlas.ktx2',
+        tint: palette.high.clone().multiplyScalar(0.82),
+        roughness: 0.97,
+      });
+    }
+    return rockMat;
+  }, [palette, kitGeo, rockMat]);
   const floraMat = useMemo(() => {
+    if (kitGeo?.flora) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/flora-atlas.ktx2',
+        tint: palette.vegetation.clone(),
+        gain: 2.6,
+        roughness: 0.9,
+      });
+    }
     const m = new MeshStandardNodeMaterial();
     m.color = palette.vegetation.clone();
     m.roughness = 0.9;
     m.flatShading = true;
     return m;
-  }, [palette]);
+  }, [palette, kitGeo]);
   const shrubMat = useMemo(() => {
+    if (kitGeo?.shrubs) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/shrubs-atlas.ktx2',
+        tint: palette.vegetation.clone().multiplyScalar(0.72),
+        gain: 2.6,
+        roughness: 0.95,
+      });
+    }
     const m = new MeshStandardNodeMaterial();
     m.color = palette.vegetation.clone().multiplyScalar(0.72);
     m.roughness = 0.95;
     m.flatShading = true;
     return m;
-  }, [palette]);
+  }, [palette, kitGeo]);
   const shardMat = useMemo(() => {
+    if (kitGeo?.shards) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/shards-atlas.ktx2',
+        tint: palette.ice.clone(),
+        roughness: 0.18,
+        metalness: 0.15,
+      });
+    }
     const m = new MeshStandardNodeMaterial();
     m.color = palette.ice.clone();
     m.roughness = 0.18;
     m.flatShading = true;
     return m;
-  }, [palette]);
+  }, [palette, kitGeo]);
   const ventMat = useMemo(() => {
+    const emissive = palette.emissive.getHex() === 0 ? new Color(0xff4d1a) : palette.emissive.clone();
+    if (kitGeo?.vents) {
+      return upliftFamilyMaterial({
+        atlas: 'textures/props/vents-atlas.ktx2',
+        tint: new Color(0x6b5a50),
+        roughness: 0.9,
+        emissive,
+        emissiveIntensity: 0.55,
+      });
+    }
     const m = new MeshStandardNodeMaterial();
     m.color = new Color(0x241a17);
-    m.emissive = palette.emissive.getHex() === 0 ? new Color(0xff4d1a) : palette.emissive.clone();
+    m.emissive = emissive;
     m.emissiveIntensity = 1.4;
     m.roughness = 0.9;
     m.flatShading = true;
     return m;
-  }, [palette]);
+  }, [palette, kitGeo]);
 
   // Densities carry the old scatter's counts per area; reach is what grew.
   // (rocks: 460 over r950 ≈ 11 a chunk; flora: 340 over r780 ≈ 12; and so on.)
@@ -949,29 +1104,29 @@ function ChunkedProps({
 
   return (
     <>
-      <PropChunks p={p} tiers={tiers} def={defs.rocks} material={rockMat}>
+      <PropChunks p={p} tiers={tiers} def={defs.rocks} material={rockMat} geometry={kitGeo?.rocks}>
         <icosahedronGeometry args={[1, 1]} />
       </PropChunks>
-      <PropChunks p={p} tiers={tiers} def={defs.boulders} material={rockMat}>
+      <PropChunks p={p} tiers={tiers} def={defs.boulders} material={boulderMat} geometry={kitGeo?.boulders}>
         <icosahedronGeometry args={[1, 1]} />
       </PropChunks>
       {defs.flora.tries > 0 && (
-        <PropChunks p={p} tiers={tiers} def={defs.flora} material={floraMat}>
+        <PropChunks p={p} tiers={tiers} def={defs.flora} material={floraMat} geometry={kitGeo?.flora}>
           <coneGeometry args={[0.5, 1, 6]} />
         </PropChunks>
       )}
       {defs.shrubs.tries > 0 && (
-        <PropChunks p={p} tiers={tiers} def={defs.shrubs} material={shrubMat}>
+        <PropChunks p={p} tiers={tiers} def={defs.shrubs} material={shrubMat} geometry={kitGeo?.shrubs}>
           <icosahedronGeometry args={[0.7, 0]} />
         </PropChunks>
       )}
       {type === 'ice' && (
-        <PropChunks p={p} tiers={tiers} def={defs.shards} material={shardMat}>
+        <PropChunks p={p} tiers={tiers} def={defs.shards} material={shardMat} geometry={kitGeo?.shards}>
           <octahedronGeometry args={[0.6, 0]} />
         </PropChunks>
       )}
       {type === 'volcanic' && (
-        <PropChunks p={p} tiers={tiers} def={defs.vents} material={ventMat}>
+        <PropChunks p={p} tiers={tiers} def={defs.vents} material={ventMat} geometry={kitGeo?.vents}>
           <coneGeometry args={[1, 1.4, 7]} />
         </PropChunks>
       )}
@@ -981,60 +1136,85 @@ function ChunkedProps({
 
 // ————— The parked runabout, at human scale —————
 
+/** Where bought refit hardware hangs on the parked hull (local frame). */
+const LANDED_PODS: RefitPodSpec[] = [
+  { id: 'skimmer', position: [0, 0.36, 0.34], height: 0.09 },
+  { id: 'cargoHold', position: [0, 0.07, 0.18], height: 0.16 },
+  { id: 'rigBay', position: [0, 0.07, -0.2], height: 0.13 },
+  { id: 'deterrent', position: [0, 0.43, 0.05], height: 0.07 },
+  { id: 'atmo', position: [0, 0.18, -0.38], height: 0.09 },
+];
+
 /**
  * The same silhouette the chase camera knows, seven times larger and standing
- * on legs. Deliberately hand-placed geometry rather than a reuse of
- * RunaboutExterior, which is welded to flightLive.
+ * on legs. With the ship kit loaded it IS the same asset (3.1) — one hull,
+ * three call sites; otherwise the hand-placed geometry stands in.
  */
 function LandedRunabout() {
+  // Gear included: the kit hull carries its struts and feet, fitted so the
+  // pads rest at local y=0 exactly where the hand-built gear stood.
+  const kitHull = useMemo(
+    () => runaboutGeometry({ min: [-0.71, 0, -0.85], max: [0.71, 0.42, 0.7] }),
+    [],
+  );
   return (
     <group scale={5.5} rotation={[0, 0.6, 0]}>
-      {/* Emissive floors match the flight exterior: parked at night, the hull
-          still reads as a ship rather than a hole in the landscape. */}
-      {[-0.4, 0.4].map((x) => (
-        <mesh key={x} position={[x, 0.14, 0.1]} rotation={[0, x < 0 ? -0.24 : 0.24, x < 0 ? -0.025 : 0.025]}>
-          <boxGeometry args={[0.62, 0.045, 0.3]} />
-          <meshStandardMaterial color={0x34425b} emissive={0x0b1524} emissiveIntensity={0.65} roughness={0.42} metalness={0.68} />
-        </mesh>
-      ))}
-      <mesh position={[0, 0.19, -0.08]} scale={[0.3, 0.18, 0.72]}>
-        <sphereGeometry args={[1, 14, 7]} />
-        <meshStandardMaterial color={0x313a4d} emissive={0x0b1019} emissiveIntensity={0.7} roughness={0.34} metalness={0.72} flatShading />
-      </mesh>
-      <mesh position={[0, 0.16, -0.61]} rotation={[-Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.205, 0.48, 8]} />
-        <meshStandardMaterial color={0x252d3f} emissive={0x090d16} emissiveIntensity={0.6} roughness={0.38} metalness={0.7} flatShading />
-      </mesh>
-      <mesh position={[0, 0.33, -0.26]} scale={[0.19, 0.105, 0.29]}>
-        <sphereGeometry args={[1, 14, 6]} />
-        <meshStandardMaterial color={0x2a6673} emissive={0x123744} emissiveIntensity={1.15} roughness={0.12} metalness={0.28} transparent opacity={0.92} />
-      </mesh>
-      {[-0.34, 0.34].map((x) => (
-        <group key={x} position={[x, 0.11, 0.28]}>
-          <mesh rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.14, 0.115, 0.62, 10]} />
-            <meshStandardMaterial color={0x26344b} emissive={0x091525} emissiveIntensity={0.7} roughness={0.3} metalness={0.82} flatShading />
+      {kitHull ? (
+        <>
+          <mesh geometry={kitHull} material={shipMaterial()} />
+          <RefitPods pods={LANDED_PODS} />
+        </>
+      ) : (
+        <>
+          {/* Emissive floors match the flight exterior: parked at night, the hull
+              still reads as a ship rather than a hole in the landscape. */}
+          {[-0.4, 0.4].map((x) => (
+            <mesh key={x} position={[x, 0.14, 0.1]} rotation={[0, x < 0 ? -0.24 : 0.24, x < 0 ? -0.025 : 0.025]}>
+              <boxGeometry args={[0.62, 0.045, 0.3]} />
+              <meshStandardMaterial color={0x34425b} emissive={0x0b1524} emissiveIntensity={0.65} roughness={0.42} metalness={0.68} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.19, -0.08]} scale={[0.3, 0.18, 0.72]}>
+            <sphereGeometry args={[1, 14, 7]} />
+            <meshStandardMaterial color={0x313a4d} emissive={0x0b1019} emissiveIntensity={0.7} roughness={0.34} metalness={0.72} flatShading />
           </mesh>
-        </group>
-      ))}
-      {/* Landing gear: three struts and their pads. */}
-      {[[-0.42, 0.34], [0.42, 0.34], [0, -0.52]].map(([x, z], i) => (
-        <group key={i} position={[x!, 0, z!]}>
-          <mesh position={[0, 0.07, 0]}>
-            <cylinderGeometry args={[0.022, 0.03, 0.16, 6]} />
-            <meshStandardMaterial color={0x596579} roughness={0.5} metalness={0.7} />
+          <mesh position={[0, 0.16, -0.61]} rotation={[-Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[0.205, 0.48, 8]} />
+            <meshStandardMaterial color={0x252d3f} emissive={0x090d16} emissiveIntensity={0.6} roughness={0.38} metalness={0.7} flatShading />
           </mesh>
-          <mesh position={[0, 0.005, 0]}>
-            <cylinderGeometry args={[0.085, 0.1, 0.02, 8]} />
-            <meshStandardMaterial color={0x39414f} roughness={0.7} metalness={0.5} />
+          <mesh position={[0, 0.33, -0.26]} scale={[0.19, 0.105, 0.29]}>
+            <sphereGeometry args={[1, 14, 6]} />
+            <meshStandardMaterial color={0x2a6673} emissive={0x123744} emissiveIntensity={1.15} roughness={0.12} metalness={0.28} transparent opacity={0.92} />
           </mesh>
-        </group>
-      ))}
-      {/* Service stripe and the beacon the frame loop breathes. */}
-      <mesh position={[0, 0.37, 0.18]}>
-        <boxGeometry args={[0.018, 0.012, 0.44]} />
-        <meshStandardMaterial color={0xc28a49} emissive={0x3b210d} emissiveIntensity={1.1} />
-      </mesh>
+          {[-0.34, 0.34].map((x) => (
+            <group key={x} position={[x, 0.11, 0.28]}>
+              <mesh rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.14, 0.115, 0.62, 10]} />
+                <meshStandardMaterial color={0x26344b} emissive={0x091525} emissiveIntensity={0.7} roughness={0.3} metalness={0.82} flatShading />
+              </mesh>
+            </group>
+          ))}
+          {/* Landing gear: three struts and their pads. */}
+          {[[-0.42, 0.34], [0.42, 0.34], [0, -0.52]].map(([x, z], i) => (
+            <group key={i} position={[x!, 0, z!]}>
+              <mesh position={[0, 0.07, 0]}>
+                <cylinderGeometry args={[0.022, 0.03, 0.16, 6]} />
+                <meshStandardMaterial color={0x596579} roughness={0.5} metalness={0.7} />
+              </mesh>
+              <mesh position={[0, 0.005, 0]}>
+                <cylinderGeometry args={[0.085, 0.1, 0.02, 8]} />
+                <meshStandardMaterial color={0x39414f} roughness={0.7} metalness={0.5} />
+              </mesh>
+            </group>
+          ))}
+          {/* Service stripe over the spine. */}
+          <mesh position={[0, 0.37, 0.18]}>
+            <boxGeometry args={[0.018, 0.012, 0.44]} />
+            <meshStandardMaterial color={0xc28a49} emissive={0x3b210d} emissiveIntensity={1.1} />
+          </mesh>
+        </>
+      )}
+      {/* The beacon the frame loop breathes — kit or no kit. */}
       <mesh name="gf-beacon" position={[0, 0.42, 0.36]}>
         <sphereGeometry args={[0.03, 8, 6]} />
         <meshBasicMaterial color={0xffbb65} transparent opacity={0.8} toneMapped={false} />
@@ -1059,6 +1239,29 @@ function LandedRunabout() {
  * carries the cockpit), which neatly spends zero polygons on your own hull.
  */
 function SkimmerSled() {
+  // The authored sled (3.4), fitted to the hand-built envelope; the scanner
+  // ball stays separate because the frame loop breathes it.
+  const kitSled = useMemo(
+    () => skimmerGeometry({ min: [-0.93, 0, -1.9], max: [0.93, 2.05, 1.35] }),
+    [],
+  );
+  if (kitSled) {
+    return (
+      <group>
+        <mesh geometry={kitSled} material={shipMaterial()} />
+        <mesh name="sk-scanner" position={[0, 2.1, 1.2]}>
+          <sphereGeometry args={[0.11, 10, 8]} />
+          <meshBasicMaterial color={0x6fe0ff} transparent opacity={0.85} toneMapped={false} />
+        </mesh>
+        {[-0.68, 0.68].map((x) => (
+          <mesh key={x} position={[x, 0.51, 0.1]}>
+            <boxGeometry args={[0.05, 0.02, 2.6]} />
+            <meshBasicMaterial color={0xd98d2b} transparent opacity={0.6} toneMapped={false} />
+          </mesh>
+        ))}
+      </group>
+    );
+  }
   return (
     <group>
       {/* Deck and nose cowl. */}

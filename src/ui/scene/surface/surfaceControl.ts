@@ -17,6 +17,7 @@
  */
 import { Euler, Quaternion, Vector3, type Camera, type PerspectiveCamera } from 'three/webgpu';
 import { useUiBus, type GroundfallSession } from '../../fx/uiBus';
+import { EXPEDITION_ART } from '../../assets';
 import { actions, useGame } from '../../../state/store';
 import { flightPrefs } from '../flightBindings';
 import {
@@ -1281,6 +1282,8 @@ function catalogueSpecies(ids: readonly string[]): void {
       fresh.length === 1
         ? first?.blurb ?? ''
         : fresh.map((id) => SPECIES_BY_ID[id]?.name ?? id).join(' · '),
+    // The biologger's plate for the record (ASSET_UPLIFT.md 6.4).
+    art: EXPEDITION_ART.species(fresh[0]!),
     ttlMs: 5600,
   });
 }
@@ -2646,6 +2649,8 @@ function plantMark(kind: GroundMark['kind']): void {
       kind === 'repair'
         ? 'Mended where it stood. The record is filed when you board — the town has already noticed.'
         : 'It will be here, exactly here, every time you come back. The record is filed when you board.',
+    // The mark's own plate (ASSET_UPLIFT.md 6.1).
+    art: EXPEDITION_ART.mark(kind),
     ttlMs: 5200,
   });
 }

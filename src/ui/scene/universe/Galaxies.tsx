@@ -32,6 +32,7 @@ import { C } from '../../../content/constants';
 import { distantGeometry, distantMaterial } from '../settledPlanet';
 import { focusOn, focusSystemIndex, makeGlowSprite, visitHandlers, visitOrbitGeometry } from './shared';
 import { sharedBasicMaterial } from './pool';
+import { upliftWindowSprite } from '../uplift/upliftAssets';
 
 const APP_T0 = performance.now();
 const DETAILED = 8; // most recent galaxies get the full treatment
@@ -262,7 +263,14 @@ function Galaxy({
       }),
     [],
   );
-  const glow = useMemo(() => makeGlowSprite(0xfff0d0, 0.62), []);
+  const glow = useMemo(
+    // The authored core bloom (ASSET_UPLIFT.md 5.5) when the pack is live;
+    // the procedural radial glow otherwise. Opacity keeps its per-frame drive.
+    () =>
+      upliftWindowSprite('textures/orbit/galaxy-sprites.ktx2', [0.03, 0.03, 0.46, 0.46], 0xfff0d0, 0.62)
+      ?? makeGlowSprite(0xfff0d0, 0.62),
+    [],
+  );
   const nucMat = useMemo(
     () => new MeshBasicMaterial({ color: 0xfff2d9, transparent: true, opacity: 0.9 }),
     [],

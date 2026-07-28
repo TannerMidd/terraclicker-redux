@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, MeshBasicNodeMaterial, PointsMaterial, SpriteMaterial, TextureLoader } from 'three/webgpu';
-import { mix, mx_fractal_noise_float, normalLocal, smoothstep, vec3 } from 'three/tsl';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, MeshBasicNodeMaterial, PointsMaterial, SpriteMaterial, SpriteNodeMaterial, TextureLoader } from 'three/webgpu';
+import { acos, atan, clamp, mix, mx_fractal_noise_float, normalLocal, smoothstep, uv, vec2, vec3 } from 'three/tsl';
 import { mulberry } from '../../engine/rng';
 import { useGame } from '../../state/store';
 import { zoomLive } from '../fx/uiBus';
 import { SCENE_SPRITES, TEXTURE_ASSETS } from '../assets';
 import { sceneTex } from './spriteTextures';
+import { upliftActive, upliftNode } from './uplift/upliftAssets';
 
 function starPoints(seed: number, count: number, rMin: number, rMax: number): BufferGeometry {
   const rand = mulberry(seed);
@@ -60,7 +61,23 @@ export function Stars({ count }: { count: number }) {
       .mul(0.5)
       .add(0.5);
     const base = mix(vec3(0.008, 0.009, 0.02), vec3(c1.r, c1.g, c1.b), smoothstep(0.55, 0.95, n));
-    m.colorNode = mix(base, vec3(c2.r, c2.g, c2.b), smoothstep(0.68, 0.98, n2).mul(0.55));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let col: any = mix(base, vec3(c2.r, c2.g, c2.b), smoothstep(0.68, 0.98, n2).mul(0.55));
+    if (upliftActive()) {
+      // The authored plate (4.4): equirect star field + nebula wash sampled
+      // by direction, under the procedural haze. Placeholders keep the dome
+      // procedural-only until the KTX2s land — no rebuild either way.
+      const equirect = vec2(
+        atan(normalLocal.z, normalLocal.x).div(Math.PI * 2).add(0.5),
+        acos(clamp(normalLocal.y, -1, 1)).div(Math.PI),
+      );
+      const plate = upliftNode('textures/sky/starfield-equirect.ktx2', equirect, { placeholder: 'clear', srgb: true });
+      const wash = upliftNode('textures/sky/nebula-wash.ktx2', equirect, { placeholder: 'clear', srgb: true });
+      // Whisper weights: the dome's whole personality is restraint, and the
+      // first render of the wash at 0.65 measured as a purple flood.
+      col = col.add(plate.rgb.mul(0.4)).add(wash.rgb.mul(wash.a).mul(0.16));
+    }
+    m.colorNode = col;
     m.side = 1; // BackSide
     m.depthWrite = false;
     return m;
@@ -93,6 +110,24 @@ export function Stars({ count }: { count: number }) {
     [lensTexture],
   );
 
+  // The glare set (4.5): the bloom kernel and the anamorphic streak, cut
+  // from the sun-glare sheet by UV window. Invisible until the KTX2 lands.
+  const glareSprites = useMemo(() => {
+    if (!upliftActive()) return null;
+    const windowed = (u0: number, v0: number, u1: number, v1: number) => {
+      const m = new SpriteNodeMaterial();
+      m.blending = AdditiveBlending;
+      m.depthWrite = false;
+      m.transparent = true;
+      const winUV = vec2(uv().x.mul(u1 - u0).add(u0), uv().y.mul(v1 - v0).add(v0));
+      const s = upliftNode('textures/sky/sun-glare.ktx2', winUV, { placeholder: 'clear' });
+      m.colorNode = s.rgb.mul(vec3(1.0, 0.93, 0.8));
+      m.opacityNode = s.a;
+      return m;
+    };
+    return { bloom: windowed(0.02, 0.02, 0.48, 0.48), streak: windowed(0.5, 0.22, 0.97, 0.28) };
+  }, []);
+
   const nearMat = useMemo(
     () => new PointsMaterial({ size: 1.0, sizeAttenuation: true, color: 0xf2f4fa, transparent: true, opacity: 0.9, depthWrite: false }),
     [],
@@ -105,6 +140,11 @@ export function Stars({ count }: { count: number }) {
     sunSprite.opacity = Math.max(0, 1 - (z - 0.3) / 0.3);
     lensSprite.opacity = 0.18 * Math.max(0, 1 - (z - 0.22) / 0.3);
     nearMat.opacity = 0.9 * Math.max(0.25, 1 - (z - 0.5) / 0.4);
+    if (glareSprites) {
+      const near = Math.max(0, 1 - (z - 0.3) / 0.3);
+      glareSprites.bloom.opacity = near * 0.5;
+      glareSprites.streak.opacity = near * 0.3;
+    }
   });
 
   return (
@@ -126,6 +166,16 @@ export function Stars({ count }: { count: number }) {
       <sprite position={[46, 20, 27.9]} scale={[23, 23, 1]} raycast={() => null}>
         <primitive object={lensSprite} attach="material" />
       </sprite>
+      {glareSprites && (
+        <>
+          <sprite position={[46, 20, 27.8]} scale={[34, 34, 1]} raycast={() => null}>
+            <primitive object={glareSprites.bloom} attach="material" />
+          </sprite>
+          <sprite position={[46, 20, 27.7]} scale={[54, 6, 1]} raycast={() => null}>
+            <primitive object={glareSprites.streak} attach="material" />
+          </sprite>
+        </>
+      )}
     </group>
   );
 }

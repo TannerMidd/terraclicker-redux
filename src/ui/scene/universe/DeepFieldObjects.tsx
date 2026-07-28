@@ -14,6 +14,42 @@ import { useMemo } from 'react';
 import { mulberry } from '../../../engine/rng';
 import type { DeepFieldDef } from '../../../content/deepField';
 import { makeGlowSprite } from './shared';
+import { kitGeometryFit, kitMaterial, upliftActive } from '../uplift/upliftAssets';
+
+/** Catalogue id → deep-field kit asset (ASSET_UPLIFT.md 5.4). */
+const KIT_NAME: Record<string, string> = {
+  sofa: 'sofa',
+  buoy42: 'buoy42',
+  nutrimatic: 'nutrimatic',
+  towelDrift: 'towel-drift',
+  teapot: 'teapot',
+  petuniaBowl: 'petunia-bowl',
+  whale: 'whale',
+  generationShip: 'generation-ship',
+  bArk: 'b-ark',
+  improbShadow: 'improbability-shadow',
+  fjordWorkshop: 'fjord-workshop',
+  wicketGate: 'wicket-gate',
+  coolingArray: 'cooling-array',
+  signpost: 'signpost',
+  milliways: 'milliways',
+};
+
+/** The hand-tuned port lamps each landmark keeps, in units of its radius. */
+const KIT_LAMPS: Record<string, Array<{ at: [number, number, number]; color?: number; scale: number }>> = {
+  buoy42: [{ at: [0, 1.05, 0], color: 0xffb733, scale: 2.4 }],
+  nutrimatic: [{ at: [0, 0.35, 0.56], color: 0x63e0d0, scale: 1.5 }],
+  generationShip: [
+    { at: [1.5, 0.2, 0.3], scale: 0.5 },
+    { at: [-0.4, -0.3, 0.35], color: 0x9fd0ff, scale: 0.35 },
+  ],
+  bArk: [{ at: [1.55, 0.1, 0], color: 0xffb066, scale: 0.55 }],
+  improbShadow: [{ at: [0, 0, 0], color: 0xb98cff, scale: 2.6 }],
+  fjordWorkshop: [{ at: [1.15, 0.95, 0], color: 0xbfe0ff, scale: 0.5 }],
+  wicketGate: [{ at: [0, -1.3, 0.1], color: 0x8fb6ff, scale: 0.7 }],
+  coolingArray: [{ at: [0, 0, 0], color: 0xd88a4a, scale: 1.4 }],
+  milliways: [{ at: [0, 0, 0], color: 0xffbb66, scale: 3.4 }],
+};
 
 const HULL = 0x8b8e99;
 const HULL_DARK = 0x4a4d57;
@@ -40,6 +76,37 @@ function Lamp({
  */
 export function DeepFieldBody({ def }: { def: DeepFieldDef }) {
   const r = def.radius;
+
+  // The authored landmark (5.4): the highest narrative payoff per asset in
+  // the whole pack, per the production list. Uniform-fit to the catalogue's
+  // half-extent; the tuned port lamps stay. Null falls through to primitives.
+  const kitGeo = useMemo(() => {
+    const name = KIT_NAME[def.id];
+    if (!name || !upliftActive()) return null;
+    return kitGeometryFit('meshes/deep-field/deep-field-kit.glb', name, {
+      mode: 'extent',
+      extent: r * 2.1,
+    });
+  }, [def.id, r]);
+  if (kitGeo) {
+    return (
+      <group>
+        <mesh
+          geometry={kitGeo}
+          material={kitMaterial('deep-field', 'textures/deep-field/deep-field-atlas.ktx2', { roughness: 0.72, metalness: 0.28 })}
+        />
+        {(KIT_LAMPS[def.id] ?? []).map((lamp, i) => (
+          <Lamp
+            key={i}
+            at={[lamp.at[0] * r, lamp.at[1] * r, lamp.at[2] * r]}
+            color={lamp.color}
+            scale={lamp.scale * r}
+          />
+        ))}
+      </group>
+    );
+  }
+
   switch (def.id) {
     case 'sofa':
       return (

@@ -2167,6 +2167,30 @@ button {
 /* Already seated: the frame is simply there (see Canopy's `steady`). */
 .fh-canopy.steady { animation: none; }
 
+/* The uplift interior plates (ASSET_UPLIFT.md 3.3): cockpit furniture
+   between the glass and the DOM console. Hidden with the canopy in chase. */
+.fh-cockpit-plate {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+  animation: fhIn 900ms ease;
+}
+.fh-cockpit-plate.steady { animation: none; }
+.fh-cockpit-plate.dash {
+  left: 0;
+  right: 0;
+  bottom: -2%;
+  width: 100%;
+  opacity: 0.88;
+}
+.fh-cockpit-plate.throttle {
+  right: -3%;
+  bottom: -2%;
+  width: 40%;
+  opacity: 0.82;
+}
+.flight-layer.chase-view .fh-cockpit-plate { opacity: 0; visibility: hidden; }
+
 .fh-glare {
   position: absolute;
   inset: -8%;
@@ -2395,7 +2419,27 @@ button {
 }
 .fr-item.maxed { opacity: 0.62; }
 .fr-item-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.fr-name { font-size: 13px; font-weight: 600; color: var(--ink); }
+.fr-name { font-size: 13px; font-weight: 600; color: var(--ink); flex: 1; }
+
+/* The uplift pack's console art (ASSET_UPLIFT.md 6.2/6.3). */
+.fr-diagram {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  opacity: 0.85;
+}
+.fr-seal {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  opacity: 0.35;
+  filter: grayscale(1);
+  transition: opacity 300ms ease, filter 300ms ease;
+}
+.fr-seal.earned {
+  opacity: 1;
+  filter: none;
+}
 
 /* — Field Certifications: the column salvage cannot buy — */
 .fr-cert-list {
@@ -3915,6 +3959,22 @@ button {
 .sh-reticle.scanning .sh-ret-ring { stroke: var(--improbable); }
 
 /* — The assay card: what the scan said, and what the pick will mean — */
+/* The assay ledger's sample plate (ASSET_UPLIFT.md 6.4). */
+.sh-assay-art {
+  width: 96px;
+  border-radius: 6px;
+  opacity: 0.85;
+  border: 1px solid var(--line-soft);
+}
+
+/* Drawn compass rail icons (6.5); stroke rides the rail's own colour. */
+.sh-mark-icon {
+  width: 9px;
+  height: 11px;
+  display: block;
+  color: inherit;
+}
+
 .sh-assay {
   position: absolute;
   left: 50%;

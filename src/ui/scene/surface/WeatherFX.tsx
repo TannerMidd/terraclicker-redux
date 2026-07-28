@@ -11,9 +11,10 @@
  */
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { AdditiveBlending, Color, InstancedMesh, Matrix4, Object3D, Vector3 } from 'three/webgpu';
+import { AdditiveBlending, Color, InstancedMesh, Matrix4, Object3D, Vector2, Vector3 } from 'three/webgpu';
 import { surfaceLive } from './surfaceControl';
 import { createPrecipMaterial } from './surfaceMaterial';
+import { upliftActive, upliftTex } from '../uplift/upliftAssets';
 import { mulberry } from '../../../engine/rng';
 import type { GroundfallSession } from '../../fx/uiBus';
 import type { PlanetPalette } from '../planetMaterial';
@@ -33,15 +34,28 @@ interface PrecipStyle {
   fade: number;
   /** Fraction of the pool actually shown at full intensity. */
   density: number;
+  /** Atlas window (4.2): [u0, v0, u1, v1] into the weather particle sheet. */
+  cell: [number, number, number, number];
 }
 
 const STYLES: Record<string, PrecipStyle> = {
-  rain: { fall: 21, windK: 1, w: 0.02, h: 0.62, tint: 0x9db8d8, fade: 0.5, density: 1 },
-  storm: { fall: 24, windK: 1.2, w: 0.022, h: 0.7, tint: 0x8fa6c4, fade: 0.55, density: 1 },
-  whiteout: { fall: 2.6, windK: 1.7, w: 0.075, h: 0.075, tint: 0xf4f8fd, fade: 0.85, density: 1 },
-  dust: { fall: 1.2, windK: 2.6, w: 0.17, h: 0.05, tint: 'dust', fade: 0.42, density: 0.9 },
-  ash: { fall: 2.8, windK: 1.1, w: 0.06, h: 0.06, tint: 0x54555a, fade: 0.6, density: 0.8 },
+  rain: { fall: 21, windK: 1, w: 0.02, h: 0.62, tint: 0x9db8d8, fade: 0.5, density: 1, cell: [0.03, 0.03, 0.23, 0.33] },
+  storm: { fall: 24, windK: 1.2, w: 0.022, h: 0.7, tint: 0x8fa6c4, fade: 0.55, density: 1, cell: [0.03, 0.03, 0.23, 0.33] },
+  whiteout: { fall: 2.6, windK: 1.7, w: 0.075, h: 0.075, tint: 0xf4f8fd, fade: 0.85, density: 1, cell: [0.26, 0.05, 0.49, 0.29] },
+  dust: { fall: 1.2, windK: 2.6, w: 0.17, h: 0.05, tint: 'dust', fade: 0.42, density: 0.9, cell: [0.53, 0.03, 0.93, 0.21] },
+  ash: { fall: 2.8, windK: 1.1, w: 0.06, h: 0.06, tint: 0x54555a, fade: 0.6, density: 0.8, cell: [0.05, 0.49, 0.42, 0.74] },
 };
+
+/** The meteor streak's window of the same sheet. */
+const METEOR_CELL: [number, number, number, number] = [0.66, 0.53, 0.95, 0.87];
+
+function setCell(
+  uniforms: { uvOff: { value: Vector2 }; uvScale: { value: Vector2 } },
+  cell: [number, number, number, number],
+): void {
+  uniforms.uvOff.value.set(cell[0], cell[1]);
+  uniforms.uvScale.value.set(cell[2] - cell[0], cell[3] - cell[1]);
+}
 
 const SEAT = new Object3D();
 const M0 = new Matrix4().makeScale(0, 0, 0);
@@ -65,14 +79,19 @@ export function SurfaceWeather({
   const meteors = useRef<InstancedMesh>(null);
   const bolt = useLamp();
 
-  const precipMat = useMemo(() => createPrecipMaterial(), []);
+  const atlas = useMemo(
+    () => (upliftActive() ? upliftTex('textures/sky/weather-particles.ktx2', {}) : null),
+    [],
+  );
+  const precipMat = useMemo(() => createPrecipMaterial(atlas), [atlas]);
   const meteorMat = useMemo(() => {
-    const m = createPrecipMaterial();
+    const m = createPrecipMaterial(atlas);
     (m.uniforms.glow as { value: number }).value = 1;
     (m.uniforms.fade as { value: number }).value = 0.9;
+    if (atlas) setCell(m.uniforms as never, METEOR_CELL);
     m.mat.blending = AdditiveBlending; // hot things add
     return m;
-  }, []);
+  }, [atlas]);
   const dustTint = useMemo(
     () => palette.low.clone().lerp(new Color(0xffffff), 0.25),
     [palette],
@@ -161,6 +180,7 @@ export function SurfaceWeather({
         if (style.tint === 'dust') tint.value.copy(dustTint);
         else tint.value.set(style.tint);
         (precipMat.uniforms.fade as { value: number }).value = style.fade * Math.min(1, k * 1.5);
+        if (atlas) setCell(precipMat.uniforms as never, style.cell);
 
         const shown = Math.round(PRECIP_MAX * style.density * Math.min(1, k * 1.4));
         // Wind arrives in the landing frame: +x east, +z south (north = −z).

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" style="color:#E9EEF9">
+
+    <polygon points="32.00,3.00 41.18,9.83 52.51,11.49 54.17,22.82 61.00,32.00 54.17,41.18 52.51,52.51 41.18,54.17 32.00,61.00 22.82,54.17 11.49,52.51 9.83,41.18 3.00,32.00 9.83,22.82 11.49,11.49 22.82,9.83" fill="#5AD7E8" fill-opacity=".12" stroke="currentColor" stroke-width="2.35" stroke-linejoin="round"/>
+    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <g fill="none" stroke="currentColor" stroke-width="2.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="13"/><path d="M 32 12 v40 M 12 32 h40"/></g>
+  
+</svg>

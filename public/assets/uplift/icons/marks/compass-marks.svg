@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <defs>
+    <symbol id="mark-beacon" viewBox="0 0 24 30"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M 12 26 V 8 M 7 26 h10 M 8 11 q4 -7 8 0 M 5 15 q7 -12 14 0"/></g></symbol>
+<symbol id="mark-station" viewBox="0 0 24 30"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M 7 24 l5 -14 l5 14 M 12 10 v-4 M 5 26 h14"/><circle cx="12" cy="8" r="3"/></g></symbol>
+<symbol id="mark-shelter" viewBox="0 0 24 30"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M 4 24 Q 12 5 20 24 Z M 9 24 v-7 h6 v7"/></g></symbol>
+<symbol id="mark-repair" viewBox="0 0 24 30"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M 5 20 l5 -5 l9 -9 l3 3 l-9 9 l-5 5 z M 15 7 l3 -3 l3 3"/></g></symbol>
+<symbol id="mark-prospect" viewBox="0 0 24 30"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M 12 26 V 5 M 12 7 h9 l-3 5 l3 5 h-9 M 7 26 h10"/></g></symbol>
+  </defs>
+</svg>

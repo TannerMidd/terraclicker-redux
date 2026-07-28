@@ -28,6 +28,7 @@ import {
 import * as audio from '../audio/audio';
 import { SCENE_SPRITES } from '../assets';
 import { sceneTex } from './spriteTextures';
+import { upliftRingMaterial } from './uplift/upliftAssets';
 import {
   HabitualAuroras,
   PlanetClickFX,
@@ -78,7 +79,7 @@ export function Planet({ detail }: { detail: number }) {
     [seed, type, detail, fjords],
   );
   const palette = useMemo(() => paletteFor(type, seed), [type, seed]);
-  const surface = useMemo(() => createPlanetMaterial(palette, seed, isEarth), [palette, seed, isEarth]);
+  const surface = useMemo(() => createPlanetMaterial(palette, seed, isEarth, type), [palette, seed, isEarth, type]);
   const atmosphere = useMemo(() => createAtmosphereMaterial(palette), [palette]);
   const clouds = useMemo(() => createCloudMaterial(seed), [seed]);
 
@@ -103,17 +104,19 @@ export function Planet({ detail }: { detail: number }) {
 
   // Hooks must not live inside conditional JSX (hook-order law).
   const ringGeometry = useMemo(() => new RingGeometry(1.42, 1.86, 96), []);
-  const ringMaterial = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: 0xcabb9e,
-        transparent: true,
-        opacity: 0.11,
-        side: DoubleSide,
-        depthWrite: false,
-      }),
-    [],
-  );
+  const ringMaterial = useMemo(() => {
+    // The dust-band texture (ASSET_UPLIFT.md 5.3): the ring's planar UVs are
+    // exactly the radial plate's space. Invisible until the KTX2 lands.
+    const authored = upliftRingMaterial();
+    if (authored) return authored;
+    return new MeshBasicMaterial({
+      color: 0xcabb9e,
+      transparent: true,
+      opacity: 0.11,
+      side: DoubleSide,
+      depthWrite: false,
+    });
+  }, []);
 
   useMemo(() => {
     // New planet: warp in from a point.

@@ -20,6 +20,7 @@ import { SurfaceScene } from './surface/SurfaceScene';
 import { surfaceLive } from './surface/surfaceControl';
 import { stepFocusOut } from './universe/shared';
 import { clickSuppressed, resetOrbit } from './navControl';
+import { initUplift, preloadUplift } from './uplift/upliftAssets';
 import { useSettings } from '../settings';
 import { useUiBus } from '../fx/uiBus';
 
@@ -106,6 +107,11 @@ export default function SceneRoot() {
         }
         renderer.toneMapping = THREE.AgXToneMapping;
         renderer.toneMappingExposure = 1.15;
+        // The production pack (ASSET_UPLIFT.md): transcoder capabilities come
+        // from the initialized renderer; the fetch+transcode starts now so
+        // the ground sets exist long before the first groundfall wants them.
+        initUplift(renderer);
+        preloadUplift();
         return renderer;
       }}
     >

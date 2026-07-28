@@ -9,6 +9,8 @@ import {
 } from 'three/webgpu';
 import {
   abs,
+  acos,
+  atan,
   attribute,
   cameraPosition,
   clamp,
@@ -16,6 +18,7 @@ import {
   cross,
   dot,
   float,
+  int,
   length,
   mix,
   mx_fractal_noise_float,
@@ -30,10 +33,12 @@ import {
   time,
   transformNormalToView,
   uniform,
+  vec2,
   vec3,
 } from 'three/tsl';
 import { mulberry } from '../../engine/rng';
 import type { PlanetType } from '../../engine/types';
+import { GROUND_TYPE_INDEX, upliftActive, upliftNode } from './uplift/upliftAssets';
 
 export interface PlanetPalette {
   deepWater: Color;
@@ -196,12 +201,20 @@ export interface PlanetUniforms {
  * So: nothing that varies per world may enter this graph as a literal. If a
  * new feature needs a per-world number, it needs a uniform.
  */
-export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: boolean) {
+export function createPlanetMaterial(
+  pal: PlanetPalette,
+  seed: number,
+  isEarth: boolean,
+  type: PlanetType = 'terrestrial',
+) {
   const thermal = uniform(0);
   const atmo = uniform(0);
   const hydro = uniform(0);
   const bio = uniform(0);
   const sunDir = uniform(vec3(1, 0.35, 0.6));
+  // The orbit-detail slice (ASSET_UPLIFT.md 5.1). A UNIFORM, not a literal —
+  // six types must keep sharing the one compiled shader.
+  const uTypeSlice = uniform(GROUND_TYPE_INDEX[type] ?? 0);
 
   // The palette, as uniforms. `uniform(color)` uploads r/g/b unchanged, so
   // these are the same numbers the literals used to be.
@@ -333,11 +346,48 @@ export function createPlanetMaterial(pal: PlanetPalette, seed: number, isEarth: 
   // — Night side: bioluminescence, then city lights near completion. —
   const nightSide = smoothstep(0.15, -0.25, dot(normalWorld, normalize(sunDir)));
   const cityNoise = mx_fractal_noise_float(positionWorld.mul(9.0).add(uCityOff), 2, 2.0, 0.6, 1);
-  const cityMask = smoothstep(0.55, 0.9, cityNoise.mul(0.5).add(0.5))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cityMask: any = smoothstep(0.55, 0.9, cityNoise.mul(0.5).add(0.5))
     .mul(isWater.oneMinus())
     .mul(capMask.oneMinus());
   const civilization = clamp(bio.add(thermal).add(atmo).add(hydro).mul(0.25).sub(0.55).mul(2.4), 0, 1);
-  const cityGlow = vec3(1.0, 0.72, 0.35).mul(cityMask).mul(civilization).mul(nightSide).mul(1.6);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let cityGlow: any = vec3(1.0, 0.72, 0.35).mul(cityMask).mul(civilization).mul(nightSide).mul(1.6);
+
+  if (upliftActive()) {
+    // The orbit uplift (5.1/5.2): authored detail masks and the city-light
+    // plate, sampled by equirect direction and ADDED over the procedural
+    // reads — the clear placeholders make this exactly zero until the
+    // KTX2s land, so a Tier-C frame and a pre-load frame are the same frame.
+    const equirect = vec2(
+      atan(dir.z, dir.x).div(Math.PI * 2).add(0.5).add(uDetailOff.x.mul(0.03)),
+      acos(clamp(dir.y, -1, 1)).div(Math.PI),
+    );
+    const orbitDetail = upliftNode('textures/orbit/planet-detail-array.ktx2', equirect, {
+      repeat: true,
+      layers: 6,
+      placeholder: 'clear',
+    }).depth(int(uTypeSlice));
+    // G is authored settlement sprawl: it extends the noise-grown mask.
+    cityMask = cityMask.max(
+      orbitDetail.g.mul(isWater.oneMinus()).mul(capMask.oneMinus()).mul(0.85),
+    );
+    const cityPlate = upliftNode('textures/orbit/city-lights.ktx2', equirect.mul(vec2(6, 3)), {
+      repeat: true,
+      placeholder: 'clear',
+    });
+    // Arterial roads and nodes over the sprawl, on the night side only.
+    cityGlow = cityGlow.add(
+      cityPlate.rgb
+        .mul(cityPlate.a)
+        .mul(cityMask.mul(0.7).add(0.3))
+        .mul(civilization)
+        .mul(nightSide)
+        .mul(isWater.oneMinus())
+        .mul(1.7),
+    );
+  }
+
   const veins = uEmissive
     .mul(smoothstep(0.45, 0.2, elevation))
     .mul(smoothstep(0.6, 0.0, thermal)) // volcanic veins cool and fade as terraforming proceeds

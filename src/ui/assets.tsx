@@ -10,6 +10,10 @@ export const BRAND_ASSETS = {
 
 export const COCKPIT_ASSETS = {
   fascia: asset('cockpit/console-fascia.webp'),
+  // The uplift interior plates (ASSET_UPLIFT.md 3.3), layered by Canopy.
+  dashboard: asset('uplift/cockpit/dashboard-fascia.webp'),
+  throttle: asset('uplift/cockpit/throttle-quadrant.webp'),
+  windowFrame: asset('uplift/cockpit/window-frame.webp'),
 } as const;
 
 export const TEXTURE_ASSETS = {
@@ -119,6 +123,31 @@ export function AspectGlyph({
   );
 }
 
+// ————— The expeditions production pack (ASSET_UPLIFT.md Tier 6) —————
+
+const uplift = (relative: string): string => asset(`uplift/${relative}`);
+
+export const EXPEDITION_ART = {
+  /** Guide plates: certifications by track and rank 1–3 (6.1). */
+  cert: (track: string, rank: number) =>
+    uplift(`illustrations/guide-expeditions/cert-${track}-${Math.min(3, Math.max(1, rank))}.webp`),
+  /** Guide plates: the five standing-mark kinds (6.1). */
+  mark: (kind: string) => uplift(`illustrations/guide-expeditions/mark-${kind}.webp`),
+  /** Guide plates: ground landmark kinds (6.1). */
+  landmark: (id: string) => uplift(`illustrations/guide-expeditions/landmark-${id}.webp`),
+  refitAtmo: uplift('illustrations/guide-expeditions/refit-atmo.webp'),
+  /** The biologger's species plates (6.4). */
+  species: (id: string) => uplift(`illustrations/species/${id}.webp`),
+  /** The assay ledger's sample plates (6.4). */
+  sample: (id: string) => uplift(`illustrations/samples/${id}.webp`),
+  /** Refit console diagrams, one per refit (6.2). CSS-tintable currentColor. */
+  refitIcon: (id: string) => uplift(`icons/refits/${id}.svg`),
+  /** Certification seals, one per track (6.3). */
+  certSeal: (track: string) => uplift(`icons/certifications/${track}.svg`),
+  /** Compass rail glyph sprite sheet (6.5): #mark-<kind> symbols. */
+  compassSprite: uplift('icons/marks/compass-marks.svg'),
+} as const;
+
 export const EVENT_ART: Record<string, string> = {
   'solar-flare': asset('illustrations/events/solar-flare.webp'),
   'comet-delivery': asset('illustrations/events/comet-delivery.webp'),
@@ -172,6 +201,16 @@ const GUIDE_GROUPS: Record<string, string> = {
   towel: 'towel',
 };
 
+/** Expedition achievements stopped borrowing art with the uplift pack (6.1). */
+const GUIDE_EXPEDITION: Record<string, string> = {
+  'cert-1': EXPEDITION_ART.cert('mobility', 1),
+  'cert-master': EXPEDITION_ART.cert('survey', 3),
+  'mark-1': EXPEDITION_ART.mark('beacon'),
+  'lead-closed': EXPEDITION_ART.landmark('standing-ring'),
+};
+
 export function guideIllustration(achievementId: string): string {
+  const expedition = GUIDE_EXPEDITION[achievementId];
+  if (expedition) return expedition;
   return asset(`illustrations/guide/${GUIDE_GROUPS[achievementId] ?? 'first-contact'}.webp`);
 }

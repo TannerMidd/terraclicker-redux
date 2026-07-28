@@ -28,9 +28,13 @@ import {
 } from 'three/webgpu';
 import {
   abs,
+  acos,
+  atan,
   cameraPosition,
+  clamp,
   dot,
   float,
+  int,
   mx_fractal_noise_float,
   normalize,
   normalWorld,
@@ -41,12 +45,14 @@ import {
   sub,
   time,
   uniform,
+  vec2,
   vec3,
 } from 'three/tsl';
 import { paletteFor } from '../planetMaterial';
 import { mulberry } from '../../../engine/rng';
 import type { CompletedPlanetRecord, PlanetType } from '../../../engine/types';
 import { universeMotion } from './operationsVisual';
+import { upliftActive, upliftNode } from '../uplift/upliftAssets';
 
 type V = Parameters<typeof mx_fractal_noise_float>[0];
 
@@ -90,10 +96,23 @@ function createCloudMaterial(): MeshStandardNodeMaterial {
     .add(0.5);
   const storm = smoothstep(0.66, 0.82, stormField);
 
+  let alpha = smoothstep(0.5, 0.74, cover).mul(0.5).add(storm.mul(0.4));
+  if (upliftActive()) {
+    // The authored cumulus sheet (4.1) shapes what the noise gate admits —
+    // fronts get drawn edges instead of blobs. Placeholder-white is a no-op
+    // until the KTX2 lands; local direction, not world, for orbiting worlds.
+    const equirect = vec2(
+      atan(p.z, p.x).div(Math.PI * 2).add(0.5).add(drift.mul(0.12)),
+      acos(clamp(p.y, -1, 1)).div(Math.PI),
+    );
+    const sheet = upliftNode('textures/sky/cloud-deck-array.ktx2', equirect.mul(3), {
+      repeat: true,
+      layers: 4,
+    }).depth(int(1));
+    alpha = alpha.mul(sheet.a.mul(0.75).add(0.35)) as typeof alpha;
+  }
   mat.colorNode = vec3(1, 1, 1);
-  mat.opacityNode = smoothstep(0.5, 0.74, cover)
-    .mul(0.5)
-    .add(storm.mul(0.4)) as unknown as typeof mat.opacityNode;
+  mat.opacityNode = alpha as unknown as typeof mat.opacityNode;
   mat.roughnessNode = float(1) as unknown as typeof mat.roughnessNode;
   mat.transparent = true;
   mat.depthWrite = false;

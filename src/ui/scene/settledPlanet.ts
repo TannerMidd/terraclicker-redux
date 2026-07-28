@@ -55,7 +55,7 @@ export function settledMaterial(record: CompletedPlanetRecord): MeshStandardNode
   if (hit) return hit.mat;
 
   const pal = paletteFor(record.type, record.seed);
-  const built = createPlanetMaterial(pal, record.seed, record.lifetimeIndex === 42);
+  const built = createPlanetMaterial(pal, record.seed, record.lifetimeIndex === 42, record.type);
   const u = built.uniforms;
   u.thermal.value = 1;
   u.atmo.value = 1;
@@ -111,7 +111,7 @@ export function distantMaterial(
   const t0 = performance.now();
   // Seed 0: the canonical palette for the type, with no per-world jitter —
   // the same convention SettledAtmosphere uses for its air shells.
-  const built = createPlanetMaterial(paletteFor(type, 0), 0, false);
+  const built = createPlanetMaterial(paletteFor(type, 0), 0, false, type);
   const u = built.uniforms;
   u.thermal.value = 1;
   u.atmo.value = 1;

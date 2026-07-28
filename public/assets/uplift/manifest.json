@@ -1,0 +1,986 @@
+{
+  "version": 1,
+  "generatedAt": "2026-07-27T22:28:22.143Z",
+  "generatedBy": "scripts/generate-uplift-assets.mjs",
+  "artDirection": "docs/ART_DIRECTION.md",
+  "productionList": "docs/ASSET_UPLIFT.md",
+  "palette": {
+    "void": "#05060A",
+    "panel": "#0D1020",
+    "line": "#2A3350",
+    "ink": "#E9EEF9",
+    "dim": "#8C96AF",
+    "faint": "#5A6378",
+    "thermal": "#FF8A3D",
+    "atmo": "#5AD7E8",
+    "hydro": "#4D8DFF",
+    "bio": "#58D68A",
+    "gold": "#F5C84C",
+    "magrathea": "#B36BFF",
+    "vogon": "#8A8F5A"
+  },
+  "sources": {
+    "imagegen": {
+      "shared": [
+        "Use case: stylized-concept",
+        "Source master atlas for seamless game ground materials",
+        "Exact 2x2 edge-to-edge atlas: lowland, upland, shore, peak/frost",
+        "Straight-on top-down material swatches with neutral scan lighting",
+        "Premium stylized PBR albedo reference with quiet scientific-naturalism",
+        "No objects, text, UI, normal-map purple, roughness/AO presentation, directional lighting, or watermark"
+      ],
+      "variants": {
+        "terrestrial": "Earth and stone: #6D6046 #55492F #A89570 #8D8574; restrained #3F9E58 and #E8F0F8.",
+        "ice": "Blue-grey permafrost and glacier: #8FA6BA #BCCDDC #557188 #E8F0F8 #E8F2FB.",
+        "desert": "Ochre and rust mineral: #B08A4A #8A5F34 #D7B978 #6B4526.",
+        "volcanic": "Charcoal basalt: #2E2422 #4D3A34 #16100F #201A1A; no emissive lava in albedo.",
+        "ocean": "Damp island: #7D9459 #5F7A46 #C8C9A5 #A4B482 with restrained biotic flecks.",
+        "gasgiant": "Muted violet moon: #8F6BA4 #B488A0 #6B4680 #D4B4C4; low saturation."
+      }
+    },
+    "deterministic": [
+      "Technical maps derived locally from the six image-generated albedo atlases.",
+      "All GLB meshes are deterministic low-poly geometry generated with three.js.",
+      "All UI SVG/WebP and non-ground masters are deterministic project-authored vector patterns.",
+      "KTX2 output is Basis Universal encoded with Khronos toktx 4.4.2 and single-thread settings."
+    ]
+  },
+  "uiIds": {
+    "refits": [
+      "sensors",
+      "analysis",
+      "thrusters",
+      "drive",
+      "cargoHold",
+      "rigBay",
+      "deterrent",
+      "skimmer",
+      "atmo",
+      "fieldKit"
+    ],
+    "certifications": [
+      "mobility",
+      "survey",
+      "geology",
+      "liaison"
+    ],
+    "marks": [
+      "beacon",
+      "station",
+      "shelter",
+      "repair",
+      "prospect"
+    ],
+    "species": [
+      "meadow-drifter",
+      "sky-wisp",
+      "glass-shoal",
+      "dune-skink",
+      "tumbleweave",
+      "firn-burrower",
+      "aurora-moth",
+      "cinder-wren",
+      "vent-lace",
+      "grazer-ring",
+      "nesting-colony",
+      "spore-bloom",
+      "tide-chorus",
+      "brine-garden",
+      "ember-swarm",
+      "settlement-swift",
+      "verge-lichen"
+    ],
+    "samples": [
+      "improbability-crystal",
+      "fossil-atmosphere",
+      "living-basalt",
+      "cryogenic-brine",
+      "tidal-glass",
+      "vent-sulphur",
+      "ferrous-drift",
+      "polar-firn",
+      "glacier-core",
+      "reef-chalk",
+      "biotite-loam",
+      "ridge-quartz",
+      "field-crystal"
+    ],
+    "landmarks": [
+      "standing-ring",
+      "stone-arch",
+      "perched-boulder",
+      "hoodoo-court",
+      "ice-organ",
+      "pressure-ridge",
+      "basalt-choir",
+      "cinder-cone",
+      "fumarole-field",
+      "sea-stacks",
+      "tide-arch",
+      "blowhole",
+      "award-fjords"
+    ]
+  },
+  "coverage": {
+    "1.1": [
+      "textures/ground/ground-albedo-array.ktx2",
+      "textures/ground/ground-normal-rma-array.ktx2"
+    ],
+    "1.2": [
+      "textures/ground/detail-normal-array.ktx2",
+      "textures/ground/macro-mottle-array.ktx2"
+    ],
+    "1.3": [
+      "textures/ground/shore-waterline.ktx2"
+    ],
+    "1.4": [
+      "textures/ground/snow-frost.ktx2",
+      "textures/ground/snow-frost-normal.ktx2"
+    ],
+    "1.5": [
+      "textures/ground/lava-emissive-flow-crust.ktx2"
+    ],
+    "1.6": [
+      "textures/ground/ground-decals.ktx2"
+    ],
+    "2.1": [
+      "meshes/props/rocks.glb",
+      "meshes/props/boulders.glb",
+      "meshes/props/flora.glb",
+      "meshes/props/shrubs.glb",
+      "meshes/props/shards.glb",
+      "meshes/props/vents.glb"
+    ],
+    "2.2": [
+      "textures/props/rocks-atlas.ktx2",
+      "textures/props/boulders-atlas.ktx2",
+      "textures/props/flora-atlas.ktx2",
+      "textures/props/shrubs-atlas.ktx2",
+      "textures/props/shards-atlas.ktx2",
+      "textures/props/vents-atlas.ktx2"
+    ],
+    "2.3": [
+      "meshes/settlements/settlement-kit.glb",
+      "textures/settlements/settlement-atlas.ktx2"
+    ],
+    "2.4": [
+      "textures/settlements/window-emissive.ktx2"
+    ],
+    "2.5": [
+      "meshes/facilities/facility-kit.glb",
+      "textures/facilities/facility-atlas.ktx2"
+    ],
+    "2.6": [
+      "meshes/marks/mark-kit.glb",
+      "textures/marks/mark-atlas.ktx2"
+    ],
+    "2.7": [
+      "meshes/seams/crystal-seam-kit.glb",
+      "textures/seams/crystal-seam.ktx2"
+    ],
+    "3.1": [
+      "meshes/ships/runabout.glb",
+      "textures/ships/runabout-pbr.ktx2",
+      "textures/ships/runabout-emissive.ktx2"
+    ],
+    "3.2": [
+      "meshes/ships/runabout-refits.glb"
+    ],
+    "3.3": [
+      "cockpit/dashboard-fascia.webp",
+      "cockpit/window-frame.webp",
+      "cockpit/throttle-quadrant.webp"
+    ],
+    "3.4": [
+      "meshes/ships/skimmer.glb"
+    ],
+    "3.5": [
+      "textures/ships/hull-decals.ktx2"
+    ],
+    "4.1": [
+      "textures/sky/cloud-deck-array.ktx2",
+      "textures/sky/cloud-flow.ktx2"
+    ],
+    "4.2": [
+      "textures/sky/weather-particles.ktx2"
+    ],
+    "4.3": [
+      "textures/sky/sky-gradient-luts.ktx2"
+    ],
+    "4.4": [
+      "textures/sky/starfield-equirect.ktx2",
+      "textures/sky/nebula-wash.ktx2"
+    ],
+    "4.5": [
+      "textures/sky/sun-glare.ktx2"
+    ],
+    "4.6": [
+      "textures/sky/aurora-bioluminescence-ramp.ktx2"
+    ],
+    "5.1": [
+      "textures/orbit/planet-detail-array.ktx2"
+    ],
+    "5.2": [
+      "textures/orbit/city-lights.ktx2"
+    ],
+    "5.3": [
+      "textures/orbit/ring-dust.ktx2"
+    ],
+    "5.4": [
+      "meshes/deep-field/deep-field-kit.glb",
+      "textures/deep-field/deep-field-atlas.ktx2"
+    ],
+    "5.5": [
+      "textures/orbit/galaxy-sprites.ktx2"
+    ],
+    "5.6": [
+      "textures/orbit/traffic-freight-atlas.ktx2"
+    ],
+    "6.1": [
+      "illustrations/guide-expeditions/"
+    ],
+    "6.2": [
+      "icons/refits/"
+    ],
+    "6.3": [
+      "icons/certifications/"
+    ],
+    "6.4": [
+      "illustrations/samples/",
+      "illustrations/species/"
+    ],
+    "6.5": [
+      "icons/marks/compass-marks.svg",
+      "icons/marks/"
+    ],
+    "6.6": [
+      "../../landing/media/14-low-flight.webp",
+      "../../landing/media/15-chase-view.webp",
+      "../../landing/media/16-set-down.webp",
+      "../../landing/media/17-district-dusk.webp"
+    ],
+    "6.7": []
+  },
+  "counts": {
+    "total": 139,
+    "byExtension": {
+      ".webp": 68,
+      ".svg": 20,
+      ".glb": 14,
+      ".ktx2": 37
+    },
+    "groundSlices": 24,
+    "groundMaps": 48,
+    "propFamilies": 6,
+    "propVariants": 180,
+    "propLods": 3,
+    "settlementMeshes": 11,
+    "deepFieldMeshes": 15,
+    "guideExpeditionPlates": 31,
+    "speciesPlates": 17,
+    "samplePlates": 13,
+    "refitDiagrams": 10,
+    "certificationSeals": 4
+  },
+  "files": [
+    {
+      "path": "public/assets/uplift/cockpit/dashboard-fascia.webp",
+      "bytes": 25230,
+      "sha256": "902cbf5bbc59bbfc9f1614d07e6860c5e42f68da52ba6bc83fc4d79c71d2c7b3"
+    },
+    {
+      "path": "public/assets/uplift/cockpit/throttle-quadrant.webp",
+      "bytes": 25230,
+      "sha256": "902cbf5bbc59bbfc9f1614d07e6860c5e42f68da52ba6bc83fc4d79c71d2c7b3"
+    },
+    {
+      "path": "public/assets/uplift/cockpit/window-frame.webp",
+      "bytes": 25660,
+      "sha256": "24ecbdac2c042991574ff446452001a11d0dba4ba60e1d6c0d3bc09cbeab72ae"
+    },
+    {
+      "path": "public/assets/uplift/icons/certifications/geology.svg",
+      "bytes": 688,
+      "sha256": "b8a4222bdb757b1ef57607c05f26b58b060441c6b954fc8948897a4614360580"
+    },
+    {
+      "path": "public/assets/uplift/icons/certifications/liaison.svg",
+      "bytes": 686,
+      "sha256": "2dd5a39dfb48737eb76029a7e09db0fc0f14ea1cf27c1b1a4fee6036ddf7dc3e"
+    },
+    {
+      "path": "public/assets/uplift/icons/certifications/mobility.svg",
+      "bytes": 680,
+      "sha256": "f14a5fce15e69cb0bbc449153a02d71e95570986c6db9f617497ec926dd04b26"
+    },
+    {
+      "path": "public/assets/uplift/icons/certifications/survey.svg",
+      "bytes": 698,
+      "sha256": "da94ca992758437f0244dfd6ced317ce5d3e988c7489d656da3866b103774563"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/beacon.svg",
+      "bytes": 269,
+      "sha256": "1d09e8c7cb598b96f609f6914de4f3e987d4f44be9725b4962496cb59e85000d"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/compass-marks.svg",
+      "bytes": 1233,
+      "sha256": "4e2070d8cdfe53647a2d5189153dc2d8f244a08a6a7821267b9b18185a6c910f"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/prospect.svg",
+      "bytes": 258,
+      "sha256": "4e90325b40e0ed502ba77c421f218a81e2dafd4a0585c9cd82df97f9bf1b2c29"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/repair.svg",
+      "bytes": 266,
+      "sha256": "014fb3fbf6b461d62649022f89ecb5e81d2826b516cbe771c092a67dfb36d25e"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/shelter.svg",
+      "bytes": 249,
+      "sha256": "11749df40014b829fda9f74d23699dbfa2d089601b5964e461502cd063c20dfe"
+    },
+    {
+      "path": "public/assets/uplift/icons/marks/station.svg",
+      "bytes": 283,
+      "sha256": "bcb3ecc0235ba9e1c7c8c40950ced1b2ef1e48257d30f6e11484c32970cacee8"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/analysis.svg",
+      "bytes": 1976,
+      "sha256": "b50d1a6b3b33ed1111816d81fa76eaaf2662b9d65e83b7405f6d4044e5f38245"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/atmo.svg",
+      "bytes": 1976,
+      "sha256": "ed60470d91c6743a314600cc52d14ac6f7dc7fc73649180cb29b774f1a4e5f32"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/cargoHold.svg",
+      "bytes": 1978,
+      "sha256": "48f0960344756773e910a5ef457dea35b29de69651938a4ed5764af8b2c2e85d"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/deterrent.svg",
+      "bytes": 1977,
+      "sha256": "7f1d5c2de562be202183c11ed217a924b1eba16d267cf1102948b114b55f7526"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/drive.svg",
+      "bytes": 1977,
+      "sha256": "240e33691ff9a58fe456dbe5d562e56bd6f41a43de7d561c5633ec5ae49bed11"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/fieldKit.svg",
+      "bytes": 1975,
+      "sha256": "6efa3103a4902a24c3a4c1804b9515fdcfb78561ad293de2dfcb03db3ab8e54a"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/rigBay.svg",
+      "bytes": 1976,
+      "sha256": "7466795bc063779b91aa19eaba98fa1b8e9c997f2274097103d787693af77875"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/sensors.svg",
+      "bytes": 1976,
+      "sha256": "57531a44906a168d96dcdf1cd55db0834aec1c37e2747fe1087fc6d40bcf9612"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/skimmer.svg",
+      "bytes": 1980,
+      "sha256": "44513fe13e5812c2bfcaeec63018654812e723fb097fdacfb09a3de2fc847bee"
+    },
+    {
+      "path": "public/assets/uplift/icons/refits/thrusters.svg",
+      "bytes": 1977,
+      "sha256": "a1088b3db249cdca48944d8c4d56018f317e9de686039fd983f63d93029b1c0a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-geology-1.webp",
+      "bytes": 9900,
+      "sha256": "c39e73166b70276ba0fa7bb123e80036641dbdb2e2f90d0e6d98fbb2c05c23a7"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-geology-2.webp",
+      "bytes": 9110,
+      "sha256": "18f23c6bb5d3f07af53f2184344123e7d2f74e60dc42b933db7a6711985afcc6"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-geology-3.webp",
+      "bytes": 9480,
+      "sha256": "04412cea583313afa40a63d59e0b643222ccfd51b1d593b73403d5544068072b"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-liaison-1.webp",
+      "bytes": 8724,
+      "sha256": "38cca4bf3e53a816684ce4409ee29201ea44a14eb79afa434da6675a01419026"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-liaison-2.webp",
+      "bytes": 9146,
+      "sha256": "a3a882128898a41fc856b1a16f272f78f553c2246cbbb2a45db02fafff74de0a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-liaison-3.webp",
+      "bytes": 8374,
+      "sha256": "6db88bf570863f54fae11657b95806e446cd4842736580e8f2ad0a8174cf94bb"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-mobility-1.webp",
+      "bytes": 10020,
+      "sha256": "53f44374ac94282c170f85379ba47797a8b70c9603f4f21c56ea0e862d830e10"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-mobility-2.webp",
+      "bytes": 9086,
+      "sha256": "8d945812c45b64f7b3add7d21c8ef0d96ff03783df04e3375ec15e9896f0ec6d"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-mobility-3.webp",
+      "bytes": 8584,
+      "sha256": "115a0dbbbd8f09095229c72f7ef9d198e468e1cecd8119033bfd302cc21600f6"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-survey-1.webp",
+      "bytes": 8314,
+      "sha256": "32300544e581688f88efafab16ce96c8f9366bc6f2495b446c1491aa6e71535d"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-survey-2.webp",
+      "bytes": 9200,
+      "sha256": "2d4ff482b99f8d8b58c3a3e3dcad74078055ae386de447a5a4e8c9c5a604be90"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/cert-survey-3.webp",
+      "bytes": 7826,
+      "sha256": "e80b92827241d317ef7e02b3c9a184223242fbd823257f7d71bb949e834e5c5b"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-award-fjords.webp",
+      "bytes": 9918,
+      "sha256": "ba8888b67b594c081fdf726d42af612d33643540351851c2b8c1fbe1a6b614a8"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-basalt-choir.webp",
+      "bytes": 8202,
+      "sha256": "0e29e796ac5649ff3825ad3648ed2e35e7b8505170a4a3e6c9bf3ed518604ecb"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-blowhole.webp",
+      "bytes": 8846,
+      "sha256": "fe714fb4fd18d822fe66f0529b460594d15d73ebed621d69779d10ed1cd9d82a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-cinder-cone.webp",
+      "bytes": 9060,
+      "sha256": "120f9b4a56f60548c87d6e47eaae81e65fd2241f7bd5cf52b9fb330428f66101"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-fumarole-field.webp",
+      "bytes": 9350,
+      "sha256": "1911a7818ccb408f9643204e2de4045e92a234f63f54bf3263901d6e63917bf1"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-hoodoo-court.webp",
+      "bytes": 8132,
+      "sha256": "43b6d8706d402c435553c20484865cfdc46d216fa3b1f41e1641774934684283"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-ice-organ.webp",
+      "bytes": 9234,
+      "sha256": "ecbaa8ec68f1b1951e5d443462e738e67a07bbd261c1b17a771593d8445fafb0"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-perched-boulder.webp",
+      "bytes": 8116,
+      "sha256": "ad0bccc6b19c9e40643fa2acd1fd65db535bbd2edf3f80b1f02951bc9bb58039"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-pressure-ridge.webp",
+      "bytes": 9384,
+      "sha256": "1e990599e91ebc2667c1794b8e87f8e6691923c20c295712f4230f36241c96de"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-sea-stacks.webp",
+      "bytes": 9632,
+      "sha256": "d7ae2afbe9c617afe65401d64ec1aa82aca2eda543e4a190b4fae826da0729f5"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-standing-ring.webp",
+      "bytes": 10174,
+      "sha256": "67e083d6d61bb97cd94f3a28d401bfed3560ced47f90bd50c3eefbbdb08b5686"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-stone-arch.webp",
+      "bytes": 8404,
+      "sha256": "c62a9d73d41b034e630d7a5d485c9fd7c0f94e55e58573b72aaf5b23785e9a81"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/landmark-tide-arch.webp",
+      "bytes": 10120,
+      "sha256": "21441469d57b4edd4ad86d5f016dba2fa7848953cb921f4c88af2fbe03bd94f9"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/mark-beacon.webp",
+      "bytes": 9924,
+      "sha256": "895d430de7812274230011a0624175a1fd633b24ab5ab39d0478f25c1b809aaa"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/mark-prospect.webp",
+      "bytes": 8104,
+      "sha256": "9495d04b3fe68588bc17e3bc468d7bd3f0c428ce8712c385a83278f5d833d0bb"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/mark-repair.webp",
+      "bytes": 9046,
+      "sha256": "099c6224aeff00dc595087be6fb52d6e3df7f45f05e5c536246a7b97ec55cc19"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/mark-shelter.webp",
+      "bytes": 9694,
+      "sha256": "c7002a21b34c6e37a4a75c65f726703e6d2e57f8afb1f3e1a813c35a1f544e4f"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/mark-station.webp",
+      "bytes": 9214,
+      "sha256": "d3ef15011a2bc0d0ba499ded49b70bc9ac0c6a2725ba65d10a00f14bbe3accbb"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/guide-expeditions/refit-atmo.webp",
+      "bytes": 9306,
+      "sha256": "0d8ce0bafb0c5ca266800a6c76d01a6ef4bc8f0a5749e79b04a67134e1b13154"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/biotite-loam.webp",
+      "bytes": 11378,
+      "sha256": "48af4e8c6f90320da3313f95ac28fbc345c536c9932b63a1001fe82732930079"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/cryogenic-brine.webp",
+      "bytes": 9398,
+      "sha256": "549e8aacac2a3f8309c3ae30c7fcfa0b0795ff1297604c248d77e0ee506ca47a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/ferrous-drift.webp",
+      "bytes": 10070,
+      "sha256": "08ac1e4ff3255d2e16d42384a77f618cf2a39da608c9068e11ac5fb517b7728b"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/field-crystal.webp",
+      "bytes": 10184,
+      "sha256": "836a7fa3337ad787e284444f8f3d128eac06a6cabdbc56d712a1375cd06b25a5"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/fossil-atmosphere.webp",
+      "bytes": 10858,
+      "sha256": "c4716b752e87d181424a38057e5b76225fb77f320f6bcef3acedcba2d116bb96"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/glacier-core.webp",
+      "bytes": 9318,
+      "sha256": "5bfbcbaac2b423e3ab039d31cb489a103e496dd88155f522e98842f6073c9da2"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/improbability-crystal.webp",
+      "bytes": 8898,
+      "sha256": "b73af0ff606073099566c3492ae170463b1ab2f22a656101513ffcf940932c8a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/living-basalt.webp",
+      "bytes": 9704,
+      "sha256": "0f2f899359ffae8417d236ef0bf69c135f6c3e0e3b4dda9fcbd719c0e76658e6"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/polar-firn.webp",
+      "bytes": 10948,
+      "sha256": "14c50aed99711631abc917a1a6a4ae816d0cfac340c8522c49e5d22b6fc1bf1b"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/reef-chalk.webp",
+      "bytes": 8232,
+      "sha256": "cfada5bee59d0f67cc60fee0e8390c65bc39cdfcdd2ac7964b74d5b607e6e22a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/ridge-quartz.webp",
+      "bytes": 10236,
+      "sha256": "a05eafd9016c66dcadecc72abc31f03aadbfe79aa73c2048be28a03718b2c339"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/tidal-glass.webp",
+      "bytes": 8470,
+      "sha256": "5c2ba277e7609b14d0d06d6a9bcf740ddacc95ebda71600708c7335c23f3004a"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/samples/vent-sulphur.webp",
+      "bytes": 9466,
+      "sha256": "ea42edeee9d25876208556986ca26f777eb25cc537d9c08ea9bca3ed84754721"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/aurora-moth.webp",
+      "bytes": 9144,
+      "sha256": "73acb14db781d8c6ad4cdbe122e98f9081c4ac36a0de7a4db21e8674c4ee696b"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/brine-garden.webp",
+      "bytes": 9466,
+      "sha256": "bb0229d92312aa2a001737cea62562db2ba7bd757fc40e295134a9cfe05cbce3"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/cinder-wren.webp",
+      "bytes": 9852,
+      "sha256": "24237a8ec262c77808d43680bbb7ab35057c672fdc3e19a5306dcfc1c13789db"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/dune-skink.webp",
+      "bytes": 10234,
+      "sha256": "d5f6b746ee1c718c5a1e5be39c597f66cd433cc5b3ec979e0ccbeabbc6f03ebd"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/ember-swarm.webp",
+      "bytes": 10870,
+      "sha256": "7c805ef8de362f893c4e3a05c71510eaa5ef0284bf65cd4836f609ffe61c7103"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/firn-burrower.webp",
+      "bytes": 8874,
+      "sha256": "f1185ef3a9ed64f3cb509b06e9837f48fb79431e86b9f11d356d99ca0ceeef3f"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/glass-shoal.webp",
+      "bytes": 8848,
+      "sha256": "4fd9a850e1cc100a8eb3bca77a68cd66bd7556312bf7c96476cccd225bb382c7"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/grazer-ring.webp",
+      "bytes": 10898,
+      "sha256": "dc034ee2decb84a59aa2f3688884186c05bb826b453d7105cd1b0909302f0cfe"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/meadow-drifter.webp",
+      "bytes": 11064,
+      "sha256": "84908038711c0779a558bfa5c7aaecf0822cec30e1f06bc92b4e9336e66aaf8e"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/nesting-colony.webp",
+      "bytes": 9090,
+      "sha256": "fff8c3c4a6cff4b784cb7ad9b5438b450af270ec32bed4185ee86cbef2437dca"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/settlement-swift.webp",
+      "bytes": 11078,
+      "sha256": "92256a6b510382f45afba804260c93487ce0cb3eddbb72eb242697e6284929c8"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/sky-wisp.webp",
+      "bytes": 10094,
+      "sha256": "5e516334852386bfed817edb7a7314a949208c495e6fcf59c7adc3d81573b04d"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/spore-bloom.webp",
+      "bytes": 10628,
+      "sha256": "018d6170770a5890739ee9f82c8b4596ce8e90d1580e0433b419011b8ed43085"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/tide-chorus.webp",
+      "bytes": 10726,
+      "sha256": "b1a64ed1caf26a9e15cf8b822b21436060cd18ddff7c630f5720411c6e9fc88c"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/tumbleweave.webp",
+      "bytes": 9762,
+      "sha256": "1d8aa004fb44b51d702142d25927989bca526acee8421829841afc896af263e4"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/vent-lace.webp",
+      "bytes": 9474,
+      "sha256": "9667a2ebaf6f497d4f0d9db75d6a179f217f26dd35a10ea6b27b739288d5912f"
+    },
+    {
+      "path": "public/assets/uplift/illustrations/species/verge-lichen.webp",
+      "bytes": 11292,
+      "sha256": "646e4a1e2d43e27c4354ed5506db3b1f67556261633e8f3ad7a53c7eb1dceba5"
+    },
+    {
+      "path": "public/assets/uplift/meshes/deep-field/deep-field-kit.glb",
+      "bytes": 200104,
+      "sha256": "9eb351bbe378b74a70252081fe8ea190e15ce844384e5cd89abde6e25871c49b"
+    },
+    {
+      "path": "public/assets/uplift/meshes/facilities/facility-kit.glb",
+      "bytes": 69024,
+      "sha256": "9933eda25e383062320efe9db339ad386a7e1c3f0b9b1e46b73f7bfa02aa46de"
+    },
+    {
+      "path": "public/assets/uplift/meshes/marks/mark-kit.glb",
+      "bytes": 54216,
+      "sha256": "ed88800078acc00e2befdcc3f11522a2deb44538856a5404419e8ce4fa00665c"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/boulders.glb",
+      "bytes": 449552,
+      "sha256": "559a869f8776dd9b8aac6683ff3c7c229addad0bbf765500215ad4610366652a"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/flora.glb",
+      "bytes": 851496,
+      "sha256": "1229374eda1bdefc21108890d17e319a4b5f4ca85d80de93c1b9e47c076b0f64"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/rocks.glb",
+      "bytes": 724952,
+      "sha256": "516f9fac9ca3e7a2c35c3f36df2d6de24d84747cf1587e554d5b38f9b943548e"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/shards.glb",
+      "bytes": 180980,
+      "sha256": "8823bf674a8009e0b2bd353b45c4cd2799b77f958246b79753747dc210aa8961"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/shrubs.glb",
+      "bytes": 628912,
+      "sha256": "f2d826c29afc001a2b927123d169a4f0d92881bda951e9f8dca0cd2654ef2256"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/vents.glb",
+      "bytes": 419436,
+      "sha256": "6b9222fb34b05767b54e1353240247dabcffacc4dd2f98053c43db730775c712"
+    },
+    {
+      "path": "public/assets/uplift/meshes/seams/crystal-seam-kit.glb",
+      "bytes": 70180,
+      "sha256": "12df3ef158ac7860644ab606f46fc3db7f5fd54ba7286968a6ae71e42ed64b00"
+    },
+    {
+      "path": "public/assets/uplift/meshes/settlements/settlement-kit.glb",
+      "bytes": 119676,
+      "sha256": "52d0287938d89bf27f97baef2db30f4adfffba151fbea769e4b0c9673feb1df3"
+    },
+    {
+      "path": "public/assets/uplift/meshes/ships/runabout-refits.glb",
+      "bytes": 50776,
+      "sha256": "99bca6801104627828f4e708c0ae72577b7c9509c2b45647ac581d0bf7add6fc"
+    },
+    {
+      "path": "public/assets/uplift/meshes/ships/runabout.glb",
+      "bytes": 59956,
+      "sha256": "8ae4c0ab20f88f1dc1aea2b401761f48c46ec5763a8b859c3014ee04e2147c20"
+    },
+    {
+      "path": "public/assets/uplift/meshes/ships/skimmer.glb",
+      "bytes": 21972,
+      "sha256": "d96d6309380af06e18e5e4f9dcc8d01d6bac0812cbe5a9b9cfb5bec04ed08c1a"
+    },
+    {
+      "path": "public/assets/uplift/textures/deep-field/deep-field-atlas.ktx2",
+      "bytes": 82207,
+      "sha256": "b15c3edfbcffb12cc55be46464ef85910a632484eafbe1fccdaf7e69f37b8206"
+    },
+    {
+      "path": "public/assets/uplift/textures/facilities/facility-atlas.ktx2",
+      "bytes": 81228,
+      "sha256": "ddd939206ed51f06265ba7b92b2b8fb0907553ed2c67a28730f1252ccdf920db"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/detail-normal-array.ktx2",
+      "bytes": 1039806,
+      "sha256": "65410bbe4c2f4a487de79e5e1a1919be283ab6a15a0189fdfbbe9c558d902837"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/ground-albedo-array.ktx2",
+      "bytes": 12072829,
+      "sha256": "4490fa6fa63837eaced5ea4a8d42cec9ed97268c2f00bd4212c4d1c8ba8facc9"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/ground-decals.ktx2",
+      "bytes": 115179,
+      "sha256": "45a154a8fffb2ca9aed55af764b697791ca53b9a5b8c2228fb5698b645908a87"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/ground-normal-rma-array.ktx2",
+      "bytes": 20929909,
+      "sha256": "b84bcaee06ef6a304c68f250a84f205e5d5db4f5e29fd15ea462c5a74e77e7ba"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/lava-emissive-flow-crust.ktx2",
+      "bytes": 37928,
+      "sha256": "dbfc9520139e9829e6ca64b85f51e012914b54d287f6e72998a8bc2b044b1150"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/macro-mottle-array.ktx2",
+      "bytes": 2639275,
+      "sha256": "d0babb2af618ec4a6a76290cc464cde7c6352006ab09630f12ac65553e72a810"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/shore-waterline.ktx2",
+      "bytes": 54899,
+      "sha256": "f79fd0d5e4726564ad4fb6ebf0f0bd1c9ba1363e59396d6ab0a45c2f0c4b1236"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/snow-frost-normal.ktx2",
+      "bytes": 105377,
+      "sha256": "89b6337d4fcf537d6243fa378cd7d555ec073e4ee49016cb6aa26cf59caf95e8"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/snow-frost.ktx2",
+      "bytes": 130500,
+      "sha256": "14c324e4c64812f992cb509219e673f03ff1f7dddd6cae052add4dd4cccdca08"
+    },
+    {
+      "path": "public/assets/uplift/textures/marks/mark-atlas.ktx2",
+      "bytes": 79874,
+      "sha256": "6b1951a18a6df71433ec515dfdd7931c4410ed349f1ddb1ba7d639ee62e79f2c"
+    },
+    {
+      "path": "public/assets/uplift/textures/orbit/city-lights.ktx2",
+      "bytes": 114195,
+      "sha256": "af7f06e00bdd18a973db1d9e4443196909a8a338d9e41417223d954c9581183d"
+    },
+    {
+      "path": "public/assets/uplift/textures/orbit/galaxy-sprites.ktx2",
+      "bytes": 175653,
+      "sha256": "db0012f115b5b8c6495bf3f8bfb14f8dfa3085e935ee3761dfb2947778da5a60"
+    },
+    {
+      "path": "public/assets/uplift/textures/orbit/planet-detail-array.ktx2",
+      "bytes": 282809,
+      "sha256": "5aa957076d19e1a4663f8a8894f6d4c47edea30cce9d1180a5154fcbe8907359"
+    },
+    {
+      "path": "public/assets/uplift/textures/orbit/ring-dust.ktx2",
+      "bytes": 216978,
+      "sha256": "b93695056ab4e3a0be55e53370d376bd94c5f4382dfea46e6d17a4f628307f06"
+    },
+    {
+      "path": "public/assets/uplift/textures/orbit/traffic-freight-atlas.ktx2",
+      "bytes": 57945,
+      "sha256": "51a71ad3082a07803ae25c7a03e6f34ad0ce7d06dacd816c3605af08b2ffae6b"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/boulders-atlas.ktx2",
+      "bytes": 46147,
+      "sha256": "93fe88f7e14fe677b52ebf0e3024f6b8e7469b2af8038cc259743ad8d916b881"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/flora-atlas.ktx2",
+      "bytes": 66731,
+      "sha256": "8bf2609cdd105af607a80a2eceaa8578cb0eb8a552d5155d678420534dfc8cf6"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/rocks-atlas.ktx2",
+      "bytes": 63732,
+      "sha256": "2909f654d25d3c46d5a26bb1e27a09da7478fff3addea5fd057b20d791605fac"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/shards-atlas.ktx2",
+      "bytes": 80167,
+      "sha256": "724d3c05f3f7b0a0ca4eb6f913a6933f1ed6c874f5a032bb7d702f6b7eaeeeef"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/shrubs-atlas.ktx2",
+      "bytes": 67278,
+      "sha256": "2d798eebdf5e2dd2ea919aab53c4ccc4eb1394c6c71c2984154f9868e55b06b5"
+    },
+    {
+      "path": "public/assets/uplift/textures/props/vents-atlas.ktx2",
+      "bytes": 65734,
+      "sha256": "b1a9c87880e20e51773a81887c667e901633fada82ad798343e60d36e11a29df"
+    },
+    {
+      "path": "public/assets/uplift/textures/seams/crystal-seam.ktx2",
+      "bytes": 82224,
+      "sha256": "95d678b40fd1d5b7c52b7231f2c0d853b63b236674053aa99850b766c0bf4a6c"
+    },
+    {
+      "path": "public/assets/uplift/textures/settlements/settlement-atlas.ktx2",
+      "bytes": 79721,
+      "sha256": "bc45b4399efd4e98a55ab5fb4fe0f797bc7da70a38a3ae6eb1000cbc28c7c205"
+    },
+    {
+      "path": "public/assets/uplift/textures/settlements/window-emissive.ktx2",
+      "bytes": 255116,
+      "sha256": "cfeb9fbb78c9ff3de8f72b7a76745eaf30fb9caea63f3cecc3ccec660f058743"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/hull-decals.ktx2",
+      "bytes": 38549,
+      "sha256": "e15c9939ab97a5e439debac19191df06521e26d7df077521072e439c72cf4649"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/runabout-emissive.ktx2",
+      "bytes": 391713,
+      "sha256": "74b9cd927c84b687ea56a6c0e471c2d4ee56e9c855f01ba0c210d853936b11fe"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/runabout-pbr.ktx2",
+      "bytes": 73310,
+      "sha256": "81c5a7b974dc2feddfb7f52221ed1f172df1e3deaca27f49a73a1b831d25b269"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/aurora-bioluminescence-ramp.ktx2",
+      "bytes": 1711,
+      "sha256": "a672efaf6c6ff7c9d2f02486c31e7d11fc75239bc1ba8658e84dd5c83605971e"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/cloud-deck-array.ktx2",
+      "bytes": 445963,
+      "sha256": "c4f8531c1aa36b6a507bd77471dce2b592ad645439dd6d394148dada46743d30"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/cloud-flow.ktx2",
+      "bytes": 94285,
+      "sha256": "d63ed3dfdf18837a0f19f438a0669d72e35ebd7eef061801198e31b8c40d4a8a"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/nebula-wash.ktx2",
+      "bytes": 429388,
+      "sha256": "eabae8282c397b8d5eb0ac035ba116c1b6f3ee787d89cc91372eae600b957ed4"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/sky-gradient-luts.ktx2",
+      "bytes": 4683,
+      "sha256": "16310769a45f5976229a36e1e9e96750edab4bd4984fe69d7405e0526ef32718"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/starfield-equirect.ktx2",
+      "bytes": 86759,
+      "sha256": "aaf3f29df60410da8a6f8148bb2e54c6cedbfa86e1a28466b8056e46d15ea208"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/sun-glare.ktx2",
+      "bytes": 124469,
+      "sha256": "422adfeda01def56ddd3849e4da5d431841004862582ab0c7ee624464eeaf554"
+    },
+    {
+      "path": "public/assets/uplift/textures/sky/weather-particles.ktx2",
+      "bytes": 72606,
+      "sha256": "8f94a7507b2bff0f147bba47b7b8eb7a8dbd3cabe752e2dc267c6adb0cc1244f"
+    },
+    {
+      "path": "landing/media/14-low-flight.webp",
+      "bytes": 78928,
+      "sha256": "1ccbffc7c2663fda3f244f862df0ce8f555d72a7f937422952da0f01af83b4ba"
+    },
+    {
+      "path": "landing/media/15-chase-view.webp",
+      "bytes": 65006,
+      "sha256": "af71d189aa0f4a9787455e6c3b52f2a55bdec2ddf1e270bc188be0f244f0dc6f"
+    },
+    {
+      "path": "landing/media/16-set-down.webp",
+      "bytes": 71636,
+      "sha256": "c495376fb9130354c554484d437568423b5fd9e97e88b5b2dbc7700df5a75028"
+    },
+    {
+      "path": "landing/media/17-district-dusk.webp",
+      "bytes": 17516,
+      "sha256": "f227ef9d738c9ded84df9ec13d918b6bdd96955ee80d003e44cf377280df15f2"
+    }
+  ],
+  "notes": {
+    "6.7": "Intentionally no audio files. ART_DIRECTION.md requires the existing synthesized Web Audio stack.",
+    "tierC": "The current procedural renderer remains the fallback; generated assets do not alter collision or save-derived geometry."
+  }
+}

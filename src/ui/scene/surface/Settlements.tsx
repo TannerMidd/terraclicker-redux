@@ -31,11 +31,29 @@ import { mulberry } from '../../../engine/rng';
 import type { GroundfallSession } from '../../fx/uiBus';
 import { sharedGlowSprite } from '../universe/shared';
 import { universeMotion } from '../universe/operationsVisual';
-import { buildSettlementSeats } from './surfaceSettlements';
+import { buildSettlementSeats, type FacilityKitKind } from './surfaceSettlements';
 import { surfaceLive, surfaceSettlementList } from './surfaceControl';
 import type { SurfaceParams, SurfaceTiers } from './terrainField';
 import type { PlanetPalette } from '../planetMaterial';
 import * as audio from '../../audio/audio';
+import {
+  kitGeometry,
+  kitGeometryFit,
+  upliftActive,
+  upliftFamilyMaterial,
+  upliftTex,
+  upliftWindowMaterial,
+  type KitFit,
+} from '../uplift/upliftAssets';
+
+const SETTLEMENT_KIT = 'meshes/settlements/settlement-kit.glb';
+const FACILITY_KIT = 'meshes/facilities/facility-kit.glb';
+/** The unit frames of the primitives each kit family replaces. */
+const FIT_BOX: KitFit = { mode: 'box', min: [-0.5, -0.5, -0.5], max: [0.5, 0.5, 0.5] };
+const FIT_MAST: KitFit = { mode: 'box', min: [-0.7, -0.5, -0.7], max: [0.7, 0.5, 0.7] };
+const FIT_STILT: KitFit = { mode: 'box', min: [-0.6, -0.5, -0.6], max: [0.6, 0.5, 0.6] };
+const FIT_DOME: KitFit = { mode: 'box', min: [-1, -0.063, -1], max: [1, 1, 1] };
+const FIT_PAD: KitFit = { mode: 'box', min: [-1, -0.5, -1], max: [1, 0.5, 1] };
 
 function useSeatMesh(seats: Matrix4[]) {
   const ref = useRef<InstancedMesh>(null);
@@ -48,6 +66,43 @@ function useSeatMesh(seats: Matrix4[]) {
   }, [seats]);
   return ref;
 }
+
+function basicColor(hex: number): MeshBasicNodeMaterial {
+  const m = new MeshBasicNodeMaterial();
+  m.color = new Color(hex);
+  return m;
+}
+
+/** One authored facility kind, instanced. Always mounted so hook order holds. */
+function FacilitySeats({
+  kind,
+  seats,
+  material,
+}: {
+  kind: FacilityKitKind;
+  seats: { kind: FacilityKitKind; matrix: Matrix4 }[];
+  material: MeshStandardNodeMaterial;
+}) {
+  const mine = useMemo(() => seats.filter((f) => f.kind === kind).map((f) => f.matrix), [seats, kind]);
+  const ref = useSeatMesh(mine);
+  const geometry = useMemo(() => kitGeometry(FACILITY_KIT, kind), [kind]);
+  if (mine.length === 0 || !geometry) return null;
+  return (
+    <instancedMesh
+      ref={ref}
+      args={[geometry, undefined, mine.length]}
+      material={material}
+      frustumCulled={false}
+    />
+  );
+}
+
+const FACILITY_KINDS: readonly FacilityKitKind[] = [
+  'seed-probe',
+  'atmo-processor',
+  'deep-thought',
+  'petition-crane',
+];
 
 /** Hashed drone round: a slow ellipse over the district at hover height. */
 interface DroneTrack {
@@ -75,75 +130,114 @@ export function Settlements({
   /** Terrain re-centre epoch: seats re-derive when the ground rolls. */
   epoch?: number;
 }) {
+  // The settlement kit (2.3), fitted to the exact unit frames of the
+  // primitives it replaces: every seat matrix keeps its silhouette, and the
+  // layout code above never learns the geometry changed. Null while the GLB
+  // is in flight (or on Tier C) — that session stays primitive.
+  const kit = useMemo(() => {
+    if (!upliftActive()) return null;
+    const wall = kitGeometryFit(SETTLEMENT_KIT, 'hab-shell', FIT_BOX);
+    if (!wall) return null;
+    return {
+      wall,
+      roof: kitGeometryFit(SETTLEMENT_KIT, 'roof', FIT_BOX),
+      mast: kitGeometryFit(SETTLEMENT_KIT, 'mast', FIT_MAST),
+      dome: kitGeometryFit(SETTLEMENT_KIT, 'dome', FIT_DOME),
+      pad: kitGeometryFit(SETTLEMENT_KIT, 'pad', FIT_PAD),
+      stilt: kitGeometryFit(SETTLEMENT_KIT, 'stilt', FIT_STILT),
+      works: kitGeometryFit(SETTLEMENT_KIT, 'works', FIT_BOX),
+      banner: kitGeometryFit(SETTLEMENT_KIT, 'banner', FIT_BOX),
+      scaffold: kitGeometryFit(SETTLEMENT_KIT, 'scaffold', FIT_BOX),
+      atlas: upliftTex('textures/settlements/settlement-atlas.ktx2', { repeat: true, srgb: true }),
+    };
+  }, []);
+  const facilityKitReady = useMemo(
+    () => upliftActive() && kitGeometry(FACILITY_KIT, 'seed-probe') !== null,
+    [],
+  );
+
   const seats = useMemo(() => {
     void epoch; // every foot re-samples the (possibly re-baked) ground
-    return buildSettlementSeats(p, tiers, surfaceSettlementList(), session);
-  }, [p, tiers, session, epoch]);
+    return buildSettlementSeats(p, tiers, surfaceSettlementList(), session, facilityKitReady);
+  }, [p, tiers, session, epoch, facilityKitReady]);
 
-  const wallMat = useMemo(() => {
+  /** Palette-derived family material; kit geometry adds part tints + atlas. */
+  const family = (
+    color: Color,
+    roughness: number,
+    kitted: boolean,
+    opts: { metalness?: number } = {},
+  ) => {
     const m = new MeshStandardNodeMaterial();
+    m.color = color;
+    m.roughness = roughness;
+    if (opts.metalness !== undefined) m.metalness = opts.metalness;
+    if (kitted) {
+      m.vertexColors = true;
+      if (kit?.atlas) {
+        m.map = kit.atlas;
+        m.color.multiplyScalar(1.7);
+      }
+    } else {
+      m.flatShading = true;
+    }
+    return m;
+  };
+
+  const wallMat = useMemo(
     // Local plaster over local stone: the palette, civilised a shade.
-    m.color = palette.high.clone().multiplyScalar(0.58).lerp(new Color(0xcabfa8), 0.35);
-    m.roughness = 0.86;
-    m.flatShading = true;
-    return m;
-  }, [palette]);
-  const roofMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = palette.low.clone().multiplyScalar(0.5).lerp(new Color(0x37404a), 0.5);
-    m.roughness = 0.92;
-    m.flatShading = true;
-    return m;
-  }, [palette]);
-  const windowWarmMat = useMemo(() => {
-    const m = new MeshBasicNodeMaterial();
-    m.color = new Color(SETTLEMENT_WARM_HEX);
-    return m;
-  }, []);
-  const windowCoolMat = useMemo(() => {
-    const m = new MeshBasicNodeMaterial();
-    m.color = new Color(SETTLEMENT_COOL_HEX);
-    return m;
-  }, []);
-  const mastMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = new Color(0x39414b);
-    m.roughness = 0.6;
-    m.flatShading = true;
-    return m;
-  }, []);
-  const domeMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = palette.atmosphere.clone().multiplyScalar(0.5).lerp(new Color(0x9aa8b4), 0.5);
-    m.roughness = 0.34;
-    m.flatShading = true;
-    return m;
-  }, [palette]);
-  const padMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = new Color(0x2c3036);
-    m.roughness = 1;
-    return m;
-  }, []);
-  const worksMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = new Color(0x4c4842);
-    m.roughness = 0.78;
-    m.flatShading = true;
-    return m;
-  }, []);
+    () => family(palette.high.clone().multiplyScalar(0.58).lerp(new Color(0xcabfa8), 0.35), 0.86, !!kit?.wall),
+    [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const roofMat = useMemo(
+    () => family(palette.low.clone().multiplyScalar(0.5).lerp(new Color(0x37404a), 0.5), 0.92, !!kit?.roof),
+    [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const windowWarmMat = useMemo(
+    () => (kit ? upliftWindowMaterial(SETTLEMENT_WARM_HEX) : basicColor(SETTLEMENT_WARM_HEX)),
+    [kit],
+  );
+  const windowCoolMat = useMemo(
+    () => (kit ? upliftWindowMaterial(SETTLEMENT_COOL_HEX) : basicColor(SETTLEMENT_COOL_HEX)),
+    [kit],
+  );
+  const mastMat = useMemo(
+    () => family(new Color(0x39414b), 0.6, !!kit?.mast),
+    [kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const domeMat = useMemo(
+    () => family(palette.atmosphere.clone().multiplyScalar(0.5).lerp(new Color(0x9aa8b4), 0.5), 0.34, !!kit?.dome),
+    [palette, kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const padMat = useMemo(
+    () => family(new Color(0x2c3036), 1, !!kit?.pad),
+    [kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const worksMat = useMemo(
+    () => family(new Color(0x4c4842), 0.78, !!kit?.works),
+    [kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const bannerMat = useMemo(() => {
     const m = new MeshBasicNodeMaterial();
     m.color = new Color(SETTLEMENT_WARM_HEX).multiplyScalar(0.9);
+    if (kit?.banner) m.vertexColors = true;
     return m;
-  }, []);
-  const scaffoldMat = useMemo(() => {
-    const m = new MeshStandardNodeMaterial();
-    m.color = new Color(0x6f5f3c);
-    m.roughness = 0.82;
-    m.flatShading = true;
-    return m;
-  }, []);
+  }, [kit]);
+  const scaffoldMat = useMemo(
+    () => family(new Color(0x6f5f3c), 0.82, !!kit?.scaffold),
+    [kit], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const facilityMat = useMemo(
+    () =>
+      upliftFamilyMaterial({
+        atlas: 'textures/facilities/facility-atlas.ktx2',
+        tint: new Color(0x8f8f8f),
+        gain: 1.15,
+        roughness: 0.58,
+        metalness: 0.3,
+      }),
+    [],
+  );
 
   const wall = useSeatMesh(seats.wall);
   const roof = useSeatMesh(seats.roof);
@@ -237,15 +331,17 @@ export function Settlements({
   return (
     <group name="settlements">
       {seats.wall.length > 0 && (
-        <instancedMesh ref={wall} args={[undefined, undefined, seats.wall.length]} material={wallMat} frustumCulled={false}>
-          <boxGeometry args={[1, 1, 1]} />
+        <instancedMesh ref={wall} args={[kit?.wall ?? undefined, undefined, seats.wall.length]} material={wallMat} frustumCulled={false}>
+          {kit?.wall ? null : <boxGeometry args={[1, 1, 1]} />}
         </instancedMesh>
       )}
       {seats.roof.length > 0 && (
-        <instancedMesh ref={roof} args={[undefined, undefined, seats.roof.length]} material={roofMat} frustumCulled={false}>
-          <boxGeometry args={[1, 1, 1]} />
+        <instancedMesh ref={roof} args={[kit?.roof ?? undefined, undefined, seats.roof.length]} material={roofMat} frustumCulled={false}>
+          {kit?.roof ? null : <boxGeometry args={[1, 1, 1]} />}
         </instancedMesh>
       )}
+      {/* Windows stay quads on purpose: the pane detail is the emissive
+          atlas (2.4), which costs zero triangles. */}
       {seats.windowWarm.length > 0 && (
         <instancedMesh ref={windowWarm} args={[undefined, undefined, seats.windowWarm.length]} material={windowWarmMat} frustumCulled={false}>
           <boxGeometry args={[1, 1, 1]} />
@@ -257,40 +353,43 @@ export function Settlements({
         </instancedMesh>
       )}
       {seats.mast.length > 0 && (
-        <instancedMesh ref={mast} args={[undefined, undefined, seats.mast.length]} material={mastMat} frustumCulled={false}>
-          <cylinderGeometry args={[0.5, 0.7, 1, 6]} />
+        <instancedMesh ref={mast} args={[kit?.mast ?? undefined, undefined, seats.mast.length]} material={mastMat} frustumCulled={false}>
+          {kit?.mast ? null : <cylinderGeometry args={[0.5, 0.7, 1, 6]} />}
         </instancedMesh>
       )}
       {seats.dome.length > 0 && (
-        <instancedMesh ref={dome} args={[undefined, undefined, seats.dome.length]} material={domeMat} frustumCulled={false}>
-          <sphereGeometry args={[1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.52]} />
+        <instancedMesh ref={dome} args={[kit?.dome ?? undefined, undefined, seats.dome.length]} material={domeMat} frustumCulled={false}>
+          {kit?.dome ? null : <sphereGeometry args={[1, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.52]} />}
         </instancedMesh>
       )}
       {seats.pad.length > 0 && (
-        <instancedMesh ref={pad} args={[undefined, undefined, seats.pad.length]} material={padMat} frustumCulled={false}>
-          <cylinderGeometry args={[1, 1, 1, 18]} />
+        <instancedMesh ref={pad} args={[kit?.pad ?? undefined, undefined, seats.pad.length]} material={padMat} frustumCulled={false}>
+          {kit?.pad ? null : <cylinderGeometry args={[1, 1, 1, 18]} />}
         </instancedMesh>
       )}
       {seats.stilt.length > 0 && (
-        <instancedMesh ref={stilt} args={[undefined, undefined, seats.stilt.length]} material={mastMat} frustumCulled={false}>
-          <cylinderGeometry args={[0.5, 0.6, 1, 5]} />
+        <instancedMesh ref={stilt} args={[kit?.stilt ?? undefined, undefined, seats.stilt.length]} material={mastMat} frustumCulled={false}>
+          {kit?.stilt ? null : <cylinderGeometry args={[0.5, 0.6, 1, 5]} />}
         </instancedMesh>
       )}
       {seats.works.length > 0 && (
-        <instancedMesh ref={works} args={[undefined, undefined, seats.works.length]} material={worksMat} frustumCulled={false}>
-          <boxGeometry args={[1, 1, 1]} />
+        <instancedMesh ref={works} args={[kit?.works ?? undefined, undefined, seats.works.length]} material={worksMat} frustumCulled={false}>
+          {kit?.works ? null : <boxGeometry args={[1, 1, 1]} />}
         </instancedMesh>
       )}
       {seats.banner.length > 0 && (
-        <instancedMesh ref={banner} args={[undefined, undefined, seats.banner.length]} material={bannerMat} frustumCulled={false}>
-          <boxGeometry args={[1, 1, 1]} />
+        <instancedMesh ref={banner} args={[kit?.banner ?? undefined, undefined, seats.banner.length]} material={bannerMat} frustumCulled={false}>
+          {kit?.banner ? null : <boxGeometry args={[1, 1, 1]} />}
         </instancedMesh>
       )}
       {seats.scaffold.length > 0 && (
-        <instancedMesh ref={scaffold} args={[undefined, undefined, seats.scaffold.length]} material={scaffoldMat} frustumCulled={false}>
-          <boxGeometry args={[1, 1, 1]} />
+        <instancedMesh ref={scaffold} args={[kit?.scaffold ?? undefined, undefined, seats.scaffold.length]} material={scaffoldMat} frustumCulled={false}>
+          {kit?.scaffold ? null : <boxGeometry args={[1, 1, 1]} />}
         </instancedMesh>
       )}
+      {FACILITY_KINDS.map((kind) => (
+        <FacilitySeats key={kind} kind={kind} seats={seats.facilityKit} material={facilityMat} />
+      ))}
       {seats.beacons.map((b, i) => (
         <sprite
           key={`b${i}`}

@@ -19,6 +19,8 @@ import { useFrame } from '@react-three/fiber';
 import { Group, Vector3 } from 'three/webgpu';
 import { useUiBus } from '../fx/uiBus';
 import { flightLive } from './flightControl';
+import { kitGeometryFit, upliftActive } from './uplift/upliftAssets';
+import { RUNABOUT_KIT, shipMaterial, useKitGeometry } from './uplift/shipKit';
 
 /**
  * Where the nose sits relative to the eye. Z must clear the flight near
@@ -44,6 +46,20 @@ export function RunaboutHull() {
   const sway = useRef({ x: 0, y: 0, roll: 0 });
   /** True until the first frame at the helm has a previous velocity to use. */
   const fresh = useRef(true);
+
+  // The kit's faceted prow (3.1) in the main nose box's exact bounds — the
+  // bounds ARE the point here (see below), so the fit preserves them. Mounts
+  // with the app, so it upgrades once when the kit lands.
+  const kitNose = useKitGeometry(RUNABOUT_KIT, () =>
+    upliftActive()
+      ? kitGeometryFit(RUNABOUT_KIT, 'hull-nose', {
+          mode: 'box',
+          min: [-0.029, -0.01, -0.065],
+          max: [0.029, 0.01, 0.065],
+          rotateY: Math.PI,
+        })
+      : null,
+  );
 
   useFrame(({ camera }, dt) => {
     const g = root.current;
@@ -102,18 +118,23 @@ export function RunaboutHull() {
     <group ref={root}>
       {/* Boxes, not cones: exact bounds are the whole point here. The top
           face lands about two thirds of the way down a 42° frame, so you see
-          the spine of your own nose and nothing else. */}
-      <mesh position={[0, NOSE_Y, NOSE_Z]}>
-        <boxGeometry args={[0.058, 0.02, 0.13]} />
-        <meshStandardMaterial
-          color={0x1b2130}
-          emissive={0x0f1420}
-          emissiveIntensity={1}
-          roughness={0.45}
-          metalness={0.6}
-          flatShading
-        />
-      </mesh>
+          the spine of your own nose and nothing else. The kit prow keeps the
+          same bounds — panel lines where the flat lid was. */}
+      {kitNose ? (
+        <mesh position={[0, NOSE_Y, NOSE_Z]} geometry={kitNose} material={shipMaterial()} />
+      ) : (
+        <mesh position={[0, NOSE_Y, NOSE_Z]}>
+          <boxGeometry args={[0.058, 0.02, 0.13]} />
+          <meshStandardMaterial
+            color={0x1b2130}
+            emissive={0x0f1420}
+            emissiveIntensity={1}
+            roughness={0.45}
+            metalness={0.6}
+            flatShading
+          />
+        </mesh>
+      )}
       {/* A narrower section further out, so the nose reads as tapering. */}
       <mesh position={[0, NOSE_Y - 0.002, NOSE_Z - 0.085]}>
         <boxGeometry args={[0.03, 0.013, 0.06]} />

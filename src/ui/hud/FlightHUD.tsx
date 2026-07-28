@@ -16,7 +16,7 @@ import { flightPrefs, keyLabel, type FlightAction } from '../scene/flightBinding
 import { FirstSortie } from './FirstSortie';
 import { SubEthaTicker } from './SubEthaTicker';
 import { BAND_LABELS } from '../scene/universeLayout';
-import { BRAND_ASSETS, COCKPIT_ASSETS } from '../assets';
+import { BRAND_ASSETS, COCKPIT_ASSETS, EXPEDITION_ART } from '../assets';
 import { REFITS } from '../../content/refit';
 import { CERTIFICATIONS, CERT_THRESHOLDS } from '../../content/certifications';
 import { certFirstCount, certRank } from '../../engine/certifications';
@@ -373,9 +373,16 @@ const OUTER_PATH = 'M -40,-40 H 1040 V 640 H -40 Z';
  * every time you press the view key reads as a fault in the glass.
  */
 export function Canopy({ steady = false }: { steady?: boolean }) {
+  const s = steady ? ' steady' : '';
   return (
+    <>
+      {/* Interior plates (ASSET_UPLIFT.md 3.3): the dashboard fascia and the
+          throttle quadrant sit between the glass and the DOM console. The
+          SVG frame stays the window — its cut IS the flight view's shape. */}
+      <img className={`fh-cockpit-plate dash${s}`} src={COCKPIT_ASSETS.dashboard} alt="" aria-hidden draggable={false} />
+      <img className={`fh-cockpit-plate throttle${s}`} src={COCKPIT_ASSETS.throttle} alt="" aria-hidden draggable={false} />
     <svg
-      className={`fh-canopy${steady ? ' steady' : ''}`}
+      className={`fh-canopy${s}`}
       viewBox="0 0 1000 600"
       preserveAspectRatio="xMidYMid slice"
       aria-hidden
@@ -432,6 +439,7 @@ export function Canopy({ steady = false }: { steady?: boolean }) {
         opacity="0.85"
       />
     </svg>
+    </>
   );
 }
 
@@ -465,6 +473,8 @@ function RefitConsole({ onClose }: { onClose: () => void }) {
           return (
             <div key={def.id} className={`fr-item ${maxed ? 'maxed' : ''}`}>
               <div className="fr-item-head">
+                {/* The console diagram (ASSET_UPLIFT.md 6.2). */}
+                <img className="fr-diagram" src={EXPEDITION_ART.refitIcon(def.id)} alt="" aria-hidden />
                 <span className="fr-name">{def.name}</span>
                 <span className="fr-rank">
                   {Array.from({ length: def.maxRank }, (_, i) => (
@@ -499,6 +509,13 @@ function RefitConsole({ onClose }: { onClose: () => void }) {
           return (
             <div key={track.id} className={`fr-item fr-cert${rank >= CERT_THRESHOLDS.length ? ' maxed' : ''}`}>
               <div className="fr-item-head">
+                {/* The seal that cannot be bought (6.3); it dims until earned. */}
+                <img
+                  className={`fr-seal${rank > 0 ? ' earned' : ''}`}
+                  src={EXPEDITION_ART.certSeal(track.id)}
+                  alt=""
+                  aria-hidden
+                />
                 <span className="fr-name">
                   {track.name}
                   {title && <em className="fr-cert-title"> · {title}</em>}

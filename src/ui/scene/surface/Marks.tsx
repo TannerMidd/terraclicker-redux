@@ -26,6 +26,9 @@ import {
 import { heightAt, type SurfaceParams, type SurfaceTiers } from './terrainField';
 import { surfaceLead, surfaceLive, surfaceMarks } from './surfaceControl';
 import type { PlanetPalette } from '../planetMaterial';
+import { kitGeometry, upliftActive, upliftFamilyMaterial } from '../uplift/upliftAssets';
+
+const MARK_KIT = 'meshes/marks/mark-kit.glb';
 
 const M = new Matrix4();
 const P = new Vector3();
@@ -55,14 +58,29 @@ interface MarkSeats {
   frame: Matrix4[]; // station tripod legs + instrument boxes + repair plinths
   dome: Matrix4[]; // shelters
   plate: Matrix4[]; // repair panels + station dishes
+  /** Whole-asset seats when the mark kit is loaded (ASSET_UPLIFT.md 2.6). */
+  kit: Record<'beacon' | 'station' | 'shelter' | 'repair', Matrix4[]>;
 }
 
-function buildMarkSeats(p: SurfaceParams, tiers: SurfaceTiers): MarkSeats {
-  const seats: MarkSeats = { mast: [], lamp: [], frame: [], dome: [], plate: [] };
+function buildMarkSeats(p: SurfaceParams, tiers: SurfaceTiers, kits: boolean): MarkSeats {
+  const seats: MarkSeats = {
+    mast: [], lamp: [], frame: [], dome: [], plate: [],
+    kit: { beacon: [], station: [], shelter: [], repair: [] },
+  };
   for (const m of surfaceMarks()) {
     const y = heightAt(p, tiers, m.x, m.z);
     // A stable, boring yaw from the position: marks do not fidget.
     const yaw = ((Math.abs(m.x * 13.37 + m.z * 7.91) % 6.283) + 6.283) % 6.283;
+    if (kits && (KIT_KINDS as readonly string[]).includes(m.kind)) {
+      // The kit was authored to the composed silhouettes' proportions: one
+      // base-origin seat per mark, scale 1. The lamp overlays keep the pulse.
+      seat(seats.kit[m.kind as keyof MarkSeats['kit']], m.x, y, m.z, yaw, 1, 1, 1);
+      if (m.kind === 'beacon') seat(seats.lamp, m.x, y + 4.75, m.z, yaw, 0.42, 0.42, 0.42);
+      if (m.kind === 'shelter') {
+        seat(seats.lamp, m.x + Math.cos(yaw) * 1.7, y + 0.75, m.z + Math.sin(yaw) * 1.7, yaw, 0.2, 0.2, 0.2);
+      }
+      continue;
+    }
     switch (m.kind) {
       case 'beacon': {
         seat(seats.mast, m.x, y + 2.3, m.z, yaw, 0.14, 4.6, 0.14);
@@ -102,6 +120,32 @@ function buildMarkSeats(p: SurfaceParams, tiers: SurfaceTiers): MarkSeats {
   return seats;
 }
 
+const KIT_KINDS = ['beacon', 'station', 'shelter', 'repair'] as const;
+const KIT_ASSET: Record<(typeof KIT_KINDS)[number], string> = {
+  beacon: 'beacon-mast',
+  station: 'survey-station',
+  shelter: 'shelter',
+  repair: 'repair-rig',
+};
+
+/** One authored mark kind, instanced against the shared mark material. */
+function MarkKitSeats({
+  kind,
+  seats,
+  material,
+}: {
+  kind: (typeof KIT_KINDS)[number];
+  seats: Matrix4[];
+  material: MeshStandardNodeMaterial;
+}) {
+  const ref = useSeatMesh(seats);
+  const geometry = useMemo(() => kitGeometry(MARK_KIT, KIT_ASSET[kind]), [kind]);
+  if (seats.length === 0 || !geometry) return null;
+  return (
+    <instancedMesh ref={ref} args={[geometry, undefined, seats.length]} material={material} frustumCulled={false} />
+  );
+}
+
 function useSeatMesh(seats: Matrix4[]) {
   const ref = useRef<InstancedMesh>(null);
   useEffect(() => {
@@ -129,11 +173,27 @@ export function Marks({
   /** Bumped by surfaceControl when a mark plants mid-stay. */
   nonce?: number;
 }) {
+  const kitReady = useMemo(
+    () => upliftActive() && kitGeometry(MARK_KIT, 'beacon-mast') !== null,
+    [],
+  );
   const seats = useMemo(() => {
     void epoch;
     void nonce;
-    return buildMarkSeats(p, tiers);
-  }, [p, tiers, epoch, nonce]);
+    return buildMarkSeats(p, tiers, kitReady);
+  }, [p, tiers, epoch, nonce, kitReady]);
+
+  const kitMat = useMemo(
+    () =>
+      upliftFamilyMaterial({
+        atlas: 'textures/marks/mark-atlas.ktx2',
+        tint: new Color(0x969696),
+        gain: 1.15,
+        roughness: 0.6,
+        metalness: 0.35,
+      }),
+    [],
+  );
 
   const metal = useMemo(() => {
     const m = new MeshStandardNodeMaterial();
@@ -206,6 +266,9 @@ export function Marks({
           <boxGeometry args={[1, 1, 1]} />
         </instancedMesh>
       )}
+      {KIT_KINDS.map((kind) => (
+        <MarkKitSeats key={kind} kind={kind} seats={seats.kit[kind]} material={kitMat} />
+      ))}
       <LeadResonator p={p} tiers={tiers} epoch={epoch} />
     </group>
   );

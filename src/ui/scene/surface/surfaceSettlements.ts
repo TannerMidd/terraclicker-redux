@@ -138,7 +138,15 @@ export interface SettlementSeats {
   beacons: { x: number; y: number; z: number }[];
   /** Drone patrol homes, one entry per lit district. */
   drones: { x: number; z: number; deckY: number; count: number; seed: number }[];
+  /**
+   * Whole-asset facility seats (ASSET_UPLIFT.md 2.5): when the caller has
+   * the facility kit, the signature installations stand as authored meshes
+   * instead of composed primitives. Base-origin, real scale × the seat's.
+   */
+  facilityKit: { kind: FacilityKitKind; matrix: Matrix4 }[];
 }
+
+export type FacilityKitKind = 'seed-probe' | 'atmo-processor' | 'deep-thought' | 'petition-crane';
 
 const SPOT_DIR = new Vector3();
 const SPOT_EAST = new Vector3();
@@ -283,10 +291,20 @@ export function buildSettlementSeats(
   tiers: SurfaceTiers,
   districts: readonly DistrictSpec[],
   session: GroundfallSession,
+  /** True when the facility kit is loaded: signature installations become
+   * whole authored meshes rather than composed primitives. */
+  kits = false,
 ): SettlementSeats {
   const seats: SettlementSeats = {
     wall: [], roof: [], windowWarm: [], windowCool: [], mast: [], dome: [],
     pad: [], stilt: [], works: [], banner: [], scaffold: [], beacons: [], drones: [],
+    facilityKit: [],
+  };
+  const kitSeat = (kind: FacilityKitKind, x: number, y: number, z: number, yaw: number, s: number) => {
+    POS.set(x, y, z);
+    QUAT.setFromAxisAngle(AXIS.set(0, 1, 0), yaw);
+    SCL.set(s, s, s);
+    seats.facilityKit.push({ kind, matrix: new Matrix4().compose(POS, QUAT, SCL) });
   };
   const roster = settlementRoster(settlementSpecOf(session));
   const character = settlementCharacter(session.traits);
@@ -421,12 +439,21 @@ export function buildSettlementSeats(
       const y = f.deck;
       switch (id) {
         case 'seedProbe':
-          // The first machine that ever touched this world, on a plinth.
+          if (kits) {
+            // The first machine that ever touched this world — the authored
+            // probe on its plinth, at the composed silhouette's height.
+            kitSeat('seed-probe', f.x, y, f.z, yaw, 1.1);
+            break;
+          }
           seat(seats.works, f.x, y + 0.5, f.z, yaw, 0, 0, 1.6, 1, 1.6);
           seat(seats.mast, f.x, y + 1 + 1.3, f.z, yaw, 0, 0.06, 0.18, 2.6, 0.18);
           seat(seats.dome, f.x, y + 1 + 2.75, f.z, 0, 0, 0, 0.55, 0.5, 0.55);
           break;
         case 'atmoProcessor':
+          if (kits) {
+            kitSeat('atmo-processor', f.x, y, f.z, yaw, 2.1);
+            break;
+          }
           for (let s = 0; s < 3; s++) {
             seat(seats.works, f.x + (s - 1) * 2.6, y + 4.5, f.z + (s % 2) * 1.2, yaw, 0, 0, 1.8, 9, 1.8);
           }
@@ -455,6 +482,10 @@ export function buildSettlementSeats(
           break;
         case 'deepThought':
           // It is still thinking. Do not interrupt it.
+          if (kits) {
+            kitSeat('deep-thought', f.x, y, f.z, yaw, 1.8);
+            break;
+          }
           seat(seats.works, f.x, y + 4, f.z, yaw, 0, 0, 3, 8, 1.2);
           seat(seats.windowCool, f.x + Math.sin(yaw) * 0.66, y + 6.6, f.z + Math.cos(yaw) * 0.66, yaw, 0, 0, 0.5, 0.4, 0.06);
           break;
@@ -480,8 +511,13 @@ export function buildSettlementSeats(
         for (const lvl of [2, 4, 5.8]) {
           seat(seats.scaffold, f.x, y + lvl, f.z, yaw, 0, 0, sw, 0.12, sw);
         }
-        seat(seats.mast, f.x + 5, y + 5.5, f.z - 4, yaw + 0.6, 0, 0, 0.3, 11, 0.3);
-        seat(seats.scaffold, f.x + 5 + Math.sin(yaw + 0.6) * 2.4, y + 10.6, f.z - 4 + Math.cos(yaw + 0.6) * 2.4, yaw + 0.6, 0, 1.57, 0.24, 5, 0.24);
+        if (kits) {
+          // The crane that is allegedly seeing to it, as one authored rig.
+          kitSeat('petition-crane', f.x + 5, y, f.z - 4, yaw + 0.6, 1.9);
+        } else {
+          seat(seats.mast, f.x + 5, y + 5.5, f.z - 4, yaw + 0.6, 0, 0, 0.3, 11, 0.3);
+          seat(seats.scaffold, f.x + 5 + Math.sin(yaw + 0.6) * 2.4, y + 10.6, f.z - 4 + Math.cos(yaw + 0.6) * 2.4, yaw + 0.6, 0, 1.57, 0.24, 5, 0.24);
+        }
       }
     });
 
