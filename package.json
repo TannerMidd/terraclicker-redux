@@ -10,6 +10,7 @@
     "assets:uplift": "node scripts/generate-uplift-assets.mjs",
     "assets:ship": "node scripts/uplift/build-ship.mjs",
     "assets:inspect": "node scripts/uplift/normalize.mjs --inspect",
+    "assets:watch": "node scripts/uplift/watch-models.mjs",
     "preview": "vite preview --host localhost --port 4173 --strictPort",
     "site": "npm run build && node scripts/assemble-site.mjs",
     "site:preview": "npm run site && npx vite preview --outDir site --host localhost --port 4180 --strictPort",

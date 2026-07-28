@@ -20,11 +20,18 @@
  * only needed for scripts and .blend sources.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import { PUBLIC_ROOT, ROOT, SOURCE_ROOT, TMP_ROOT, ensureDir } from './helpers.mjs';
+import {
+  deriveNames,
+  discoverImports,
+  namesFromShipped,
+  writeImportsManifest,
+  writeSidecarIfMissing,
+} from './imports.mjs';
 import { fitBox, fittedPoint, kitGeometry, loadKit } from './kit-contract.mjs';
-import { normalizeFile, printReport } from './normalize.mjs';
+import { createIO, normalizeDocument, printReport } from './normalize.mjs';
 
 const BLENDER_CANDIDATES = [
   process.env.BLENDER,
@@ -219,10 +226,30 @@ async function build(asset, blender) {
     runBlender(blender, resolve(ROOT, 'scripts', 'uplift', 'blend-export.py'), src, input);
   }
   console.log(`${asset.id}: normalizing ${asset.source}`);
-  const { report } = await normalizeFile(input, resolve(PUBLIC_ROOT, asset.glb), {
+  const io = createIO();
+  const doc = await io.read(input).catch((err) => {
+    throw new Error(
+      `${asset.id}: could not read ${input}: ${err.message}\n`
+      + `If it is Draco/meshopt-compressed:  npx @gltf-transform/cli copy "${input}" decompressed.glb`,
+    );
+  });
+  // A dropped file names itself: derive on first build, persist to the
+  // sidecar, and from then on the sidecar is the source of truth.
+  if (asset.imported && !asset.names) {
+    const derived = deriveNames(doc, asset.id);
+    asset.names = derived.names;
+    asset.rename = { ...derived.rename, ...(asset.rename ?? {}) };
+    if (writeSidecarIfMissing(asset, derived)) {
+      console.log(`  wrote ${relative(ROOT, asset.sidecar)} — this import's config; edit to override`);
+    }
+  }
+  const report = await normalizeDocument(doc, {
     rename: asset.rename,
     names: asset.names, // optional variants may be absent; verify tolerates that
   });
+  const out = resolve(PUBLIC_ROOT, asset.glb);
+  ensureDir(dirname(out));
+  writeFileSync(out, await io.writeBinary(doc));
   printReport(report);
 }
 
@@ -230,6 +257,8 @@ async function build(asset, blender) {
 // the game's loading path — live in kit-contract.mjs, shared with the tests.
 
 async function verify(asset) {
+  // A never-configured import verifies against what actually shipped.
+  if (!asset.names) asset.names = await namesFromShipped(asset);
   const path = resolve(PUBLIC_ROOT, asset.glb);
   console.log(`\n${asset.id} — ${asset.glb} (${(statSync(path).size / 1024).toFixed(0)} KB)`);
   const scene = await loadKit(path);
@@ -334,10 +363,21 @@ async function verify(asset) {
   if (failed) throw new Error(`${asset.id}: verification failed`);
 }
 
+// Everything dropped into assets-source/uplift/models/ is an asset too — no
+// entry above required. See imports.mjs for what is derived and how the
+// sidecar overrides it.
+const IMPORTS = discoverImports();
+for (const imp of IMPORTS) {
+  if (ASSETS.some((a) => a.id === imp.id)) {
+    throw new Error(`import '${imp.source}' collides with the scripted asset id '${imp.id}' — rename the file`);
+  }
+}
+const REGISTRY = [...ASSETS, ...IMPORTS];
+
 const argv = process.argv.slice(2);
 const verifyOnly = argv.includes('--verify');
 const wanted = argv.filter((a) => !a.startsWith('--'));
-const selected = wanted.length ? ASSETS.filter((a) => wanted.includes(a.id)) : ASSETS;
+const selected = wanted.length ? REGISTRY.filter((a) => wanted.includes(a.id)) : REGISTRY;
 if (!selected.length) throw new Error(`no such asset: ${wanted.join(', ')}`);
 
 if (!verifyOnly) {
@@ -350,4 +390,8 @@ if (!verifyOnly) {
   for (const asset of selected) await build(asset, blender);
 }
 for (const asset of selected) await verify(asset);
+// The game's side of the handshake: which imported kits to prefetch.
+if (writeImportsManifest(IMPORTS)) {
+  console.log(`\nupdated ${relative(ROOT, resolve(ROOT, 'src', 'ui', 'scene', 'uplift', 'importsManifest.ts'))}`);
+}
 console.log('\nOK');

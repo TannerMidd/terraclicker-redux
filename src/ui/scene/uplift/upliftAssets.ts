@@ -39,6 +39,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { BufferGeometry, Group, Mesh, MeshStandardMaterial, Object3D } from 'three/webgpu';
 import { useSettings } from '../../settings';
+import { IMPORTED_KITS } from './importsManifest';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type N = any;
@@ -591,4 +592,7 @@ export function preloadUplift(): void {
   upliftPrefetch('textures/orbit/ring-dust.ktx2', {});
   upliftPrefetch('textures/orbit/galaxy-sprites.ktx2', {});
   upliftPrefetch('textures/orbit/traffic-freight-atlas.ktx2', { srgb: true });
+  // Imported kits (assets-source/uplift/models/, via the generated manifest)
+  // arrive last: a new drop has no call site yet, so nothing waits on it.
+  for (const kit of IMPORTED_KITS) prefetchKit(kit);
 }

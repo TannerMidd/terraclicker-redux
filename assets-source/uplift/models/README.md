@@ -1,13 +1,21 @@
-# Imported models go here
+# Drop models here — that's the whole workflow
 
-Any `.blend` (modelled in the Blender GUI) or `.glb`/`.gltf` (asset pack,
-generator, another tool). No Python required — register the file as a
-`source:` asset in `scripts/uplift/build-ship.mjs` and `npm run assets:ship`
-repairs it to the kit rules and verifies it through the game's own merge.
+Any `.blend`, `.glb` or `.gltf`: modelled in the Blender GUI, downloaded from
+an asset pack, generated. Then either
 
-Start with:
+    npm run assets:ship
 
-    npm run assets:inspect -- assets-source/uplift/models/<yours>.glb
+or leave the watcher running and just keep saving/exporting into this folder:
 
-which prints the node names the registry entry will need. The full walkthrough
-is §8 of docs/BLENDER_PIPELINE.md.
+    npm run assets:watch
+
+The build derives the asset's id and names from the file (a lone
+`Armature.001` root gets renamed to the filename), repairs it to the kit rules
+(missing UVs, live transforms, tangents, rigs, textures), verifies it through
+the game's own merge, ships it to `public/assets/uplift/meshes/imports/`, and
+adds it to the game's prefetch manifest. A `<file>.import.json` sidecar
+appears next to your model with everything that was derived — edit it to
+override (budget, names, renames, `prefetch: false`), and commit it with the
+model.
+
+Full story: §8 of docs/BLENDER_PIPELINE.md.

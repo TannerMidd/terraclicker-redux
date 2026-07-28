@@ -5,13 +5,16 @@ not used Blender before; the runabout hull is the worked example throughout,
 but the same path now carries the skimmer, the settlement kit, the wildlife,
 the crystal seams and the cloud banks.
 
-**A model does not need any Python to get in.** Anything that produces a
-`.glb` — the Blender GUI, a CC0 asset pack, a generator — can be registered as
-a `source:` asset, and the build repairs it to the rules below automatically.
-That route is **§8**, and it is the default for new assets. The per-asset
-Python scripts are how the six original kits are built and remain right for
-models that really are code (parametric variants, palettes shared with the
-game); everything in between is machinery both routes share.
+**A model does not need any Python — or any configuration — to get in.**
+Anything that produces a `.glb` or `.blend` — the Blender GUI, a CC0 asset
+pack, a generator — is imported by **dropping the file into
+`assets-source/uplift/models/`**: the build derives its name, repairs it to
+the rules below, verifies it through the game's own merge, and adds it to the
+game's prefetch list. That route is **§8**, and it is the default for new
+assets. The per-asset Python scripts are how the six original kits are built
+and remain right for models that really are code (parametric variants,
+palettes shared with the game); everything in between is machinery both routes
+share.
 
 ---
 
@@ -47,10 +50,14 @@ lighting, animation. Those live in code (`shipKit.tsx`) and are shared.
 | `assets-source/uplift/blender/ore.py` | The crystal seam cluster. |
 | `assets-source/uplift/blender/clouds.py` | Cloud banks for the flight band. |
 | `assets-source/uplift/blender/*.blend` | The Blender files, *output* of those scripts. Open, look, edit. |
-| `assets-source/uplift/models/` | **Imported models go here** — `.blend` or `.glb`, no script needed (§8). |
+| `assets-source/uplift/models/` | **The drop target** — put a `.blend`/`.glb` here and it imports itself (§8). |
+| `assets-source/uplift/models/*.import.json` | Per-import config, derived on first build; the override surface (§8). |
+| `scripts/uplift/imports.mjs` | Zero-config discovery: every file in models/ IS a registered asset. |
+| `scripts/uplift/watch-models.mjs` | `npm run assets:watch` — saving into models/ runs the import for you. |
 | `scripts/uplift/normalize.mjs` | The repair pass for imported models: bakes transforms, generates UVs, strips what the merge refuses. |
-| `scripts/uplift/blend-export.py` | The one generic `.blend → .glb` export used by every `source:` .blend. |
+| `scripts/uplift/blend-export.py` | The one generic `.blend → .glb` export used for every imported .blend. |
 | `scripts/uplift/kit-contract.mjs` | The game's merge, transcribed for Node — what the build and the tests verify against. |
+| `src/ui/scene/uplift/importsManifest.ts` | Generated: which imported kits the game prefetches. Never edited by hand. |
 | `public/assets/uplift/meshes/**/*.glb` | The game assets. This is what ships to players. |
 | `scripts/uplift/build-ship.mjs` | The driver: builds (or normalizes), then checks the result. |
 
@@ -262,66 +269,78 @@ which a binary `.blend` never can.
 
 ---
 
-## 8. Adding a *new* asset — no code required
+## 8. Adding a *new* asset — drop the file
 
-Any `.glb` works: modelled in the Blender GUI, downloaded (CC0 low-poly packs
-— Kenney, Quaternius — are exactly this art style), or generated. A `.blend`
-works too; the build exports it headless with the one generic
-`blend-export.py`. You never write a Python file.
+`assets-source/uplift/models/` is a drop target. Put a `.glb`, `.gltf` or
+`.blend` there — modelled in the Blender GUI, downloaded (CC0 low-poly packs —
+Kenney, Quaternius — are exactly this art style), or generated — and run:
 
-1. Put the file under `assets-source/uplift/models/`.
-2. Look inside it:
+```bash
+npm run assets:ship
+```
 
-   ```bash
-   npm run assets:inspect -- assets-source/uplift/models/<thing>.glb
-   ```
+Or leave the watcher running while you work, and *saving into the folder is
+the whole workflow* — Blender's export dialog can point straight at it:
 
-   This prints the node tree — triangles, attributes, material colours — and
-   ends with the candidate names for step 3.
-3. Register it in the `ASSETS` list in `scripts/uplift/build-ship.mjs`. The
-   minimal entry:
+```bash
+npm run assets:watch
+```
 
-   ```js
-   {
-     id: 'person',
-     source: 'models/person.glb',           // or models/person.blend
-     glb: 'meshes/props/person.glb',        // where it ships, under public/
-     names: ['person'],                     // the node the game asks for — the API
-     rename: { 'Armature.001': 'person' },  // teach a download that name (optional)
-     budget: 900,                           // ≤900 if it will be instanced (§4.6)
-   },
-   ```
+That is the import. Automatically, per file:
 
-4. Build and prove it:
+- the **id** is the filename (`Big Rock.glb` → `big-rock`), and the asset
+  ships to `meshes/imports/<id>.glb`;
+- the **names** the game will ask for are the file's root nodes — and a lone
+  root with a meaningless name (downloads arrive as `Armature.001`) is renamed
+  to the id, so the filename you chose becomes the in-game name;
+- the file is **normalized** — transforms baked to identity, missing UVs
+  box-projected at the kit density, tangents/vertex-colours/rigs stripped,
+  materials flattened to their base colour, the motion mask zero-filled on
+  rigid parts — and **verified** through the game's own merge, against the
+  900-triangle instanced budget;
+- a sidecar **`<file>.import.json`** appears next to the model holding
+  everything that was derived — commit it along with the model;
+- the generated `src/ui/scene/uplift/importsManifest.ts` is updated, so the
+  game **prefetches it with the rest of the pack**. No code edits.
 
-   ```bash
-   node scripts/uplift/build-ship.mjs person
-   ```
+Read the `WARN` lines in the build output: a model whose paint job was a
+*texture* arrives one flat colour per material, and normalize cannot invent
+the split for you.
 
-   The file is **normalized** — transforms baked to identity, missing UVs
-   box-projected at the kit density, tangents/vertex-colours/rigs stripped,
-   materials flattened to their base colour, the motion mask zero-filled on
-   rigid parts — and then **verified** through the game's own merge, exactly
-   like the scripted kits. Read the `WARN` lines: a model whose paint job was
-   a *texture* arrives one flat colour per material, and normalize cannot
-   invent the split for you.
-5. Wire it in: `prefetchKit('meshes/props/<thing>.glb')` in `preloadUplift()`
-   (`upliftAssets.ts`), draw with `kitGeometryFit(path, name, fit)` and a
-   **shared** material — one per family, never one per object (per-object
-   materials link a fresh shader each, which is what used to freeze this scene
-   mid-flight). Keep a primitive fallback for quality `low` (§4.9), and add
-   `sites` to the registry entry once the call site's fit box exists, so a
-   drifting silhouette is measured instead of noticed on screen.
+**The sidecar is the override surface.** Edit it and rebuild:
+
+| field | meaning |
+|---|---|
+| `names` | the node names the game asks for — the API (§4.1) |
+| `rename` | `{ "from": "to" }`, applied before anything reads names |
+| `perAsset` / `budget` | triangle ceiling: per-name (instanced), or whole-file |
+| `sites` | call-site fit boxes once they exist, so drift is measured (§6) |
+| `requireAttributes` | e.g. `["uv1"]` to assert an animated kit kept its mask |
+| `prefetch` | `false` ships the file but keeps it out of the game's download |
+| `glb` | override the shipped path |
+
+**Showing it in the game** is the one step that stays human, because it is
+design, not plumbing: `kitGeometryFit('meshes/imports/<id>.glb', '<name>',
+fit)` wherever it should appear, drawn with a **shared** material — one per
+family, never one per object (per-object materials link a fresh shader each,
+which is what used to freeze this scene mid-flight) — and keep a primitive
+fallback for quality `low` (§4.9).
+
+`npm run assets:inspect -- <file>` prints any GLB's node tree, triangle
+counts and material colours, useful before renaming or when a WARN needs
+chasing.
 
 Two honest limits. **Animation**: a motion mask (§4.8) is design, not repair —
 an imported creature arrives rigid until someone authors `uv1`, in Blender or
 in a script. **Paint**: only flat material colours survive; texture-painted
 models need their materials split by colour first.
 
-**The procedural route** — `script:` instead of `source:`, how the six
-original kits are built — is still the right tool when the model *is* code:
-parametric variants, palettes shared with the game, reviewable diffs. Copy the
-shape of `skimmer.py`; everything shared lives in `kitlib.py`.
+**The other two routes** still exist for assets that outgrow the defaults: a
+manual `source:` entry in `ASSETS` (same machinery, but curated paths and fit
+`sites` live in the registry with everyone else), and `script:` — how the six
+original kits are built — for models that *are* code: parametric variants,
+palettes shared with the game, reviewable diffs. Copy the shape of
+`skimmer.py`; everything shared lives in `kitlib.py`.
 
 ---
 
