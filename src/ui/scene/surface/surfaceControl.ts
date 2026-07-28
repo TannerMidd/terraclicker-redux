@@ -209,6 +209,17 @@ const BOARD_RANGE = 6.5;
  */
 export const SHIP_PARK: { x: number; z: number } = { x: 11, z: -7 };
 /**
+ * Heading the ship is parked on when a landing begins — she sits at an angle
+ * to the walker's approach rather than square to the axes.
+ *
+ * This lived as a fixed rotation on the ship MODEL until 2026-07-27, which was
+ * only harmless while the ship never moved: Phase 6 flies the same component,
+ * so the hull crabbed 34° off its heading in the chase view. Invisible on the
+ * old near-square primitive hull, obvious the moment it had a nose. A parked
+ * pose belongs to the pad, not to the mesh.
+ */
+export const SHIP_PARK_YAW = 0.6;
+/**
  * Water deeper than this and the suit declines to continue. It is not a
  * wall any more: up to here you wade, slower with depth, and past it a firm
  * buoyant shove walks you back toward the shallows. A skimmer (Phase 3)
@@ -412,7 +423,7 @@ export const surfaceLive = {
   /** Atmospheric Handling rank, frozen at landing like the others. */
   atmoRank: 0,
   /** Where the ship stands right now, in landing-local metres. It moves. */
-  shipAt: { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: 0 },
+  shipAt: { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: SHIP_PARK_YAW },
   /** Cosmetic bank while airborne; the canopy and the hull both read it. */
   roll: 0,
   /** Ground speed in the air, m/s — the cockpit's readout. */
@@ -763,7 +774,7 @@ export function beginGroundfall(s: GroundfallSession): void {
   live.skimPrompt = null;
   live.skimNoteUntil = 0;
   live.atmoRank = atmoRank(st.expedition);
-  live.shipAt = { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: 0 };
+  live.shipAt = { x: SHIP_PARK.x, z: SHIP_PARK.z, yaw: SHIP_PARK_YAW };
   live.roll = 0;
   live.airSpeed = 0;
   live.ceilingM = atmoEnvelope(live.atmoRank).ceiling;

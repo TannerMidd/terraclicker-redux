@@ -1150,6 +1150,12 @@ const LANDED_PODS: RefitPodSpec[] = [
  * on legs. With the ship kit loaded it IS the same asset (3.1) — one hull,
  * three call sites; otherwise the hand-placed geometry stands in.
  */
+/**
+ * The ship on the ground, and — in the 'fly' phase — the same ship in the air.
+ * It carries no yaw of its own: the frame loop owns the heading, and airborne
+ * that heading is where she is actually going. The parked angle belongs to the
+ * pad, as SHIP_PARK_YAW.
+ */
 function LandedRunabout() {
   // Gear included: the kit hull carries its struts and feet, fitted so the
   // pads rest at local y=0 exactly where the hand-built gear stood.
@@ -1158,7 +1164,7 @@ function LandedRunabout() {
     [],
   );
   return (
-    <group scale={5.5} rotation={[0, 0.6, 0]}>
+    <group scale={5.5}>
       {kitHull ? (
         <>
           <mesh geometry={kitHull} material={shipMaterial()} />
