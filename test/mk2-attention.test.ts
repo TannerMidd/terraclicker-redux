@@ -39,6 +39,33 @@ describe('Mk II priority queue', () => {
     expect(items[1]?.detail).toContain('30s left');
   });
 
+  it('lets letters wait politely, while an open question still leads the desk', () => {
+    const state = newGame(20260727, 0);
+    state.run.petitions = [
+      { uid: 9, id: 'petition-test', remainingMs: 600_000, world: 1, worldName: 'Cinder I' },
+      { uid: 10, id: 'petition-test-2', remainingMs: 300_000, world: 2, worldName: 'Lumina' },
+    ];
+
+    let answer = buildAttentionItems(state, computeDerived(state, OPTS))
+      .find((item) => item.kind === 'answer');
+    expect(answer?.tone).toBe('ready');
+    expect(answer?.priority).toBeGreaterThan(0);
+    expect(answer?.title).toBe('2 letters are waiting');
+
+    state.situations = [{
+      uid: 11,
+      id: 'unknown-test-decision',
+      remainingMs: 12_000,
+      world: 0,
+      worldName: state.planet.name,
+    }];
+    answer = buildAttentionItems(state, computeDerived(state, OPTS))
+      .find((item) => item.kind === 'answer');
+    expect(answer?.tone).toBe('urgent');
+    expect(answer?.priority).toBe(0);
+    expect(answer?.detail).toContain('3 waiting');
+  });
+
   it('states the physical freight leg instead of always naming the destination', () => {
     const state = newGame(20260725, 0);
     state.operations.offers = [];

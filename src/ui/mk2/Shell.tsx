@@ -34,7 +34,7 @@ import { buildingCost } from '../../engine/economy';
 import { EVENT_BY_ID } from '../../content/events';
 import { PETITION_BY_ID } from '../../content/petitions';
 import { SITUATION_BY_ID, fillSituationText, type SituationSeverity } from '../../content/situations';
-import { situationCosts } from '../../engine/situations';
+import { situationCosts, type SituationInstance } from '../../engine/situations';
 import { findWaypoint, waypointId } from '../../engine/waypoints';
 import { BAND_LABELS, BAND_STOPS } from '../scene/universeLayout';
 import { BRAND_ASSETS } from '../assets';
@@ -109,18 +109,30 @@ export function buildAttentionItems(state: GameState, derived: Derived): Attenti
   const items: AttentionItem[] = [];
 
   const petitions = [...state.run.petitions].sort((a, b) => a.remainingMs - b.remainingMs);
-  const answers = [...state.situations, ...petitions];
-  const firstAnswer = state.situations[0] ?? petitions[0];
-  if (firstAnswer) {
-    const def = SITUATION_BY_ID[firstAnswer.id] ?? PETITION_BY_ID[firstAnswer.id];
+  const urgent = state.situations[0];
+  if (urgent) {
+    const def = SITUATION_BY_ID[urgent.id];
     items.push({
-      id: `answer-${firstAnswer.uid}`,
+      id: `answer-${urgent.uid}`,
       kind: 'answer',
       priority: 0,
       title: def?.name ?? 'A decision needs an answer',
-      detail: `${answers.length} waiting / ${formatDuration(Math.max(0, firstAnswer.remainingMs))} left`,
+      detail: `${state.situations.length + petitions.length} waiting / ${formatDuration(Math.max(0, urgent.remainingMs))} left`,
       tone: 'urgent',
-      dueMs: Math.max(0, firstAnswer.remainingMs),
+      dueMs: Math.max(0, urgent.remainingMs),
+    });
+  } else if (petitions[0]) {
+    // Letters are queued correspondence, not emergencies: a full tray holds a
+    // calm rank, below anything with a deadline that can actually expire.
+    const def = PETITION_BY_ID[petitions[0].id] ?? SITUATION_BY_ID[petitions[0].id];
+    items.push({
+      id: `letters-${petitions[0].uid}`,
+      kind: 'answer',
+      priority: 12,
+      title: petitions.length === 1 ? 'A letter is waiting' : `${petitions.length} letters are waiting`,
+      detail: `${def?.name ?? 'Correspondence'} / ${formatDuration(Math.max(0, petitions[0].remainingMs))} to reply`,
+      tone: 'ready',
+      dueMs: Math.max(0, petitions[0].remainingMs),
     });
   }
 
@@ -637,8 +649,11 @@ const LAPSE_HINT: Record<SituationSeverity, string> = {
 
 function AnswerCard({
   inst,
+  onSetAside,
 }: {
   inst: { uid: number; id: string; remainingMs: number; world: number; worldName: string };
+  /** Present only for letters: puts the tray back down without answering. */
+  onSetAside?: () => void;
 }) {
   const { s, d } = useGame.getState();
   const def = SITUATION_BY_ID[inst.id] ?? PETITION_BY_ID[inst.id];
@@ -653,8 +668,13 @@ function AnswerCard({
     <div className="mk2-answer-slot">
       <div className="mk2-answer">
         <div className="mk2-answer-head">
-          <span className="k">Awaiting an answer</span>
+          <span className="k">{onSetAside ? 'Held correspondence' : 'Awaiting an answer'}</span>
           <span style={{ flex: 1 }} />
+          {onSetAside && (
+            <button className="mk2-answer-aside" onClick={onSetAside} title="Put it back in the tray">
+              LATER
+            </button>
+          )}
           <span className="v">{formatDuration(left)}</span>
           <span className="mk2-answer-timer"><i style={{ width: `${frac * 100}%` }} /></span>
         </div>
@@ -712,6 +732,36 @@ function AnswerCard({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Petitions queue rather than interrupt — that is their entire constitution
+ * (engine/situations.ts) — so between questions the column shows a closed
+ * tray, not an open one. Nothing is read until the player does the reading;
+ * petition windows run 15–25 minutes precisely so this can be true.
+ */
+function HeldLetters({
+  held,
+  onRead,
+}: {
+  held: readonly SituationInstance[];
+  onRead: () => void;
+}) {
+  const next = held[0]!;
+  const def = PETITION_BY_ID[next.id] ?? SITUATION_BY_ID[next.id];
+  return (
+    <button className="mk2-letters" onClick={onRead}>
+      <span className="mk2-letters-copy">
+        <b>{held.length === 1 ? 'A letter is waiting' : `${held.length} letters are waiting`}</b>
+        <span>
+          {def?.name ?? 'Correspondence'}
+          {next.worldName ? ` · ${next.worldName}` : ''}
+          {` · ${formatDuration(Math.max(0, next.remainingMs))} to reply`}
+        </span>
+      </span>
+      <em>READ</em>
+    </button>
   );
 }
 
@@ -1115,9 +1165,16 @@ export function Mk2Shell() {
   }, [dockRequest]);
 
   const urgent = s.situations[0];
-  const petitions = s.run.petitions;
+  const held = [...s.run.petitions].sort((a, b) => a.remainingMs - b.remainingMs);
+  // The tray opens when the player opens it, stays open through a run of
+  // letters (that is what opening a tray means), and puts itself away once
+  // the last one is dealt with.
+  const [reading, setReading] = useState(false);
+  useEffect(() => {
+    if (held.length === 0) setReading(false);
+  }, [held.length]);
   const attentionItems = buildAttentionItems(s, d);
-  const answerVisible = Boolean(urgent || petitions[0]);
+  const answerVisible = Boolean(urgent || held[0]);
 
   return (
     <div className={`mk2${open ? '' : ' panel-closed'}`}>
@@ -1137,7 +1194,9 @@ export function Mk2Shell() {
       <div className="mk2-column">
         <Lamps />
         {urgent && <AnswerCard inst={urgent} />}
-        {!urgent && petitions[0] && <AnswerCard inst={petitions[0]} />}
+        {!urgent && held[0] && (reading
+          ? <AnswerCard inst={held[0]} onSetAside={() => setReading(false)} />
+          : <HeldLetters held={held} onRead={() => setReading(true)} />)}
         <PriorityQueue
           items={attentionItems}
           onOpen={(id) => setOpen(id)}

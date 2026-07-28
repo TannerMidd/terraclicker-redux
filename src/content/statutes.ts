@@ -24,7 +24,8 @@
  */
 
 export type StatuteEffect =
-  /** Situations and petitions arrive this much more often. */
+  /** Situations arrive this much more often (petitions keep their own
+   * clock, and the cadence cap in constants.ts has the last word). */
   | { kind: 'situationFreq'; v: number }
   /** Offline cap, in ms. */
   | { kind: 'offlineCapAddMs'; v: number }

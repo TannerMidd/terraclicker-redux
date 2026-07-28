@@ -277,10 +277,17 @@ export function computeDerived(state: GameState, opts: StepOptions = {}): Derive
   }
   const heartOfGoldCount = state.buildings['heartOfGold'] ?? 0;
   situationFreqMult *= Math.pow(1.12, heartOfGoldCount);
-  const bubbleFreqMult = quirkBubbleFreq * Math.pow(1.08, heartOfGoldCount);
   goldenOddsMult *= Math.pow(1.15, heartOfGoldCount);
-  const finalSituationFreqMult = situationFreqMult * quirkSituationFreq;
-  const anomalyPressure = finalSituationFreqMult * bubbleFreqMult * Math.sqrt(goldenOddsMult);
+  const rawSituationFreq = situationFreqMult * quirkSituationFreq;
+  const rawBubbleFreq = quirkBubbleFreq * Math.pow(1.08, heartOfGoldCount);
+  // The frequency stack is unbounded by construction — every drive compounds
+  // it — but the demand it turns into is not allowed to be. The caps keep the
+  // promise in constants.ts: a fleet of Heart of Gold drives makes the
+  // universe more improbable (the meter below still reads the raw pressure),
+  // never more demanding.
+  const finalSituationFreqMult = Math.min(C.SITUATION_FREQ_CAP, rawSituationFreq);
+  const bubbleFreqMult = Math.min(C.BUBBLE_FREQ_CAP, rawBubbleFreq);
+  const anomalyPressure = rawSituationFreq * rawBubbleFreq * Math.sqrt(goldenOddsMult);
   const improbability = Math.min(
     42,
     100 * (1 - 1 / Math.sqrt(Math.max(1, anomalyPressure))),

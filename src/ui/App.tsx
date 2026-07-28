@@ -10,6 +10,7 @@ import { SurfaceHUD } from './hud/SurfaceHUD';
 import { useUiBus } from './fx/uiBus';
 import { EVENT_BY_ID } from '../content/events';
 import { SITUATION_BY_ID } from '../content/situations';
+import { PETITION_BY_ID } from '../content/petitions';
 import { ACHIEVEMENT_BY_ID } from '../content/achievements';
 import { CERT_BY_ID } from '../content/certifications';
 import { RESEARCH_BY_ID } from '../content/research';
@@ -193,16 +194,18 @@ function useEffectWiring(): void {
             break;
           }
           case 'situationOpened': {
-            const def = SITUATION_BY_ID[e.id];
+            const def = SITUATION_BY_ID[e.id] ?? PETITION_BY_ID[e.id];
             if (def) {
+              // A letter files quietly and waits in the tray; only a question
+              // with a fuse gets the kicker and the sting.
               bus.addToast({
                 kind: 'info',
-                kicker: 'SOMETHING WANTS AN ANSWER',
+                kicker: e.petition ? 'A WORLD WRITES' : 'SOMETHING WANTS AN ANSWER',
                 title: def.name,
                 body: e.world ? `Concerning ${e.world}.` : 'Concerning nobody in particular.',
                 ttlMs: 4200,
               });
-              audio.upgradeSting();
+              if (!e.petition) audio.upgradeSting();
             }
             break;
           }
@@ -213,7 +216,7 @@ function useEffectWiring(): void {
             bus.addToast({
               kind: worse ? 'info' : 'achievement',
               kicker: worse ? 'NOTED, AND REMEMBERED' : 'SETTLED',
-              title: SITUATION_BY_ID[e.id]?.name ?? 'Resolved',
+              title: (SITUATION_BY_ID[e.id] ?? PETITION_BY_ID[e.id])?.name ?? 'Resolved',
               body: e.text,
               ttlMs: 7000,
             });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { newGame, step, stepOffline } from '../src/engine/sim';
 import { serialize, deserialize } from '../src/engine/save/codec';
 import { computeDerived } from '../src/engine/economy';
+import { C } from '../src/content/constants';
 import { STANDING_FLOOR, standingFactor, standingOf } from '../src/engine/situations';
 import { SITUATION_BY_ID, SITUATIONS } from '../src/content/situations';
 import { prestigeEligible } from '../src/engine/economy';
@@ -236,6 +237,47 @@ describe('situations: the rest of the game', () => {
     if (!r.ok) return;
     expect(r.state.situations).toEqual(s.situations);
     expect(r.state.run.standing).toEqual(s.run.standing);
+  });
+
+  it('stays an idle game however hard the drives compound', () => {
+    // Eighty Hearts of Gold is ×1.12⁸⁰ ≈ ×8,700 on the raw stack — the whale
+    // save that turned 7–15 minutes into seconds. The cap is the promise.
+    const s = withWorlds(101);
+    s.buildings['heartOfGold'] = 80;
+    const d = computeDerived(s, OPTS);
+    expect(d.situationFreqMult).toBeLessThanOrEqual(C.SITUATION_FREQ_CAP);
+    expect(d.bubbleFreqMult).toBeLessThanOrEqual(C.BUBBLE_FREQ_CAP);
+    // The meter still reads the raw pressure — a fleet of drives makes the
+    // universe more improbable, just never more demanding.
+    expect(d.improbability).toBe(42);
+  });
+
+  it('answering buys a guaranteed breather before the next question', () => {
+    const s = withWorlds(102);
+    s.science = s.tu; // some options are paid for in research time
+    openOne(s);
+    const inst = s.situations[0]!;
+    const def = SITUATION_BY_ID[inst.id]!;
+    // Worst case: the spawn clock already ran out behind the open card.
+    s.timers.nextSituationMs = 1;
+    step(s, 0, [{ type: 'answerSituation', uid: inst.uid, optionId: def.options[0]!.id }], OPTS);
+    expect(s.situations.length).toBe(0);
+    expect(s.timers.nextSituationMs).toBeGreaterThanOrEqual(C.SITUATION_BREATHER_MS);
+    // And the quiet holds: two minutes of play brings nothing new to the desk.
+    step(s, 120_000, [], OPTS);
+    expect(s.situations.length).toBe(0);
+  });
+
+  it('a lapsed question is not replaced mid-sentence either', () => {
+    const s = withWorlds(103);
+    openOne(s);
+    const def = SITUATION_BY_ID[s.situations[0]!.id]!;
+    // Arrange the next spawn to fall just after the lapse would fire.
+    s.timers.nextSituationMs = def.windowMs + 60_000;
+    step(s, def.windowMs + 1_000, [], OPTS);
+    expect(s.situations.length).toBe(0);
+    expect(s.lifetime.situationsIgnored).toBe(1);
+    expect(s.timers.nextSituationMs).toBeGreaterThanOrEqual(C.SITUATION_BREATHER_MS - 2_000);
   });
 
   it('goes with the portfolio when you prestige', () => {

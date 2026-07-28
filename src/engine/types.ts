@@ -571,7 +571,7 @@ export type Input =
   /** Dev/testing input: grant TU and optionally set gauge fractions. */
   | { type: 'devGrant'; tu: string; gaugeFrac?: number }
   /** Dev/testing input: force a spawn. */
-  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' | 'situation' }
+  | { type: 'devSpawn'; what: 'vogon' | 'bubble' | 'event' | 'broadcast' | 'situation' | 'petition' }
   /** Answer an open situation (or petition) with one of its options. */
   | { type: 'answerSituation'; uid: number; optionId: string }
   /** Take a job off the board and into the hold. */

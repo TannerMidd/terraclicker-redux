@@ -57,6 +57,25 @@ export const C = {
   PETITION_MIN_GAP_MS: 300_000, // 5 min
   PETITION_MAX_GAP_MS: 600_000, // 10 min
   PETITION_QUEUE_MAX: 3,
+  /**
+   * Ceiling on how much the frequency stack — research, Drive Tuning,
+   * statutes, quirks, surveys, and a hangar of Heart of Gold drives at ×1.12
+   * apiece — can hurry situations along. The stack compounds without limit;
+   * the cadence must not, or a late universe asks a question every few
+   * seconds and the promise two comments up is broken. At the cap the
+   * liveliest possible universe asks every 3.5–7.5 minutes.
+   */
+  SITUATION_FREQ_CAP: 2,
+  /**
+   * Guaranteed quiet after a question resolves — answered or lapsed — before
+   * the next may open. The spawn clock keeps rolling while a card sits
+   * waiting, so without this floor the next question can land within seconds
+   * of the click that settled the last one, which is how an idle game stops
+   * being one.
+   */
+  SITUATION_BREATHER_MS: 150_000,
+  /** The same ceiling pointed at bubbles, which ride the same drives. */
+  BUBBLE_FREQ_CAP: 3,
   // How much a full hold adds to the runabout's inertia. Tuned so a loaded
   // ship is noticeably heavier to stop without becoming unflyable.
   CARGO_INERTIA: 0.85,

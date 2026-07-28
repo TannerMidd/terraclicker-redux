@@ -536,6 +536,7 @@ function handleInput(state: GameState, input: Input, effects: SimEffect[], opts:
     }
     case 'devSpawn': {
       if (input.what === 'situation') spawnSituation(state, derived, effects);
+      else if (input.what === 'petition') spawnPetition(state, effects);
       else if (input.what === 'vogon') spawnVogons(state, derived, effects, false, true);
       else if (input.what === 'bubble') spawnBubble(state, derived, effects);
       else if (input.what === 'broadcast') {

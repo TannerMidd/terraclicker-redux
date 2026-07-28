@@ -587,6 +587,30 @@ button.mk2-priority:hover { background: rgba(174, 199, 255, .045); }
 .mk2-opt .cost { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mk2-opt .cost.short { color: var(--danger); }
 .mk2-lapse { margin-top: 5px; font-size: 11px; font-style: italic; color: var(--ink-faint); }
+.mk2-answer-aside {
+  flex: none; padding: 2px 7px;
+  border: 1px solid var(--line-3); background: transparent;
+  font-family: var(--mono); font-size: 8px; letter-spacing: .12em; color: var(--ink-faint);
+}
+.mk2-answer-aside:hover { color: var(--ink); border-color: var(--brass); }
+
+/* A closed tray between questions: letters wait to be read, never interrupt. */
+.mk2-letters {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  width: 100%; text-align: left;
+  padding: 8px 12px;
+  pointer-events: auto;
+  border: 1px solid var(--line-2);
+  border-left: 2px solid var(--bio);
+  background: rgba(10, 13, 20, .93);
+  color: var(--ink);
+  animation: mk2rise 300ms cubic-bezier(.2, .9, .3, 1);
+}
+.mk2-letters:hover { background: rgba(174, 199, 255, .045); }
+.mk2-letters-copy { flex: 1; min-width: 0; }
+.mk2-letters-copy b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 600; }
+.mk2-letters-copy > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; font-size: 9.5px; color: var(--ink-dim); }
+.mk2-letters > em { font-style: normal; font-family: var(--mono); font-size: 8px; letter-spacing: .14em; color: var(--bio); white-space: nowrap; }
 
 /* ══ FILING TRAY ══ */
 .mk2-tray {

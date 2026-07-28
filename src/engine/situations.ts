@@ -262,6 +262,15 @@ export function answerSituation(
 
   list.splice(idx, 1);
   state.lifetime.situationsAnswered += 1;
+  // Answering buys quiet. While a question sits open the spawn clock keeps
+  // cycling behind it, so the moment of answering could otherwise be the
+  // moment the next one lands — a queue in everything but name. A petition
+  // counts too: dealing with correspondence is still dealing with
+  // correspondence.
+  state.timers.nextSituationMs = Math.max(
+    state.timers.nextSituationMs,
+    C.SITUATION_BREATHER_MS,
+  );
   // The world remembers being answered. This is what turns a completed gauge
   // into a place with a history — see engine/worldRecords.ts.
   if (inst.world) {
@@ -306,6 +315,14 @@ export function stepSituations(
       applyOutcome(state, derived, effects, def.ignored, inst);
     }
     dirty = true;
+  }
+  if (dirty) {
+    // A lapse settles the question too, and it earns the same courtesy as an
+    // answer: the next one does not walk in over the lapse notice.
+    state.timers.nextSituationMs = Math.max(
+      state.timers.nextSituationMs,
+      C.SITUATION_BREATHER_MS,
+    );
   }
   return dirty;
 }

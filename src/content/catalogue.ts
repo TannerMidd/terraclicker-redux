@@ -62,7 +62,7 @@ export const CATALOGUE: readonly PerkDef[] = [
     id: 'drive-tuning',
     branch: 'improbability',
     name: 'Drive Tuning',
-    guide: 'Situations 10% more frequent per rank. The universe becomes easier to surprise.',
+    guide: 'Situations 10% more frequent per rank, subject to a universal speed limit on being interesting. The universe becomes easier to surprise.',
     maxRank: 5,
     costs: [1, 2, 4, 8, 16],
     effect: { kind: 'situationFreqPerRank', v: 1.1 },
