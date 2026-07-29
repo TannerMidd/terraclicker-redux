@@ -8,17 +8,15 @@
  * free, the same way it does in every cockpit ever built: you are not judging
  * the planet against nothing, you are judging it against your own hull.
  *
- * It rides the camera and is deliberately TINY in world units — a few
- * centimetres of the scene's scale — which the flight near plane (0.02) now
- * permits. It also lags: the whole assembly leans against acceleration and
- * banks into turns, because a thing that answers to physics reads as a
- * physical object and a thing welded to the lens reads as a HUD decal.
+ * It rides the final camera pose and is deliberately TINY in world units — a
+ * few centimetres of the scene's scale — which the flight near plane (0.02)
+ * permits. The pressure tub stays rigidly camera-relative; only its controls
+ * articulate, so thrust can never pull the pilot viewpoint out of the ship.
  */
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from 'three/webgpu';
+import { Group } from 'three/webgpu';
 import { useUiBus } from '../fx/uiBus';
-import { flightLive } from './flightControl';
 import { kitGeometryFit, upliftActive } from './uplift/upliftAssets';
 import { RUNABOUT_KIT, shipMaterial, useKitGeometry } from './uplift/shipKit';
 import { RunaboutCockpit } from './RunaboutCockpit';
@@ -34,16 +32,6 @@ import {
  */
 const NOSE_Z = -0.085;
 const NOSE_Y = -0.03;
-const LEAN = 0.006; // metres of sway per unit of acceleration
-const LEAN_RESP = 7;
-/** Collision edits velocity outright; without this that lands as a flinch. */
-const ACCEL_CLAMP = 24;
-
-const FWD = new Vector3();
-const RIGHT = new Vector3();
-const UP = new Vector3();
-const PREV_VEL = new Vector3();
-const ACCEL = new Vector3();
 
 export function RunaboutHull() {
   const flight = useUiBus((b) => b.flightMode);
@@ -51,9 +39,6 @@ export function RunaboutHull() {
   const active = flight || groundfall !== null;
   const cockpitReady = useCockpitVisualReady();
   const root = useRef<Group>(null);
-  const sway = useRef({ x: 0, y: 0, roll: 0 });
-  /** True until the first frame at the helm has a previous velocity to use. */
-  const fresh = useRef(true);
 
   // The kit's faceted prow (3.1) in the main nose box's exact bounds — the
   // bounds ARE the point here (see below), so the fit preserves them. Mounts
@@ -69,65 +54,19 @@ export function RunaboutHull() {
       : null,
   );
 
-  useFrame(({ camera }, dt) => {
+  useFrame(({ camera }) => {
     const g = root.current;
-    if (!g || !active) {
-      fresh.current = true;
-      return;
-    }
-    const f = flightLive;
+    if (!g || !active) return;
 
-    // Orbital and atmospheric flight share this one physical pilot station.
-    // The surface scene owns its own chase flag and camera pose, so visibility
-    // cannot be inferred from flightLive while a groundfall session is active.
-    const onSurface = useUiBus.getState().groundfall !== null;
     g.visible = cockpitPhysicalVisible();
-    if (!g.visible) {
-      fresh.current = true;
-      return;
-    }
+    if (!g.visible) return;
 
-    // SurfaceScene already applied airframe roll, shake and the final camera
-    // pose. Copy that pose without adding stale orbital acceleration sway.
-    if (onSurface) {
-      fresh.current = true;
-      g.position.copy(camera.position);
-      g.quaternion.copy(camera.quaternion);
-      return;
-    }
-
-    // Acceleration in the ship's own frame, so the lean is always "backwards"
-    // relative to the pilot rather than to the universe.
-    //
-    // Two things make this jump if taken literally: the first frame after
-    // taking the helm (no previous velocity to difference against) and any
-    // frame the collision governor edits velocity directly, which reads as an
-    // impulse of thousands. Both used to arrive as a visible flinch.
-    if (fresh.current) {
-      fresh.current = false;
-      PREV_VEL.copy(f.vel);
-      sway.current.x = sway.current.y = sway.current.roll = 0;
-    }
-    ACCEL.copy(f.vel).sub(PREV_VEL).divideScalar(Math.max(dt, 1e-4));
-    PREV_VEL.copy(f.vel);
-    if (ACCEL.lengthSq() > ACCEL_CLAMP * ACCEL_CLAMP) ACCEL.setLength(ACCEL_CLAMP);
-    camera.getWorldDirection(FWD);
-    RIGHT.crossVectors(FWD, camera.up).normalize();
-    UP.crossVectors(RIGHT, FWD).normalize();
-
-    const k = 1 - Math.exp(-dt * LEAN_RESP);
-    const targetX = -ACCEL.dot(RIGHT) * LEAN;
-    const targetY = -ACCEL.dot(UP) * LEAN;
-    const targetRoll = -f.yawRate * 0.16;
-    sway.current.x += (targetX - sway.current.x) * k;
-    sway.current.y += (targetY - sway.current.y) * k;
-    sway.current.roll += (targetRoll - sway.current.roll) * k;
-
+    // The pressure tub is a rigid part of the ship. Follow the final camera
+    // pose exactly; control motion belongs to the stick/throttle, never to the
+    // entire cockpit. Positional or rotational lag reads as the camera tearing
+    // free of the hull as soon as thrust is applied.
     g.position.copy(camera.position);
     g.quaternion.copy(camera.quaternion);
-    g.translateX(Math.max(-0.012, Math.min(0.012, sway.current.x)));
-    g.translateY(Math.max(-0.012, Math.min(0.012, sway.current.y)));
-    g.rotateZ(sway.current.roll);
   });
 
   if (!flight && groundfall === null) return null;
