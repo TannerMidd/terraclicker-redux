@@ -10,9 +10,8 @@ export const BRAND_ASSETS = {
 
 export const COCKPIT_ASSETS = {
   fascia: asset('cockpit/console-fascia.webp'),
-  // The uplift interior plates (ASSET_UPLIFT.md 3.3), layered by Canopy.
-  dashboard: asset('uplift/cockpit/dashboard-fascia.webp'),
-  throttle: asset('uplift/cockpit/throttle-quadrant.webp'),
+  // Deterministic Blender pilot-eye render for loading and Tier C.
+  dashboard: asset('uplift/cockpit/runabout-cockpit-pilot-eye.webp'),
   windowFrame: asset('uplift/cockpit/window-frame.webp'),
 } as const;
 

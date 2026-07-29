@@ -10,7 +10,7 @@ The generator mirrors each source quadrant into a seamless 2K master, derives pa
 
 ## Deterministic project-authored assets
 
-All remaining texture masters, SVGs, WebPs, and GLB files are generated locally by `scripts/generate-uplift-assets.mjs` from project-authored geometry and vector patterns. They have no third-party source imagery.
+All remaining texture masters, SVGs, WebPs, and procedural GLB files are generated locally by `scripts/generate-uplift-assets.mjs` from project-authored geometry and vector patterns. The Blender-authored GLBs are deterministically regenerated from `assets-source/uplift/blender/*.py` through `npm run assets:ship`. They have no third-party source imagery.
 
 KTX2 files are encoded by Khronos KTX-Software 4.4.2. The complete file list, hashes, coverage map, counts, palette, and prompt set live in the generated manifest.
 

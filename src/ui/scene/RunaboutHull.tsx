@@ -21,6 +21,11 @@ import { useUiBus } from '../fx/uiBus';
 import { flightLive } from './flightControl';
 import { kitGeometryFit, upliftActive } from './uplift/upliftAssets';
 import { RUNABOUT_KIT, shipMaterial, useKitGeometry } from './uplift/shipKit';
+import { RunaboutCockpit } from './RunaboutCockpit';
+import {
+  cockpitPhysicalVisible,
+  useCockpitVisualReady,
+} from './cockpitVisualState';
 
 /**
  * Where the nose sits relative to the eye. Z must clear the flight near
@@ -42,6 +47,9 @@ const ACCEL = new Vector3();
 
 export function RunaboutHull() {
   const flight = useUiBus((b) => b.flightMode);
+  const groundfall = useUiBus((b) => b.groundfall);
+  const active = flight || groundfall !== null;
+  const cockpitReady = useCockpitVisualReady();
   const root = useRef<Group>(null);
   const sway = useRef({ x: 0, y: 0, roll: 0 });
   /** True until the first frame at the helm has a previous velocity to use. */
@@ -63,18 +71,28 @@ export function RunaboutHull() {
 
   useFrame(({ camera }, dt) => {
     const g = root.current;
-    if (!g || !flight) {
+    if (!g || !active) {
       fresh.current = true;
       return;
     }
     const f = flightLive;
 
-    // The cockpit nose is the pilot's near-field scale reference. In chase
-    // view the full external runabout owns that job, so keeping this tiny nose
-    // camera-mounted would look like a second ship stuck to the lens.
-    g.visible = f.cameraMode === 'cockpit';
+    // Orbital and atmospheric flight share this one physical pilot station.
+    // The surface scene owns its own chase flag and camera pose, so visibility
+    // cannot be inferred from flightLive while a groundfall session is active.
+    const onSurface = useUiBus.getState().groundfall !== null;
+    g.visible = cockpitPhysicalVisible();
     if (!g.visible) {
       fresh.current = true;
+      return;
+    }
+
+    // SurfaceScene already applied airframe roll, shake and the final camera
+    // pose. Copy that pose without adding stale orbital acceleration sway.
+    if (onSurface) {
+      fresh.current = true;
+      g.position.copy(camera.position);
+      g.quaternion.copy(camera.quaternion);
       return;
     }
 
@@ -112,10 +130,16 @@ export function RunaboutHull() {
     g.rotateZ(sway.current.roll);
   });
 
-  if (!flight) return null;
+  if (!flight && groundfall === null) return null;
 
   return (
     <group ref={root}>
+      {/* The physical interior upgrades independently from the prow. Its
+          component owns the raster-plate readiness handshake with FlightHUD,
+          so a low-quality tier or failed GLB retains the old cockpit. */}
+      <RunaboutCockpit />
+
+      <group visible={!cockpitReady}>
       {/* Boxes, not cones: exact bounds are the whole point here. The top
           face lands about two thirds of the way down a 42° frame, so you see
           the spine of your own nose and nothing else. The kit prow keeps the
@@ -162,5 +186,6 @@ export function RunaboutHull() {
         <meshStandardMaterial color={0x4affa0} emissive={0x2aff8a} emissiveIntensity={4} />
       </mesh>
     </group>
+      </group>
   );
 }

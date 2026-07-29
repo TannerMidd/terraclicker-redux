@@ -1,7 +1,7 @@
 /** ASSET_UPLIFT.md production pipeline. */
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import {
   GENERATED_ROOT,
   PALETTE,
@@ -10,10 +10,13 @@ import {
   SOURCE_ROOT,
   TMP_ROOT,
   ensureDir,
+  magick,
   resetDir,
   writeText,
 } from './uplift/helpers.mjs';
 import { generateImages, UPLIFT_UI_IDS } from './uplift/generate-images.mjs';
+import { generateNextLevelImages } from './uplift/generate-next-level-images.mjs';
+import { generateSurfaceTextures } from './uplift/generate-surface-textures.mjs';
 import { generateMeshes } from './uplift/generate-meshes.mjs';
 
 function walkFiles(root) {
@@ -54,7 +57,7 @@ const COVERAGE = {
   '2.7': ['meshes/seams/crystal-seam-kit.glb', 'textures/seams/crystal-seam.ktx2'],
   '3.1': ['meshes/ships/runabout.glb', 'textures/ships/runabout-pbr.ktx2', 'textures/ships/runabout-emissive.ktx2'],
   '3.2': ['meshes/ships/runabout-refits.glb'],
-  '3.3': ['cockpit/dashboard-fascia.webp', 'cockpit/window-frame.webp', 'cockpit/throttle-quadrant.webp'],
+  '3.3': ['cockpit/runabout-cockpit-pilot-eye.webp'],
   '3.4': ['meshes/ships/skimmer.glb'],
   '3.5': ['textures/ships/hull-decals.ktx2'],
   '4.1': ['textures/sky/cloud-deck-array.ktx2', 'textures/sky/cloud-flow.ktx2'],
@@ -76,6 +79,42 @@ const COVERAGE = {
   '6.5': ['icons/marks/compass-marks.svg', 'icons/marks/'],
   '6.6': ['../../landing/media/14-low-flight.webp', '../../landing/media/15-chase-view.webp', '../../landing/media/16-set-down.webp', '../../landing/media/17-district-dusk.webp'],
   '6.7': [],
+  '7.1': [
+    'meshes/ships/runabout-cockpit.glb',
+    'textures/ships/cockpit-trim.ktx2',
+    'textures/ships/cockpit-trim-normal-rma.ktx2',
+    'textures/ships/cockpit-emissive.ktx2',
+    'textures/ships/cockpit-glass.ktx2',
+    'textures/ships/runabout-pbr-normal-rma.ktx2',
+  ],
+  '7.2': [
+    'meshes/viewmodels/surface-viewmodels.glb',
+    'textures/viewmodels/field-kit.ktx2',
+    'textures/viewmodels/field-kit-normal-rma.ktx2',
+  ],
+  '7.3': [
+    'meshes/surface/landmark-kit.glb',
+    'meshes/surface/dressing-kit.glb',
+    'textures/surface/landmark-atlas.ktx2',
+    'textures/surface/landmark-atlas-normal-rma.ktx2',
+    'textures/surface/deposit-atlas.ktx2',
+    'textures/surface/deposit-atlas-normal-rma.ktx2',
+  ],
+  '7.4': [
+    'meshes/surface/creature-variants.glb',
+    'textures/surface/biome-clutter-atlas.ktx2',
+    'textures/surface/biome-clutter-atlas-normal-rma.ktx2',
+    'textures/surface/settlement-dressing-atlas.ktx2',
+    'textures/surface/settlement-dressing-atlas-normal-rma.ktx2',
+    'textures/surface/ecology-atlas.ktx2',
+    'textures/surface/ecology-atlas-normal-rma.ktx2',
+  ],
+  '7.5': [
+    'meshes/surface/weather-props.glb',
+    'textures/ground/contact-fx.ktx2',
+    'textures/surface/weather-atlas.ktx2',
+    'textures/surface/weather-atlas-normal-rma.ktx2',
+  ],
 };
 
 const IMAGEGEN_PROMPTS = {
@@ -105,6 +144,22 @@ async function main() {
 
   console.log('Generating raster, vector, and KTX2 assets...');
   const images = generateImages();
+  images.outputs.push(...generateNextLevelImages());
+  images.outputs.push(...generateSurfaceTextures());
+  const cockpitFallbackSource = resolve(SOURCE_ROOT, 'renders', 'runabout-cockpit-pilot-eye.png');
+  if (!existsSync(cockpitFallbackSource)) {
+    throw new Error(`Missing deterministic cockpit fallback: ${cockpitFallbackSource}. Run Blender with assets-source/uplift/blender/render_runabout_cockpit.py.`);
+  }
+  const cockpitFallbackPublic = resolve(PUBLIC_ROOT, 'cockpit', 'runabout-cockpit-pilot-eye.webp');
+  ensureDir(dirname(cockpitFallbackPublic));
+  magick([
+    cockpitFallbackSource,
+    '-strip',
+    '-quality', '86',
+    '-define', 'webp:method=6',
+    cockpitFallbackPublic,
+  ]);
+  images.outputs.push(cockpitFallbackPublic);
   console.log('Generating low-poly GLB kits...');
   const meshOutputs = await generateMeshes();
 
@@ -132,8 +187,8 @@ async function main() {
       imagegen: IMAGEGEN_PROMPTS,
       deterministic: [
         'Technical maps derived locally from the six image-generated albedo atlases.',
-        'All GLB kits except the runabout hull are deterministic low-poly geometry generated with three.js.',
-        'The runabout hull (3.1) is modelled in Blender from assets-source/uplift/blender/runabout.py and built with `npm run assets:ship`.',
+        'Procedural GLB kits are deterministic low-poly geometry generated with three.js.',
+        'The runabout hull, cockpit, surface viewmodels, landmarks, dressing, creatures, and weather props are modelled in Blender from assets-source/uplift/blender/*.py and built with `npm run assets:ship`.',
         'All UI SVG/WebP and non-ground masters are deterministic project-authored vector patterns.',
         'KTX2 output is Basis Universal encoded with Khronos toktx 4.4.2 and single-thread settings.',
       ],
@@ -178,7 +233,7 @@ The generator mirrors each source quadrant into a seamless 2K master, derives pa
 
 ## Deterministic project-authored assets
 
-All remaining texture masters, SVGs, WebPs, and GLB files are generated locally by \`scripts/generate-uplift-assets.mjs\` from project-authored geometry and vector patterns. They have no third-party source imagery.
+All remaining texture masters, SVGs, WebPs, and procedural GLB files are generated locally by \`scripts/generate-uplift-assets.mjs\` from project-authored geometry and vector patterns. The Blender-authored GLBs are deterministically regenerated from \`assets-source/uplift/blender/*.py\` through \`npm run assets:ship\`. They have no third-party source imagery.
 
 KTX2 files are encoded by Khronos KTX-Software 4.4.2. The complete file list, hashes, coverage map, counts, palette, and prompt set live in the generated manifest.
 

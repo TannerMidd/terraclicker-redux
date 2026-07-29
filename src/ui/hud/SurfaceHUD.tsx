@@ -662,7 +662,7 @@ function SurfaceHUDInner({ session }: { session: GroundfallSession }) {
     const pct = Math.round(live.genProgress * 100);
     return (
       <div className="sh-hud" aria-live="polite">
-        <Canopy />
+        <Canopy threeDimensional />
         <div className="sh-entry">
           <div className="sh-kicker">ATMOSPHERIC INTERFACE</div>
           <div className="sh-title">{session.name}</div>
@@ -923,7 +923,7 @@ function FlyingHUD({ session }: { session: GroundfallSession }) {
   const setdown = live.setdown;
   return (
     <div className="sh-hud">
-      {!live.chaseView && <Canopy steady />}
+      {!live.chaseView && <Canopy steady threeDimensional />}
       <Compass heading={heading} marks={compassMarks(session.certs)} />
       <FieldNotebook session={session} />
       {wx && (

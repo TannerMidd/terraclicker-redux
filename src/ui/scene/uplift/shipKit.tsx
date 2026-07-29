@@ -10,9 +10,10 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Color, MeshStandardNodeMaterial } from 'three/webgpu';
-import { mix, vec3, vertexColor } from 'three/tsl';
+import { mix, normalLocal, normalize, transformNormalToView, vec3, vertexColor } from 'three/tsl';
 import type { BufferGeometry } from 'three/webgpu';
 import { useGame } from '../../../state/store';
+import { useSettings } from '../../settings';
 import { kitGeometryFit, upliftActive, upliftNode, whenKitReady } from './upliftAssets';
 
 const SHIP_KIT = 'meshes/ships/runabout.glb';
@@ -30,9 +31,13 @@ export function shipMaterial(): MeshStandardNodeMaterial {
   m.emissive = new Color(0x0b1524);
   m.emissiveIntensity = 0.5;
   const atlas = upliftNode('textures/ships/runabout-pbr.ktx2', undefined, { repeat: true, srgb: true });
+  const rma = upliftNode('textures/ships/runabout-pbr-normal-rma.ktx2', undefined, { repeat: true });
   const decals = upliftNode('textures/ships/hull-decals.ktx2', undefined, { placeholder: 'clear' });
-  const base = vertexColor().mul(mix(vec3(1), atlas.rgb.mul(2.0), 0.3));
+  const base = vertexColor().mul(mix(vec3(1), atlas.rgb.mul(2.0), 0.3)).mul(rma.a.mul(0.18).add(0.82));
   m.colorNode = mix(base, decals.rgb.mul(0.8), decals.a.mul(0.35));
+  const panelNormal = vec3(rma.r.mul(2).sub(1), 0, rma.g.mul(2).sub(1)).mul(0.11);
+  m.normalNode = transformNormalToView(normalize(normalLocal.add(panelNormal))) as unknown as typeof m.normalNode;
+  m.roughnessNode = rma.b.mul(0.30).add(0.38) as unknown as typeof m.roughnessNode;
   hullMat = m;
   return m;
 }
@@ -43,11 +48,20 @@ interface Envelope {
 }
 
 /** The whole runabout fitted to a call site's envelope (nose −Z). */
-export function runaboutGeometry(fit: Envelope): BufferGeometry | null {
+export function runaboutGeometry(
+  fit: Envelope,
+  options: { articulatedLanding?: boolean } = {},
+): BufferGeometry | null {
   if (!upliftActive()) return null;
-  return kitGeometryFit(SHIP_KIT, 'runabout', { mode: 'box', ...fit, rotateY: Math.PI });
+  return kitGeometryFit(SHIP_KIT, 'runabout', {
+    mode: 'box',
+    ...fit,
+    rotateY: Math.PI,
+    exclude: options.articulatedLanding
+      ? ['gear-', 'airlock-door', 'airlock-handle']
+      : undefined,
+  });
 }
-
 export function skimmerGeometry(fit: Envelope): BufferGeometry | null {
   if (!upliftActive()) return null;
   return kitGeometryFit(SKIMMER_KIT, 'survey-skimmer', { mode: 'box', ...fit, rotateY: Math.PI });
@@ -63,9 +77,17 @@ export function useKitGeometry(
   kit: string,
   build: () => BufferGeometry | null,
 ): BufferGeometry | null {
+  // Subscribing makes quality changes explicit: Tier C clears authored
+  // geometry, while a later medium/high switch can load it without remounting.
+  useSettings((s) => s.quality);
+  const enabled = upliftActive();
   const [geometry, setGeometry] = useState<BufferGeometry | null>(build);
   useEffect(() => {
-    if (geometry || !upliftActive()) return;
+    if (!enabled) {
+      if (geometry) setGeometry(null);
+      return;
+    }
+    if (geometry) return;
     let alive = true;
     void whenKitReady(kit).then(() => {
       if (alive) setGeometry(build());
@@ -75,7 +97,7 @@ export function useKitGeometry(
     };
     // build is stable per call site; re-running on geometry avoids loops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geometry, kit]);
+  }, [enabled, geometry, kit]);
   return geometry;
 }
 

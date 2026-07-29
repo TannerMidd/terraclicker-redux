@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-27T22:28:22.143Z",
+  "generatedAt": "2026-07-29T03:57:14.069Z",
   "generatedBy": "scripts/generate-uplift-assets.mjs",
   "artDirection": "docs/ART_DIRECTION.md",
   "productionList": "docs/ASSET_UPLIFT.md",
@@ -40,7 +40,8 @@
     },
     "deterministic": [
       "Technical maps derived locally from the six image-generated albedo atlases.",
-      "All GLB meshes are deterministic low-poly geometry generated with three.js.",
+      "Procedural GLB kits are deterministic low-poly geometry generated with three.js.",
+      "The runabout hull, cockpit, surface viewmodels, landmarks, dressing, creatures, and weather props are modelled in Blender from assets-source/uplift/blender/*.py and built with `npm run assets:ship`.",
       "All UI SVG/WebP and non-ground masters are deterministic project-authored vector patterns.",
       "KTX2 output is Basis Universal encoded with Khronos toktx 4.4.2 and single-thread settings."
     ]
@@ -187,9 +188,7 @@
       "meshes/ships/runabout-refits.glb"
     ],
     "3.3": [
-      "cockpit/dashboard-fascia.webp",
-      "cockpit/window-frame.webp",
-      "cockpit/throttle-quadrant.webp"
+      "cockpit/runabout-cockpit-pilot-eye.webp"
     ],
     "3.4": [
       "meshes/ships/skimmer.glb"
@@ -259,15 +258,53 @@
       "../../landing/media/16-set-down.webp",
       "../../landing/media/17-district-dusk.webp"
     ],
-    "6.7": []
+    "6.7": [],
+    "7.1": [
+      "meshes/ships/runabout-cockpit.glb",
+      "textures/ships/cockpit-trim.ktx2",
+      "textures/ships/cockpit-trim-normal-rma.ktx2",
+      "textures/ships/cockpit-emissive.ktx2",
+      "textures/ships/cockpit-glass.ktx2",
+      "textures/ships/runabout-pbr-normal-rma.ktx2"
+    ],
+    "7.2": [
+      "meshes/viewmodels/surface-viewmodels.glb",
+      "textures/viewmodels/field-kit.ktx2",
+      "textures/viewmodels/field-kit-normal-rma.ktx2"
+    ],
+    "7.3": [
+      "meshes/surface/landmark-kit.glb",
+      "meshes/surface/dressing-kit.glb",
+      "textures/surface/landmark-atlas.ktx2",
+      "textures/surface/landmark-atlas-normal-rma.ktx2",
+      "textures/surface/deposit-atlas.ktx2",
+      "textures/surface/deposit-atlas-normal-rma.ktx2"
+    ],
+    "7.4": [
+      "meshes/surface/creature-variants.glb",
+      "textures/surface/biome-clutter-atlas.ktx2",
+      "textures/surface/biome-clutter-atlas-normal-rma.ktx2",
+      "textures/surface/settlement-dressing-atlas.ktx2",
+      "textures/surface/settlement-dressing-atlas-normal-rma.ktx2",
+      "textures/surface/ecology-atlas.ktx2",
+      "textures/surface/ecology-atlas-normal-rma.ktx2"
+    ],
+    "7.5": [
+      "meshes/surface/weather-props.glb",
+      "textures/ground/contact-fx.ktx2",
+      "textures/surface/weather-atlas.ktx2",
+      "textures/surface/weather-atlas-normal-rma.ktx2"
+    ]
   },
   "counts": {
-    "total": 139,
+    "total": 171,
     "byExtension": {
-      ".webp": 68,
+      ".js": 1,
+      ".wasm": 1,
+      ".webp": 69,
       ".svg": 20,
-      ".glb": 14,
-      ".ktx2": 37
+      ".glb": 23,
+      ".ktx2": 57
     },
     "groundSlices": 24,
     "groundMaps": 48,
@@ -284,14 +321,29 @@
   },
   "files": [
     {
+      "path": "public/assets/uplift/basis/basis_transcoder.js",
+      "bytes": 57529,
+      "sha256": "8478b5b6d6b74e7d3082b89f6417321d8d1dc0307f2b30d4484bb11b441696a1"
+    },
+    {
+      "path": "public/assets/uplift/basis/basis_transcoder.wasm",
+      "bytes": 527333,
+      "sha256": "6cf17dc889352c42e9acf8897107978d127005fe3386c36a0e3845e27967630a"
+    },
+    {
       "path": "public/assets/uplift/cockpit/dashboard-fascia.webp",
       "bytes": 25230,
       "sha256": "902cbf5bbc59bbfc9f1614d07e6860c5e42f68da52ba6bc83fc4d79c71d2c7b3"
     },
     {
+      "path": "public/assets/uplift/cockpit/runabout-cockpit-pilot-eye.webp",
+      "bytes": 44882,
+      "sha256": "9192a7987d97946412d7acc4ef0ce4fbea41404b519a7532982bbe1403e83987"
+    },
+    {
       "path": "public/assets/uplift/cockpit/throttle-quadrant.webp",
-      "bytes": 25230,
-      "sha256": "902cbf5bbc59bbfc9f1614d07e6860c5e42f68da52ba6bc83fc4d79c71d2c7b3"
+      "bytes": 22882,
+      "sha256": "7e33f9e2b1ec1c3d495a17beea10dbbc565975882096173c74ca2392b10b9901"
     },
     {
       "path": "public/assets/uplift/cockpit/window-frame.webp",
@@ -300,28 +352,28 @@
     },
     {
       "path": "public/assets/uplift/icons/certifications/geology.svg",
-      "bytes": 688,
-      "sha256": "b8a4222bdb757b1ef57607c05f26b58b060441c6b954fc8948897a4614360580"
+      "bytes": 709,
+      "sha256": "57a8d57f8b1468e7e9bda443c438db608c5fe984fd0f52c54a6308102b885ee0"
     },
     {
       "path": "public/assets/uplift/icons/certifications/liaison.svg",
-      "bytes": 686,
-      "sha256": "2dd5a39dfb48737eb76029a7e09db0fc0f14ea1cf27c1b1a4fee6036ddf7dc3e"
+      "bytes": 707,
+      "sha256": "0224d95864d3be1fce35b543fc58d9a00a6e316b9dd2158d0ed3888be685ea9f"
     },
     {
       "path": "public/assets/uplift/icons/certifications/mobility.svg",
-      "bytes": 680,
-      "sha256": "f14a5fce15e69cb0bbc449153a02d71e95570986c6db9f617497ec926dd04b26"
+      "bytes": 701,
+      "sha256": "2e36b1ecfef3f952dfb6a0c7eed00490d69c81deddeee1432ee75290cbed2fa3"
     },
     {
       "path": "public/assets/uplift/icons/certifications/survey.svg",
-      "bytes": 698,
-      "sha256": "da94ca992758437f0244dfd6ced317ce5d3e988c7489d656da3866b103774563"
+      "bytes": 719,
+      "sha256": "36b80dfd7feebe179852e300fa034992dfaa8aa0912ff8b932a4697ef6914203"
     },
     {
       "path": "public/assets/uplift/icons/marks/beacon.svg",
-      "bytes": 269,
-      "sha256": "1d09e8c7cb598b96f609f6914de4f3e987d4f44be9725b4962496cb59e85000d"
+      "bytes": 290,
+      "sha256": "ff2e25b8b4824015aab717d634dc4bea76326409c85a3abdc4c99484b7bc87c9"
     },
     {
       "path": "public/assets/uplift/icons/marks/compass-marks.svg",
@@ -330,23 +382,23 @@
     },
     {
       "path": "public/assets/uplift/icons/marks/prospect.svg",
-      "bytes": 258,
-      "sha256": "4e90325b40e0ed502ba77c421f218a81e2dafd4a0585c9cd82df97f9bf1b2c29"
+      "bytes": 279,
+      "sha256": "c812dc2c1782a0c100b1a43e240bb511b32d5c296fd13a58540b2202052cd81e"
     },
     {
       "path": "public/assets/uplift/icons/marks/repair.svg",
-      "bytes": 266,
-      "sha256": "014fb3fbf6b461d62649022f89ecb5e81d2826b516cbe771c092a67dfb36d25e"
+      "bytes": 287,
+      "sha256": "236a0477d55d41503f6c8e1629910bb0dcf1f38ef8508ddb0a49937303f0260b"
     },
     {
       "path": "public/assets/uplift/icons/marks/shelter.svg",
-      "bytes": 249,
-      "sha256": "11749df40014b829fda9f74d23699dbfa2d089601b5964e461502cd063c20dfe"
+      "bytes": 270,
+      "sha256": "c57ea0d9f950f878beb3a87570dbe1d6d430fa4099f485d76ee8c967ba675ea5"
     },
     {
       "path": "public/assets/uplift/icons/marks/station.svg",
-      "bytes": 283,
-      "sha256": "bcb3ecc0235ba9e1c7c8c40950ced1b2ef1e48257d30f6e11484c32970cacee8"
+      "bytes": 304,
+      "sha256": "17cc1fdae310652849ea2aa93f46fb6869a8126058389cc0228d5888cd61edb2"
     },
     {
       "path": "public/assets/uplift/icons/refits/analysis.svg",
@@ -714,6 +766,11 @@
       "sha256": "9933eda25e383062320efe9db339ad386a7e1c3f0b9b1e46b73f7bfa02aa46de"
     },
     {
+      "path": "public/assets/uplift/meshes/imports/biome-flora.glb",
+      "bytes": 104840,
+      "sha256": "fbff5ebdd925ab6132d83a9748da6cb47569f201f72300eb4a8389349fdaab7b"
+    },
+    {
       "path": "public/assets/uplift/meshes/marks/mark-kit.glb",
       "bytes": 54216,
       "sha256": "ed88800078acc00e2befdcc3f11522a2deb44538856a5404419e8ce4fa00665c"
@@ -722,6 +779,11 @@
       "path": "public/assets/uplift/meshes/props/boulders.glb",
       "bytes": 449552,
       "sha256": "559a869f8776dd9b8aac6683ff3c7c229addad0bbf765500215ad4610366652a"
+    },
+    {
+      "path": "public/assets/uplift/meshes/props/creatures.glb",
+      "bytes": 298392,
+      "sha256": "2e9404ec10532aecc9c85ce37e7ccf67e300a62d7a033173a12cdeff8da1a96e"
     },
     {
       "path": "public/assets/uplift/meshes/props/flora.glb",
@@ -750,13 +812,18 @@
     },
     {
       "path": "public/assets/uplift/meshes/seams/crystal-seam-kit.glb",
-      "bytes": 70180,
-      "sha256": "12df3ef158ac7860644ab606f46fc3db7f5fd54ba7286968a6ae71e42ed64b00"
+      "bytes": 9860,
+      "sha256": "7614b7629b7d1cda5ea02e979a6856ce1de02857d02e40e5d0b34e8615e4a271"
     },
     {
       "path": "public/assets/uplift/meshes/settlements/settlement-kit.glb",
-      "bytes": 119676,
-      "sha256": "52d0287938d89bf27f97baef2db30f4adfffba151fbea769e4b0c9673feb1df3"
+      "bytes": 382484,
+      "sha256": "5b4504ed3bd04b9519398bb5e07943c366b3510db6f49658b729168a7335e584"
+    },
+    {
+      "path": "public/assets/uplift/meshes/ships/runabout-cockpit.glb",
+      "bytes": 676540,
+      "sha256": "fbec0065e67fd6dc9436a03bac028087e36aa7eb76ff9b3c1067573454504783"
     },
     {
       "path": "public/assets/uplift/meshes/ships/runabout-refits.glb",
@@ -765,13 +832,43 @@
     },
     {
       "path": "public/assets/uplift/meshes/ships/runabout.glb",
-      "bytes": 59956,
-      "sha256": "8ae4c0ab20f88f1dc1aea2b401761f48c46ec5763a8b859c3014ee04e2147c20"
+      "bytes": 321540,
+      "sha256": "77dc07b438d284ccca129883974066d71f182696e3c2de621428b43190a01ad0"
     },
     {
       "path": "public/assets/uplift/meshes/ships/skimmer.glb",
-      "bytes": 21972,
-      "sha256": "d96d6309380af06e18e5e4f9dcc8d01d6bac0812cbe5a9b9cfb5bec04ed08c1a"
+      "bytes": 121520,
+      "sha256": "f7112d138f3b92085baff56d46d2f41046f2dbe72cde8032d455b9d037369005"
+    },
+    {
+      "path": "public/assets/uplift/meshes/sky/cloud-banks.glb",
+      "bytes": 61548,
+      "sha256": "c009516dbf6a45fc5a76d733137fb6b2942b5884011525c413f1b405311df44c"
+    },
+    {
+      "path": "public/assets/uplift/meshes/surface/creature-variants.glb",
+      "bytes": 212588,
+      "sha256": "2e404d893322c1178b5cc92bddc7fcdb7821bf8b9e27b8c7f3f6fe66688cf1bd"
+    },
+    {
+      "path": "public/assets/uplift/meshes/surface/dressing-kit.glb",
+      "bytes": 911380,
+      "sha256": "22c79cf78bd1970abace7a0e7f9f720959c9957e8b8859d98a8c52dd67cb9a55"
+    },
+    {
+      "path": "public/assets/uplift/meshes/surface/landmark-kit.glb",
+      "bytes": 435000,
+      "sha256": "c275d78a358795b03b9ae65080306768ca6e4010e66fcbad57e58f8e487275f4"
+    },
+    {
+      "path": "public/assets/uplift/meshes/surface/weather-props.glb",
+      "bytes": 136292,
+      "sha256": "68618013820ded443da445ff7519fb2c38059f0e2aabd7f95813b2c525838534"
+    },
+    {
+      "path": "public/assets/uplift/meshes/viewmodels/surface-viewmodels.glb",
+      "bytes": 292936,
+      "sha256": "49d90158edbe6e91ef8a68b010bbd82649c69c461f06f18518f7bbd57c4f81b9"
     },
     {
       "path": "public/assets/uplift/textures/deep-field/deep-field-atlas.ktx2",
@@ -782,6 +879,11 @@
       "path": "public/assets/uplift/textures/facilities/facility-atlas.ktx2",
       "bytes": 81228,
       "sha256": "ddd939206ed51f06265ba7b92b2b8fb0907553ed2c67a28730f1252ccdf920db"
+    },
+    {
+      "path": "public/assets/uplift/textures/ground/contact-fx.ktx2",
+      "bytes": 141198,
+      "sha256": "ce3b79a42ab5989b6c654ff39f11f27e466e5ddb79e8ac82617940de1bc5c99d"
     },
     {
       "path": "public/assets/uplift/textures/ground/detail-normal-array.ktx2",
@@ -904,6 +1006,26 @@
       "sha256": "cfeb9fbb78c9ff3de8f72b7a76745eaf30fb9caea63f3cecc3ccec660f058743"
     },
     {
+      "path": "public/assets/uplift/textures/ships/cockpit-emissive.ktx2",
+      "bytes": 23283,
+      "sha256": "8a1752b1980ae3c85c5b073f770db75738cb526f129b714cd0821333859d1910"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/cockpit-glass.ktx2",
+      "bytes": 117163,
+      "sha256": "7fc29a1c52fd8ef115cdaf39ed219ff478b7c1737315498dcf4d3995767f56d3"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/cockpit-trim-normal-rma.ktx2",
+      "bytes": 769956,
+      "sha256": "8b5c2167f831b675ed513c301d7a55977c99be8d17784566366e8a0dc2206cec"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/cockpit-trim.ktx2",
+      "bytes": 400163,
+      "sha256": "f937c79eacb18473c8a990a73966e6fcbaf298e103fb9c088696156e4dfb5fab"
+    },
+    {
       "path": "public/assets/uplift/textures/ships/hull-decals.ktx2",
       "bytes": 38549,
       "sha256": "e15c9939ab97a5e439debac19191df06521e26d7df077521072e439c72cf4649"
@@ -912,6 +1034,11 @@
       "path": "public/assets/uplift/textures/ships/runabout-emissive.ktx2",
       "bytes": 391713,
       "sha256": "74b9cd927c84b687ea56a6c0e471c2d4ee56e9c855f01ba0c210d853936b11fe"
+    },
+    {
+      "path": "public/assets/uplift/textures/ships/runabout-pbr-normal-rma.ktx2",
+      "bytes": 407865,
+      "sha256": "3ae0a83b9eaad3aa2dffe9cb50af37db41c904265ee3f4eb4d5c52deaa64bcb2"
     },
     {
       "path": "public/assets/uplift/textures/ships/runabout-pbr.ktx2",
@@ -957,6 +1084,76 @@
       "path": "public/assets/uplift/textures/sky/weather-particles.ktx2",
       "bytes": 72606,
       "sha256": "8f94a7507b2bff0f147bba47b7b8eb7a8dbd3cabe752e2dc267c6adb0cc1244f"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/biome-clutter-atlas-normal-rma.ktx2",
+      "bytes": 256428,
+      "sha256": "e6fcda9f5ec665294fa6b4efc8725b546233a6bff71800c2dbb57646f73d817d"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/biome-clutter-atlas.ktx2",
+      "bytes": 34172,
+      "sha256": "cafaabd7d8ffef0a6938ebd9df2bfeddfb31128b22c69b8a40ba17a5e29cc9d3"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/deposit-atlas-normal-rma.ktx2",
+      "bytes": 286114,
+      "sha256": "b1f254ec8ba00a8cb8b864df3bffb60760078da41d920945f0d2f4ec49b5b1a6"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/deposit-atlas.ktx2",
+      "bytes": 40426,
+      "sha256": "772aa54ea36fca588268c2caae9c28fc10ce44369040902a7b3f727a930bd1cc"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/ecology-atlas-normal-rma.ktx2",
+      "bytes": 373156,
+      "sha256": "68bb33c5437baba256528d82c786f0bfc117ef098f96aa3c3d0cd7e8b85655a3"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/ecology-atlas.ktx2",
+      "bytes": 52939,
+      "sha256": "23b90cacb275cb3d6b8ff2138a458b230c347976c9beae8b650b1ba2256dc108"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/landmark-atlas-normal-rma.ktx2",
+      "bytes": 229219,
+      "sha256": "914a6b250541f7f8691d7c07d9bc9aadb078b16e2ee33da7834fb2479ab7e403"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/landmark-atlas.ktx2",
+      "bytes": 23453,
+      "sha256": "1a409bd70de81c4aa229c60bc0ff63a1767542c5b491ac08df37d159f42cb715"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/settlement-dressing-atlas-normal-rma.ktx2",
+      "bytes": 143137,
+      "sha256": "4d4361c4f582067360d81629ac19b16af115973eaf0a485ff3d8e30d238bfb63"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/settlement-dressing-atlas.ktx2",
+      "bytes": 21437,
+      "sha256": "e781c974d840e880deff8a6a38056eaabbf7f2dbc8b954d34d3a1a42d2be3a70"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/weather-atlas-normal-rma.ktx2",
+      "bytes": 395084,
+      "sha256": "04b587072f963fbb779e05c6bf4fdb7849071da1a0d126c6c6830fb33b236c43"
+    },
+    {
+      "path": "public/assets/uplift/textures/surface/weather-atlas.ktx2",
+      "bytes": 56933,
+      "sha256": "a3efd7c37e3ea25d579dd47471dea125020926351baa6f680410b94744d4ea6a"
+    },
+    {
+      "path": "public/assets/uplift/textures/viewmodels/field-kit-normal-rma.ktx2",
+      "bytes": 908539,
+      "sha256": "68824eaf2e16b8b19fe07007e98858e1a6f35b2b499a9c43e132f97d02b37d85"
+    },
+    {
+      "path": "public/assets/uplift/textures/viewmodels/field-kit.ktx2",
+      "bytes": 476454,
+      "sha256": "5d94d242639597198e9acd20c7a0637e3e05ad2a6590e43589095548f97216c8"
     },
     {
       "path": "landing/media/14-low-flight.webp",

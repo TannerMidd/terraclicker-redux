@@ -33,7 +33,7 @@ import {
   SRGBColorSpace,
   Texture,
 } from 'three/webgpu';
-import { materialColor, materialOpacity, mix, texture, uv, vec2, vec3, vertexColor } from 'three/tsl';
+import { materialColor, materialOpacity, mix, normalLocal, normalize, texture, transformNormalToView, uv, vec2, vec3, vertexColor } from 'three/tsl';
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
@@ -314,23 +314,28 @@ const KIT_M = new Matrix4();
  * painted parts. Geometry is cached per (kit, name); null until the kit
  * lands or when the name is missing.
  */
-export function kitGeometry(relative: string, name: string): BufferGeometry | null {
+function mergeKitGeometry(
+  relative: string,
+  name: string,
+  cacheKey: string,
+  include: (meshName: string) => boolean,
+): BufferGeometry | null {
   if (!upliftActive()) return null;
   const entry = loadKit(relative);
   if (!entry.scene) return null;
-  const hit = entry.merged.get(name);
+  const hit = entry.merged.get(cacheKey);
   if (hit !== undefined) return hit;
 
   const root = entry.scene.getObjectByName(name);
   if (!root) {
-    entry.merged.set(name, null);
+    entry.merged.set(cacheKey, null);
     return null;
   }
   const rootInverse = KIT_M.copy(root.matrixWorld).invert();
   const parts: BufferGeometry[] = [];
   root.traverse((obj: Object3D) => {
     const mesh = obj as Mesh;
-    if (!mesh.isMesh) return;
+    if (!mesh.isMesh || !include(mesh.name)) return;
     // Normalise to non-indexed: the kits mix polyhedra (which three builds
     // without an index) with boxes and cylinders (which have one), and
     // mergeGeometries refuses the mixture outright.
@@ -352,10 +357,47 @@ export function kitGeometry(relative: string, name: string): BufferGeometry | nu
   });
   const merged = parts.length > 0 ? mergeGeometries(parts, false) : null;
   for (const part of parts) part.dispose();
-  entry.merged.set(name, merged);
+  entry.merged.set(cacheKey, merged);
   return merged;
 }
 
+export function kitGeometry(relative: string, name: string): BufferGeometry | null {
+  return mergeKitGeometry(relative, name, name, () => true);
+}
+
+function kitGeometryExcluding(
+  relative: string,
+  name: string,
+  excludedPrefixes: readonly string[],
+): BufferGeometry | null {
+  const suffix = excludedPrefixes.join(',');
+  return mergeKitGeometry(
+    relative,
+    name,
+    `${name}|exclude:${suffix}`,
+    (meshName) => !excludedPrefixes.some((prefix) => meshName.startsWith(prefix)),
+  );
+}
+
+/** A rigidly rotated asset cached with the kit, safe to share across mounts. */
+export function kitGeometryRotated(
+  relative: string,
+  name: string,
+  rotateY: number,
+): BufferGeometry | null {
+  if (!upliftActive()) return null;
+  const entry = loadKit(relative);
+  const key = `${name}|rotateY:${rotateY}`;
+  const hit = entry.merged.get(key);
+  if (hit !== undefined) return hit;
+  const base = kitGeometry(relative, name);
+  if (!base) return null;
+  const geometry = base.clone();
+  geometry.rotateY(rotateY);
+  if (geometry.getAttribute('normal')) geometry.normalizeNormals();
+  entry.merged.set(key, geometry);
+  return geometry;
+}
 const WHITE = new Color(1, 1, 1);
 
 /**
@@ -366,26 +408,42 @@ const WHITE = new Color(1, 1, 1);
  *  - 'height' scales uniformly to a target height with the bbox centre at
  *    the origin — the centred-primitive convention of the prop scatter.
  */
+type KitFitOptions = {
+  rotateY?: number;
+  /** Mesh-name prefixes omitted from the result while preserving full-asset fit bounds. */
+  exclude?: readonly string[];
+};
+
 export type KitFit =
-  | { mode: 'box'; min: [number, number, number]; max: [number, number, number]; rotateY?: number }
-  | { mode: 'height'; height: number; rotateY?: number }
-  | { mode: 'extent'; extent: number; rotateY?: number };
+  | ({ mode: 'box'; min: [number, number, number]; max: [number, number, number] } & KitFitOptions)
+  | ({ mode: 'height'; height: number } & KitFitOptions)
+  | ({ mode: 'extent'; extent: number } & KitFitOptions);
 
 export function kitGeometryFit(relative: string, name: string, fit: KitFit): BufferGeometry | null {
   const entry = kitCache.get(relative) ?? loadKit(relative);
+  const excluded = fit.exclude ?? [];
   const key = `${name}|${fit.mode}|${fit.rotateY ?? 0}|${
     fit.mode === 'box' ? fit.min.join() + '|' + fit.max.join() : fit.mode === 'height' ? fit.height : fit.extent
-  }`;
+  }|exclude:${excluded.join(',')}`;
   const hit = entry.merged.get(key);
   if (hit !== undefined) return hit;
-  const base = kitGeometry(relative, name);
-  if (!base) return null; // do not cache: the kit may still be in flight
+  const boundsBase = kitGeometry(relative, name);
+  const base = excluded.length > 0
+    ? kitGeometryExcluding(relative, name, excluded)
+    : boundsBase;
+  if (!base || !boundsBase) return null; // do not cache: the kit may still be in flight
   const geo = base.clone();
+  // A subset retains the complete asset's bounds so omitting landing gear
+  // does not stretch the pressure hull down to the pad.
+  const boundsGeometry = excluded.length > 0 ? boundsBase.clone() : geo;
   // The ships were authored +Z-forward; the scene flies -Z. Spin before the
   // fit so the bounding frame is measured in the destination's own axes.
-  if (fit.rotateY) geo.rotateY(fit.rotateY);
-  geo.computeBoundingBox();
-  const bb = geo.boundingBox!;
+  if (fit.rotateY) {
+    geo.rotateY(fit.rotateY);
+    if (boundsGeometry !== geo) boundsGeometry.rotateY(fit.rotateY);
+  }
+  boundsGeometry.computeBoundingBox();
+  const bb = boundsGeometry.boundingBox!;
   const size = [bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z];
   const M = new Matrix4();
   if (fit.mode === 'height' || fit.mode === 'extent') {
@@ -408,6 +466,7 @@ export function kitGeometryFit(relative: string, name: string, fit: KitFit): Buf
     ).multiply(new Matrix4().makeScale(sx, sy, sz));
   }
   geo.applyMatrix4(M);
+  if (boundsGeometry !== geo) boundsGeometry.dispose();
   if (geo.getAttribute('normal')) geo.normalizeNormals();
   entry.merged.set(key, geo);
   return geo;
@@ -522,7 +581,7 @@ const kitMaterials = new Map<string, MeshStandardNodeMaterial>();
 export function kitMaterial(
   family: string,
   atlas: string | null,
-  opts: { roughness?: number; metalness?: number; emissiveScale?: number } = {},
+  opts: { roughness?: number; metalness?: number; emissiveScale?: number; normalRma?: string } = {},
 ): MeshStandardNodeMaterial {
   const key = family;
   const hit = kitMaterials.get(key);
@@ -538,6 +597,13 @@ export function kitMaterial(
     m.colorNode = vertexColor().mul(mix(vec3(1), tex.rgb.mul(2.0), 0.42));
   } else {
     m.colorNode = vertexColor();
+  }
+  if (opts.normalRma) {
+    const rma = upliftNode(opts.normalRma, undefined, { repeat: true });
+    const tangentPerturb = vec3(rma.r.mul(2).sub(1), 0, rma.g.mul(2).sub(1)).mul(0.14);
+    m.normalNode = transformNormalToView(normalize(normalLocal.add(tangentPerturb))) as unknown as typeof m.normalNode;
+    m.roughnessNode = rma.b.mul(0.3).add(0.62) as unknown as typeof m.roughnessNode;
+    m.colorNode = m.colorNode.mul(rma.a.mul(0.24).add(0.76));
   }
   kitMaterials.set(key, m);
   return m;
@@ -561,6 +627,24 @@ export function preloadUplift(): void {
   prefetchKit('meshes/ships/runabout-refits.glb');
   prefetchKit('meshes/ships/skimmer.glb');
   upliftPrefetch('textures/ships/runabout-pbr.ktx2', { repeat: true, srgb: true });
+  upliftPrefetch('textures/ships/runabout-pbr-normal-rma.ktx2', { repeat: true });
+  prefetchKit('meshes/ships/runabout-cockpit.glb');
+  prefetchKit('meshes/viewmodels/surface-viewmodels.glb');
+  upliftPrefetch('textures/ships/cockpit-trim.ktx2', { repeat: true, srgb: true });
+  upliftPrefetch('textures/ships/cockpit-trim-normal-rma.ktx2', { repeat: true });
+  upliftPrefetch('textures/ships/cockpit-emissive.ktx2', {});
+  upliftPrefetch('textures/ships/cockpit-glass.ktx2', {});
+  upliftPrefetch('textures/viewmodels/field-kit.ktx2', { repeat: true, srgb: true });
+  upliftPrefetch('textures/viewmodels/field-kit-normal-rma.ktx2', { repeat: true });
+  prefetchKit('meshes/surface/landmark-kit.glb');
+  prefetchKit('meshes/surface/dressing-kit.glb');
+  prefetchKit('meshes/surface/creature-variants.glb');
+  prefetchKit('meshes/surface/weather-props.glb');
+  for (const family of ['landmark', 'deposit', 'biome-clutter', 'settlement-dressing', 'ecology', 'weather']) {
+    upliftPrefetch(`textures/surface/${family}-atlas.ktx2`, { repeat: true, srgb: true });
+    upliftPrefetch(`textures/surface/${family}-atlas-normal-rma.ktx2`, { repeat: true });
+  }
+  upliftPrefetch('textures/ground/contact-fx.ktx2', {});
   prefetchKit('meshes/props/creatures.glb');
   for (const family of ['rocks', 'boulders', 'flora', 'shrubs', 'shards', 'vents']) {
     prefetchKit(`meshes/props/${family}.glb`);

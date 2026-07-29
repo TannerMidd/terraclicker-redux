@@ -157,6 +157,7 @@ export function Ecology({
   palette,
   bio,
   epoch = 0,
+  hideVignetteFallback = false,
 }: {
   p: SurfaceParams;
   tiers: SurfaceTiers;
@@ -164,6 +165,8 @@ export function Ecology({
   /** Bio gauge at landing — density and presence both ride it. */
   bio: number;
   epoch?: number;
+  /** The authored dressing kit replaces only the static primitive set-pieces. */
+  hideVignetteFallback?: boolean;
 }) {
   const groundRef = useRef<InstancedMesh>(null);
   const airRef = useRef<InstancedMesh>(null);
@@ -492,7 +495,7 @@ export function Ecology({
           {kit?.fish ? null : <octahedronGeometry args={[1, 0]} />}
         </instancedMesh>
       )}
-      {vignetteSeats.length > 0 && (
+      {!hideVignetteFallback && vignetteSeats.length > 0 && (
         <instancedMesh
           ref={(el) => {
             vignetteRef.current = el;

@@ -1817,6 +1817,15 @@ button {
 .flight-layer.chase-view .fh-panic { display: none; }
 
 @media (min-width: 701px) {
+  .flight-layer:not(.chase-view) .fh-sortie {
+    left: 18px;
+    top: 92px;
+    bottom: auto;
+    transform: none;
+    width: min(340px, calc(50vw - 24px));
+    text-align: left;
+  }
+  .flight-layer:not(.chase-view) .fh-sortie .fs-actions { justify-content: flex-start; }
   .flight-layer.chase-view .fh-sortie {
     left: 18px;
     bottom: 92px;
@@ -2011,6 +2020,17 @@ button {
   opacity: 0;
   animation: fhLegend 9s ease forwards;
 }
+@media (min-width: 701px) {
+  .fh-legend {
+    top: 62px;
+    bottom: auto;
+    padding: 4px 9px;
+    border: 1px solid rgba(150, 182, 236, 0.14);
+    border-radius: 999px;
+    background: rgba(5, 8, 14, 0.72);
+    backdrop-filter: blur(7px);
+  }
+}
 .fh-legend b { color: var(--ink); font-weight: 600; }
 @keyframes fhLegend {
   0% { opacity: 0; transform: translateX(-50%) translateY(6px); }
@@ -2166,6 +2186,10 @@ button {
 }
 /* Already seated: the frame is simply there (see Canopy's `steady`). */
 .fh-canopy.steady { animation: none; }
+.fh-canopy.cockpit-3d {
+  opacity: 0;
+  visibility: hidden;
+}
 
 /* The uplift interior plates (ASSET_UPLIFT.md 3.3): cockpit furniture
    between the glass and the DOM console. Hidden with the canopy in chase. */
@@ -2174,8 +2198,13 @@ button {
   pointer-events: none;
   user-select: none;
   animation: fhIn 900ms ease;
+  transition: opacity 260ms ease, visibility 260ms step-end;
 }
 .fh-cockpit-plate.steady { animation: none; }
+.fh-cockpit-plate.cockpit-3d {
+  opacity: 0 !important;
+  visibility: hidden;
+}
 .fh-cockpit-plate.dash {
   left: 0;
   right: 0;
@@ -3759,13 +3788,52 @@ button {
 /* ————— Groundfall: the suit HUD ————— */
 
 .sh-hud {
+  --sh-panel: rgba(7, 11, 22, 0.92);
+  --sh-panel-soft: rgba(7, 11, 22, 0.86);
+  --sh-border: rgba(194, 214, 248, 0.34);
+  --sh-border-soft: rgba(194, 214, 248, 0.24);
+  --sh-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.48),
+    inset 0 1px rgba(255, 255, 255, 0.045);
+  --sh-halo:
+    0 1px 2px rgba(0, 0, 0, 0.98),
+    0 0 8px rgba(0, 0, 0, 0.9);
+  --ink: #f4f7ff;
+  --ink-dim: #bdc8dc;
+  --ink-faint: #99a7bf;
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 30;
+  isolation: isolate;
   font-family: var(--font-ui, 'Inter Variable', sans-serif);
   color: var(--ink);
 }
+
+/* Groundfall replaces both the Mk II window shade and the flight vignette.
+   Give the suit its own visor treatment so the exposed instruments do not
+   inherit their contrast from whatever weather or terrain happens to be
+   behind them. The centre stays clear for walking and field work. */
+.sh-hud::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      rgba(2, 4, 9, 0.78) 0,
+      rgba(2, 4, 9, 0.34) 8%,
+      transparent 19%
+    ),
+    radial-gradient(
+      ellipse 120% 90% at 50% 42%,
+      transparent 58%,
+      rgba(2, 3, 6, 0.58) 100%
+    );
+}
+.sh-hud > * { z-index: 1; }
 
 .sh-entry {
   position: absolute;
@@ -3774,6 +3842,7 @@ button {
   transform: translateX(-50%);
   text-align: center;
   max-width: min(560px, 86vw);
+  text-shadow: var(--sh-halo);
   animation: shIn 700ms ease;
 }
 @keyframes shIn { from { opacity: 0; transform: translate(-50%, 10px); } }
@@ -3789,7 +3858,7 @@ button {
   font-size: clamp(22px, 3.4vw, 34px);
   font-weight: 640;
   letter-spacing: 0.01em;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.6);
+  text-shadow: var(--sh-halo);
 }
 .sh-line {
   margin-top: 6px;
@@ -3804,7 +3873,7 @@ button {
   font-variant-numeric: tabular-nums;
   font-weight: 300;
   letter-spacing: 0.06em;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7);
+  text-shadow: var(--sh-halo);
 }
 .sh-progress {
   margin: 12px auto 0;
@@ -3835,6 +3904,7 @@ button {
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
+  text-shadow: var(--sh-halo);
 }
 .sh-compass-window {
   position: relative;
@@ -3893,19 +3963,19 @@ button {
 }
 .sh-mark i {
   font-style: normal;
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.02em;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
 .sh-mark.ship { color: var(--improbable); }
 .sh-mark.site { color: var(--atmo); }
 .sh-mark.prospect { color: #ffb454; }
 .sh-mark.landmark { color: #b8a2e0; }
-.sh-mark.thermal { color: #ff8a5c; text-shadow: 0 0 6px rgba(255, 120, 60, 0.55); }
-.sh-mark.beacon { color: #ffc561; text-shadow: 0 0 7px rgba(255, 179, 71, 0.6); }
+.sh-mark.thermal { color: #ff8a5c; text-shadow: var(--sh-halo), 0 0 6px rgba(255, 120, 60, 0.55); }
+.sh-mark.beacon { color: #ffc561; text-shadow: var(--sh-halo), 0 0 7px rgba(255, 179, 71, 0.6); }
 .sh-mark.mark { color: #a8c8bc; }
-.sh-mark.sense { color: rgba(150, 182, 236, 0.5); }
+.sh-mark.sense { color: rgba(186, 205, 239, 0.78); }
 
 /* — Conditions rail: the weather line and the nearest named place — */
 .sh-conditions {
@@ -3917,6 +3987,16 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 5px 10px 6px;
+  border: 1px solid var(--sh-border-soft);
+  border-radius: 9px;
+  background: var(--sh-panel-soft);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(10px) saturate(0.8);
+  backdrop-filter: blur(10px) saturate(0.8);
+  text-shadow: var(--sh-halo);
   pointer-events: none;
 }
 .sh-weather {
@@ -3927,7 +4007,7 @@ button {
 }
 .sh-weather.hard {
   color: #ffc98a;
-  text-shadow: 0 0 8px rgba(255, 170, 90, 0.3);
+  text-shadow: var(--sh-halo), 0 0 8px rgba(255, 170, 90, 0.3);
 }
 .sh-landmark {
   font-size: 10px;
@@ -3945,11 +4025,22 @@ button {
   height: 48px;
   transform: translate(-50%, -50%);
 }
-.sh-ret-dot { fill: rgba(233, 238, 249, 0.85); }
+.sh-reticle svg {
+  overflow: visible;
+  filter:
+    drop-shadow(0 0 1px rgba(0, 0, 0, 1))
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.95));
+}
+.sh-ret-dot {
+  fill: var(--ink);
+  stroke: rgba(2, 4, 9, 0.95);
+  stroke-width: 1.6;
+  paint-order: stroke fill;
+}
 .sh-ret-ring {
   fill: none;
   stroke: var(--atmo);
-  stroke-width: 1.6;
+  stroke-width: 1.8;
   opacity: 0;
   transform: rotate(-90deg);
   transform-origin: center;
@@ -3985,10 +4076,12 @@ button {
   align-items: center;
   gap: 3px;
   padding: 8px 14px;
-  border: 1px solid rgba(150, 182, 236, 0.16);
+  border: 1px solid var(--sh-border);
   border-radius: 10px;
-  background: rgba(13, 16, 32, 0.55);
-  backdrop-filter: blur(8px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   animation: shIn 300ms ease;
 }
 .sh-assay-kind { font-size: 12.5px; letter-spacing: 0.04em; color: var(--improbable); }
@@ -4015,10 +4108,12 @@ button {
   left: max(22px, env(safe-area-inset-left));
   bottom: max(22px, env(safe-area-inset-bottom));
   padding: 10px 14px;
-  border: 1px solid rgba(150, 182, 236, 0.14);
+  border: 1px solid var(--sh-border);
   border-radius: 10px;
-  background: rgba(13, 16, 32, 0.55);
-  backdrop-filter: blur(10px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -4038,11 +4133,13 @@ button {
 }
 .sh-mission {
   padding: 7px 12px;
-  border: 1px solid rgba(150, 182, 236, 0.14);
+  border: 1px solid var(--sh-border);
   border-left: 2px solid #ffc561;
   border-radius: 8px;
-  background: rgba(13, 16, 32, 0.55);
-  backdrop-filter: blur(10px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   font-size: 11px;
   line-height: 1.45;
 }
@@ -4061,17 +4158,19 @@ button {
   bottom: 17%;
   transform: translateX(-50%);
   padding: 8px 16px;
-  border: 1px solid rgba(150, 182, 236, 0.22);
+  border: 1px solid var(--sh-border);
   border-radius: 999px;
-  background: rgba(13, 16, 32, 0.6);
-  backdrop-filter: blur(8px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   font-size: 12.5px;
   letter-spacing: 0.05em;
   white-space: nowrap;
   animation: shIn 300ms ease;
 }
 .sh-prompt.blocked { color: var(--ink-dim); border-style: dashed; }
-.sh-prompt.dim { color: var(--ink-faint); border-color: rgba(150, 182, 236, 0.1); }
+.sh-prompt.dim { color: var(--ink-dim); border-color: var(--sh-border-soft); }
 /* The skimmer's line rides below the main prompt so the two never fight. */
 .sh-prompt.sh-skimline { bottom: calc(17% - 44px); }
 
@@ -4081,10 +4180,12 @@ button {
   right: max(22px, env(safe-area-inset-right));
   bottom: calc(max(22px, env(safe-area-inset-bottom)) + 34px);
   padding: 8px 14px;
-  border: 1px solid rgba(150, 182, 236, 0.16);
+  border: 1px solid var(--sh-border);
   border-radius: 10px;
-  background: rgba(13, 16, 32, 0.55);
-  backdrop-filter: blur(10px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   font-size: 12px;
   text-align: right;
 }
@@ -4098,7 +4199,15 @@ button {
   font-size: 10.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-dim);
+  padding: 5px 8px;
+  border: 1px solid var(--sh-border-soft);
+  border-radius: 7px;
+  background: var(--sh-panel-soft);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(10px) saturate(0.8);
+  backdrop-filter: blur(10px) saturate(0.8);
+  text-shadow: var(--sh-halo);
 }
 
 /* — The cockpit at two hundred metres (Phase 6) — */
@@ -4108,10 +4217,12 @@ button {
   bottom: calc(max(22px, env(safe-area-inset-bottom)) + 34px);
   min-width: 178px;
   padding: 9px 14px 10px;
-  border: 1px solid rgba(150, 182, 236, 0.16);
+  border: 1px solid var(--sh-border);
   border-radius: 10px;
-  background: rgba(13, 16, 32, 0.55);
-  backdrop-filter: blur(10px);
+  background: var(--sh-panel);
+  box-shadow: var(--sh-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(0.8);
+  backdrop-filter: blur(12px) saturate(0.8);
   font-size: 12px;
   text-align: right;
 }

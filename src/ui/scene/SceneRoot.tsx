@@ -135,15 +135,16 @@ export default function SceneRoot() {
         <VogonFleet />
       </UniverseGroup>
       <CameraRig />
-      {/* AFTER CameraRig, deliberately: R3F runs useFrame callbacks in mount
-          order, so the hull has to be subscribed later than the rig or it
-          poses itself against last frame's camera and visibly swims. */}
+      {/* The exterior belongs to the orbital universe and stands down while a
+          surface session owns the screen. */}
       <UniverseGroup>
-        <RunaboutHull />
         <RunaboutExterior />
       </UniverseGroup>
-      {/* The landed world: mounts with a session, steps after the rig. */}
+      {/* The landed world poses the surface camera after the orbital rig. */}
       <SurfaceScene />
+      {/* Camera-mounted last on purpose: one physical cockpit follows the final
+          orbital OR atmospheric camera instead of disappearing with space. */}
+      <RunaboutHull />
       <ShaderWarmup />
     </Canvas>
   );

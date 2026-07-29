@@ -282,15 +282,6 @@ function settlementAssets() {
   ];
 }
 
-async function generateSettlementKit() {
-  const scene = new THREE.Scene();
-  scene.name = 'settlement-kit';
-  scene.add(...settlementAssets());
-  const output = resolve(PUBLIC_ROOT, 'meshes', 'settlements', 'settlement-kit.glb');
-  await writeGlb(scene, output, { atlas: '../../textures/settlements/settlement-atlas.ktx2' });
-  return output;
-}
-
 function facilityAssets() {
   return [
     asset('seed-probe', [
@@ -355,38 +346,14 @@ function markAssets() {
   ];
 }
 
-function seamAssets() {
-  const out = [];
-  const materials = [MATERIALS.cyan, MATERIALS.gold, MATERIALS.magenta, MATERIALS.pale];
-  const kinds = ['improbability', 'tidal-glass', 'field-crystal', 'ridge-quartz'];
-  kinds.forEach((kind, k) => {
-    for (const worked of [false, true]) {
-      const name = `${kind}-${worked ? 'worked' : 'intact'}`;
-      const parts = [];
-      const count = worked ? 3 : 6;
-      for (let i = 0; i < count; i++) {
-        const r = mulberry(hash32(`${name}:${i}`));
-        parts.push(mesh(
-          `${name}-shard-${i}`,
-          new THREE.OctahedronGeometry(0.25 + r() * 0.38, 0),
-          materials[k],
-          [(r() - 0.5) * 1.8, (worked ? 0.16 : 0.35) + r() * 0.65, (r() - 0.5) * 1.8],
-          [0.7 + r(), worked ? 0.4 + r() * 0.4 : 1.1 + r() * 1.4, 0.7 + r()],
-          [r(), r() * 2, r()],
-        ));
-      }
-      out.push(asset(name, parts, { state: worked ? 'worked' : 'intact', tintIndex: k }));
-    }
-  });
-  return out;
-}
-
 async function generateSmallKits() {
   const outputs = [];
+  // The crystal seam path is owned by the Blender `ore.py` kit. Keeping it
+  // out of this procedural pass prevents `assets:uplift` from silently
+  // replacing the runtime's `crystal-shard` root with an incompatible family.
   const kits = [
     ['facilities', 'facility-kit.glb', facilityAssets(), '../../textures/facilities/facility-atlas.ktx2'],
     ['marks', 'mark-kit.glb', markAssets(), '../../textures/marks/mark-atlas.ktx2'],
-    ['seams', 'crystal-seam-kit.glb', seamAssets(), '../../textures/seams/crystal-seam.ktx2'],
   ];
   for (const [dir, file, assets, atlas] of kits) {
     const scene = new THREE.Scene();
@@ -530,7 +497,7 @@ async function generateDeepFieldKit() {
 export async function generateMeshes() {
   const outputs = [];
   outputs.push(...await generatePropKits());
-  outputs.push(await generateSettlementKit());
+  // settlement-kit.glb is Blender-owned alongside the other close-range kits.
   outputs.push(...await generateSmallKits());
   outputs.push(...await generateShipKits());
   outputs.push(await generateDeepFieldKit());

@@ -9,6 +9,7 @@ import {
   toggleAutopilot,
   toggleFlightCamera,
 } from '../scene/flightControl';
+import { useCockpitVisualReady } from '../scene/cockpitVisualState';
 import { bearingLabel, etaLabel } from '../../engine/navigation';
 import { handlingFor, handlingLabel } from '../../engine/handling';
 import { FlightControlsDialog } from './FlightControlsDialog';
@@ -422,17 +423,25 @@ const OUTER_PATH = 'M -40,-40 H 1040 V 640 H -40 Z';
  * from the chase camera is a change of seat, and a frame that fades up
  * every time you press the view key reads as a fault in the glass.
  */
-export function Canopy({ steady = false }: { steady?: boolean }) {
+export function Canopy({
+  steady = false,
+  threeDimensional = false,
+}: {
+  steady?: boolean;
+  /** Retire raster fallback furniture after the shared 3D cockpit is ready. */
+  threeDimensional?: boolean;
+}) {
   const s = steady ? ' steady' : '';
+  const cockpitReady = useCockpitVisualReady();
+  const upgraded = threeDimensional && cockpitReady ? ' cockpit-3d' : '';
   return (
     <>
-      {/* Interior plates (ASSET_UPLIFT.md 3.3): the dashboard fascia and the
-          throttle quadrant sit between the glass and the DOM console. The
-          SVG frame stays the window — its cut IS the flight view's shape. */}
-      <img className={`fh-cockpit-plate dash${s}`} src={COCKPIT_ASSETS.dashboard} alt="" aria-hidden draggable={false} />
-      <img className={`fh-cockpit-plate throttle${s}`} src={COCKPIT_ASSETS.throttle} alt="" aria-hidden draggable={false} />
+      {/* Transparent Blender pilot-eye fallback. The real cockpit replaces the
+          plate only after its shell, dash, and live MFDs exist; surface flight
+          never falls back to a flat schematic. */}
+      <img className={`fh-cockpit-plate dash${s}${upgraded}`} src={COCKPIT_ASSETS.dashboard} alt="" aria-hidden draggable={false} />
     <svg
-      className={`fh-canopy${s}`}
+      className={`fh-canopy${s}${upgraded}`}
       viewBox="0 0 1000 600"
       preserveAspectRatio="xMidYMid slice"
       aria-hidden
@@ -968,7 +977,7 @@ function FlightHUDInner() {
 
   return (
     <div ref={root} className="flight-layer">
-      <Canopy />
+      <Canopy threeDimensional />
       <div ref={glare} className="fh-glare" aria-hidden />
       <div ref={stick} className="fh-stick" aria-hidden>
         <i />

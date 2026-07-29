@@ -7,7 +7,7 @@
     "dev": "vite --host localhost --port 5173 --strictPort",
     "build": "tsc --noEmit && vite build",
     "assets:generate": "node scripts/generate-themed-assets.mjs",
-    "assets:uplift": "node scripts/generate-uplift-assets.mjs",
+    "assets:uplift": "node scripts/uplift/build-ship.mjs && node scripts/generate-uplift-assets.mjs",
     "assets:ship": "node scripts/uplift/build-ship.mjs",
     "assets:inspect": "node scripts/uplift/normalize.mjs --inspect",
     "assets:watch": "node scripts/uplift/watch-models.mjs",

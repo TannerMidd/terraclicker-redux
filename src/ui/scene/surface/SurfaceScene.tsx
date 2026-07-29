@@ -36,11 +36,14 @@ import {
   MINING_VERBS,
   stepSurface,
   surfaceDeposits,
+  surfaceLandmarkList,
   surfaceLive,
   surfaceParams,
   surfaceProspects,
   surfaceSeamCensus,
+  surfaceSettlementList,
   surfaceTiers,
+  surfaceVignetteList,
   verbHitsNow,
   SHIP_PARK,
   SWING_IMPACT,
@@ -52,16 +55,30 @@ import { Ecology } from './Ecology';
 import { CloudBanks } from './CloudBanks';
 import { Marks } from './Marks';
 import { Decals } from './Decals';
+import { SurfaceContactFX } from './SurfaceContactFX';
+import { WorldDetail, type DepositVisualSpec } from './WorldDetail';
+import {
+  RunaboutTransitionHardware,
+  type RunaboutTransitionPhase,
+} from '../RunaboutTransitionHardware';
 import {
   groundBundle,
   GROUND_TYPE_INDEX,
   kitGeometryFit,
+  kitMaterial,
   upliftActive,
   upliftFamilyMaterial,
   upliftTex,
   upliftTier,
 } from '../uplift/upliftAssets';
-import { RefitPods, runaboutGeometry, shipMaterial, skimmerGeometry, type RefitPodSpec } from '../uplift/shipKit';
+import {
+  RefitPods,
+  runaboutGeometry,
+  shipMaterial,
+  skimmerGeometry,
+  useKitGeometry,
+  type RefitPodSpec,
+} from '../uplift/shipKit';
 import type { BufferGeometry } from 'three/webgpu';
 import {
   buildTierTextures,
@@ -99,10 +116,49 @@ const SEAT = new Object3D();
 const UP = new Vector3(0, 1, 0);
 /** Imported (§8 of docs/BLENDER_PIPELINE.md), so it ships under meshes/imports. */
 const BIOME_FLORA_KIT = 'meshes/imports/biome-flora.glb';
+/** Authored first-person equipment. Rigid roots let the frame loop animate it. */
+const SURFACE_VIEWMODEL_KIT = 'meshes/viewmodels/surface-viewmodels.glb';
 /** The ship's own pose scratch — airborne attitude, or the pad it sits on. */
 const SHIP_EUL = new Euler(0, 0, 0, 'YXZ');
 const SHIP_Q = new Quaternion();
 const SHIP_YAW_Q = new Quaternion();
+
+type FitCorner = [number, number, number];
+
+/**
+ * A named rigid viewmodel part, upgraded once the kit arrives. A box fit seats
+ * each part exactly where the old primitives lived and makes script dimensions
+ * independent of the near-camera composition.
+ */
+function useSurfaceViewmodelPart(
+  name: string,
+  min: FitCorner,
+  max: FitCorner,
+): BufferGeometry | null {
+  return useKitGeometry(SURFACE_VIEWMODEL_KIT, () =>
+    kitGeometryFit(SURFACE_VIEWMODEL_KIT, name, { mode: 'box', min, max }),
+  );
+}
+
+let surfaceViewmodelMat: MeshStandardNodeMaterial | null = null;
+
+/** One depth-privileged PBR material for every authored near-camera solid. */
+function surfaceViewmodelMaterial(): MeshStandardNodeMaterial {
+  if (surfaceViewmodelMat) return surfaceViewmodelMat;
+  const m = kitMaterial(
+    'surface-viewmodels',
+    'textures/viewmodels/field-kit.ktx2',
+    {
+      normalRma: 'textures/viewmodels/field-kit-normal-rma.ktx2',
+      roughness: 0.55,
+      metalness: 0.38,
+    },
+  );
+  m.depthTest = false;
+  m.depthWrite = false;
+  surfaceViewmodelMat = m;
+  return m;
+}
 
 /** Sun elevation → daylight factor shared by lights, fog and cloud tint. */
 function dayOf(sunY: number): number {
@@ -329,6 +385,24 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
    */
   const seamWidth = seamShard ? 0.62 : 0.28;
 
+  // Per-family probes switch exact semantic fallbacks only after the matching
+  // authored GLB root is genuinely mergeable. Other procedural atmosphere and
+  // ecology layers remain as deliberate supplements.
+  const authoredLandmarkReady = Boolean(useKitGeometry(
+    'meshes/surface/landmark-kit.glb',
+    () => kitGeometryFit('meshes/surface/landmark-kit.glb', 'standing-ring', {
+      mode: 'height',
+      height: 1,
+    }),
+  ));
+  const authoredDressingReady = Boolean(useKitGeometry(
+    'meshes/surface/dressing-kit.glb',
+    () => kitGeometryFit('meshes/surface/dressing-kit.glb', 'deposit-crystal-intact', {
+      mode: 'height',
+      height: 1,
+    }),
+  ));
+
   // Crystal instance seats (4 shards per seam). `crack` 0–1 tilts and sinks
   // the shards as the pick works them — the seam visibly losing the argument.
   const writeSeamMatrices = (mesh: InstancedMesh, d: DepositSpec, slot: number, crack: number) => {
@@ -378,6 +452,17 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   /** Mark plantings mirrored the same way — a mark stands the frame it lands. */
   const [markSeat, setMarkSeat] = useState(0);
   const marksShown = useRef(0);
+  /** Authored deposits/weather re-batch only when their live visual state changes. */
+  const [detailRevision, setDetailRevision] = useState(0);
+  const detailSignals = useRef({
+    hit: surfaceLive.hitNonce,
+    mine: surfaceLive.mineNonce,
+    reveal: surfaceLive.revealNonce,
+    weather: surfaceLive.weather.kind,
+  });
+  /** React mirror for the code-driven airlock, ramp, and landing gear. */
+  const [transitionPhase, setTransitionPhase] = useState(surfaceLive.phase);
+  const transitionPhaseShown = useRef(surfaceLive.phase);
   /** Smoothed weather visibility so a front arrives instead of switching on. */
   const visSmooth = useRef(1);
   /** Prospect stakes standing (prior landings + this stay). */
@@ -389,6 +474,24 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     const dt = Math.min(dtRaw, 0.1);
     const t = state.clock.elapsedTime;
     const live = surfaceLive;
+
+    if (live.phase !== transitionPhaseShown.current) {
+      transitionPhaseShown.current = live.phase;
+      setTransitionPhase(live.phase);
+    }
+    const signals = detailSignals.current;
+    if (
+      live.hitNonce !== signals.hit
+      || live.mineNonce !== signals.mine
+      || live.revealNonce !== signals.reveal
+      || live.weather.kind !== signals.weather
+    ) {
+      signals.hit = live.hitNonce;
+      signals.mine = live.mineNonce;
+      signals.reveal = live.revealNonce;
+      signals.weather = live.weather.kind;
+      setDetailRevision((revision) => revision + 1);
+    }
 
     // The rig steps flight during 'entry'; the surface steps itself after.
     if (live.phase !== 'entry') {
@@ -730,6 +833,30 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
     }
   });
 
+  const detailDeposits = useMemo<DepositVisualSpec[]>(() => {
+    void detailRevision;
+    return seams
+      .filter((deposit) => !deposit.buried || surfaceLive.buriedRevealed)
+      .map((deposit) => ({
+        ...deposit,
+        state: surfaceLive.mined.has(deposit.id)
+          ? 'depleted'
+          : (surfaceLive.hits.get(deposit.id) ?? 0) > 0
+            ? 'cracked'
+            : 'intact',
+      }));
+  }, [seams, detailRevision]);
+  const hardwarePhase: RunaboutTransitionPhase =
+    transitionPhase === 'descent'
+      ? 'descent'
+      : transitionPhase === 'walk'
+        ? 'walk'
+        : transitionPhase === 'skim'
+          ? 'landed'
+          : transitionPhase === 'takeoff'
+            ? 'takeoff'
+            : 'stowed';
+
   return (
     <>
       {/* The transition rides outside the world group: it exists in every phase. */}
@@ -767,6 +894,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
               ref={crystals}
               args={[seamShard ?? undefined, undefined, seams.length * 4]}
               material={built.crystalB.mat}
+              visible={!authoredDressingReady}
               frustumCulled={false}
             >
               {seamShard ? null : <octahedronGeometry args={[0.7, 0]} />}
@@ -795,19 +923,42 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
             </mesh>
 
             <Decals p={built.p} tiers={built.tiers} />
+            <SurfaceContactFX p={built.p} tiers={built.tiers} />
             <Pickaxe />
             <SkimmerDash />
             <ParkedSkimmer p={built.p} tiers={built.tiers} />
             <ImpactShards gravity={built.p.gravity} />
             <SurfaceWeather session={session} palette={palette} />
-            <Landmarks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} />
+            <WorldDetail
+              p={built.p}
+              tiers={built.tiers}
+              landmarks={surfaceLandmarkList()}
+              deposits={detailDeposits}
+              districts={surfaceSettlementList()}
+              vignettes={surfaceVignetteList()}
+              weatherKind={surfaceLive.weather.kind}
+              epoch={epoch + detailRevision}
+            />
+            {!authoredLandmarkReady && (
+              <Landmarks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} />
+            )}
             <Settlements p={built.p} tiers={built.tiers} palette={palette} session={session} epoch={epoch} />
-            <Ecology p={built.p} tiers={built.tiers} palette={palette} bio={session.aspects.bio} epoch={epoch} />
+            <Ecology
+              p={built.p}
+              tiers={built.tiers}
+              palette={palette}
+              bio={session.aspects.bio}
+              epoch={epoch}
+              hideVignetteFallback={authoredDressingReady}
+            />
             <Marks p={built.p} tiers={built.tiers} palette={palette} epoch={epoch} nonce={markSeat} />
 
             {/* Posed by the frame loop: the pad moves now (Phase 6). */}
             <group ref={shipGroup} position={[SHIP_PARK.x, 0, SHIP_PARK.z]}>
               <LandedRunabout />
+              <group scale={5.5}>
+                <RunaboutTransitionHardware phase={hardwarePhase} />
+              </group>
             </group>
           </>
         )}
@@ -1246,7 +1397,10 @@ function LandedRunabout() {
   // Gear included: the kit hull carries its struts and feet, fitted so the
   // pads rest at local y=0 exactly where the hand-built gear stood.
   const kitHull = useMemo(
-    () => runaboutGeometry({ min: [-0.71, 0, -0.85], max: [0.71, 0.42, 0.7] }),
+    () => runaboutGeometry(
+      { min: [-0.71, 0, -0.85], max: [0.71, 0.42, 0.7] },
+      { articulatedLanding: true },
+    ),
     [],
   );
   return (
@@ -1440,17 +1594,59 @@ function ParkedSkimmer({ p, tiers }: { p: SurfaceParams; tiers: SurfaceTiers }) 
 function SkimmerDash() {
   const camera = useThree((s) => s.camera);
   const root = useRef<Group>(null);
+  const steering = useRef<Group>(null);
+  const throttle = useRef<Group>(null);
   const lag = useRef({ yaw: 0, x: 0 });
   const consoleMat = useRef<MeshStandardNodeMaterial | null>(null);
 
+  const cowlGeometry = useSurfaceViewmodelPart(
+    'skimmer-cowl',
+    [-0.5, -0.1, -0.05],
+    [0.5, 0.13, 0.32],
+  );
+  const barsGeometry = useSurfaceViewmodelPart(
+    'skimmer-bars',
+    [-0.49, -0.01, 0.01],
+    [0.49, 0.17, 0.19],
+  );
+  const displayGeometry = useSurfaceViewmodelPart(
+    'skimmer-display',
+    [-0.14, -0.015, 0.025],
+    [0.14, 0.045, 0.13],
+  );
+  const throttleGeometry = useSurfaceViewmodelPart(
+    'skimmer-throttle',
+    [-0.05, -0.04, -0.04],
+    [0.05, 0.08, 0.08],
+  );
+  const leftHandGeometry = useSurfaceViewmodelPart(
+    'skimmer-hand-left',
+    [-0.51, -0.12, -0.03],
+    [-0.19, 0.17, 0.2],
+  );
+  const rightHandGeometry = useSurfaceViewmodelPart(
+    'skimmer-hand-right',
+    [0.19, -0.12, -0.03],
+    [0.51, 0.17, 0.2],
+  );
+  const authored = Boolean(
+    cowlGeometry
+      && barsGeometry
+      && displayGeometry
+      && throttleGeometry
+      && leftHandGeometry
+      && rightHandGeometry,
+  );
+
   const consoleMaterial = useMemo(() => {
     const m = new MeshStandardNodeMaterial();
-    m.color = new Color(0x28344c);
+    m.color = new Color(0x62ddf0);
     m.emissive = new Color(0x2a8fa8);
     m.emissiveIntensity = 0.7;
-    m.roughness = 0.4;
-    m.metalness = 0.6;
+    m.roughness = 0.24;
+    m.metalness = 0.32;
     m.depthTest = false;
+    m.depthWrite = false;
     consoleMat.current = m;
     return m;
   }, []);
@@ -1474,10 +1670,20 @@ function SkimmerDash() {
     g.position.copy(camera.position);
     g.quaternion.copy(camera.quaternion);
     g.translateX(l.x * 0.3);
-    g.translateY(-0.42 + Math.sin(state.clock.elapsedTime * 9.2) * 0.004);
-    g.translateZ(-0.62);
+    g.translateY((authored ? -0.24 : -0.42) + Math.sin(state.clock.elapsedTime * 9.2) * 0.004);
+    g.translateZ(authored ? -0.66 : -0.62);
     g.rotation.z -= l.x * 0.6;
 
+    // Authored rigid roots inherit the old lag but also acknowledge input.
+    if (steering.current) {
+      const target = Math.max(-0.2, Math.min(0.2, l.x * 2.2));
+      steering.current.rotation.z += (target - steering.current.rotation.z) * k;
+    }
+    if (throttle.current) {
+      const speedK = Math.min(1, live.skimSpeed / 29);
+      const target = -0.12 - speedK * 0.42;
+      throttle.current.rotation.x += (target - throttle.current.rotation.x) * k;
+    }
     if (consoleMat.current) {
       consoleMat.current.emissiveIntensity =
         0.25 + Math.min(1, live.skimSpeed / 29) * 0.8;
@@ -1487,30 +1693,74 @@ function SkimmerDash() {
   const metal = { color: 0x2b3750, emissive: 0x0d1526, emissiveIntensity: 0.8, roughness: 0.38, metalness: 0.8, depthTest: false } as const;
   return (
     <group ref={root} visible={false}>
-      {/* Cowl: a shallow V of panels under the sightline. */}
-      <mesh position={[-0.24, -0.02, 0]} rotation={[0.34, 0, 0.18]} renderOrder={520}>
-        <boxGeometry args={[0.42, 0.05, 0.3]} />
-        <meshStandardMaterial {...metal} />
-      </mesh>
-      <mesh position={[0.24, -0.02, 0]} rotation={[0.34, 0, -0.18]} renderOrder={520}>
-        <boxGeometry args={[0.42, 0.05, 0.3]} />
-        <meshStandardMaterial {...metal} />
-      </mesh>
-      {/* Grips, rising toward the rider's hands. */}
-      {[-0.34, 0.34].map((x) => (
-        <mesh key={x} position={[x, 0.04, 0.1]} rotation={[0.9, 0, x < 0 ? 0.3 : -0.3]} renderOrder={521}>
-          <cylinderGeometry args={[0.02, 0.024, 0.16, 6]} />
-          <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
-        </mesh>
-      ))}
-      {/* The console: speed burns on it (material driven by the frame loop). */}
-      <mesh position={[0, -0.015, 0.02]} rotation={[0.5, 0, 0]} renderOrder={521} material={consoleMaterial}>
-        <boxGeometry args={[0.13, 0.014, 0.07]} />
-      </mesh>
+      {authored ? (
+        <>
+          <mesh
+            geometry={cowlGeometry!}
+            material={surfaceViewmodelMaterial()}
+            renderOrder={520}
+            frustumCulled={false}
+          />
+          <group ref={steering}>
+            <mesh
+              geometry={barsGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={521}
+              frustumCulled={false}
+            />
+            <mesh
+              geometry={leftHandGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={522}
+              frustumCulled={false}
+            />
+            <mesh
+              geometry={rightHandGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={522}
+              frustumCulled={false}
+            />
+          </group>
+          <mesh
+            geometry={displayGeometry!}
+            material={consoleMaterial}
+            renderOrder={523}
+            frustumCulled={false}
+          />
+          <group ref={throttle} position={[0.34, 0.06, 0.11]}>
+            <mesh
+              geometry={throttleGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={523}
+              frustumCulled={false}
+            />
+          </group>
+        </>
+      ) : (
+        <>
+          {/* Low-quality/loading fallback: the original four-mesh dashboard. */}
+          <mesh position={[-0.24, -0.02, 0]} rotation={[0.34, 0, 0.18]} renderOrder={520}>
+            <boxGeometry args={[0.42, 0.05, 0.3]} />
+            <meshStandardMaterial {...metal} />
+          </mesh>
+          <mesh position={[0.24, -0.02, 0]} rotation={[0.34, 0, -0.18]} renderOrder={520}>
+            <boxGeometry args={[0.42, 0.05, 0.3]} />
+            <meshStandardMaterial {...metal} />
+          </mesh>
+          {[-0.34, 0.34].map((x) => (
+            <mesh key={x} position={[x, 0.04, 0.1]} rotation={[0.9, 0, x < 0 ? 0.3 : -0.3]} renderOrder={521}>
+              <cylinderGeometry args={[0.02, 0.024, 0.16, 6]} />
+              <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
+            </mesh>
+          ))}
+          <mesh position={[0, -0.015, 0.02]} rotation={[0.5, 0, 0]} renderOrder={521} material={consoleMaterial}>
+            <boxGeometry args={[0.13, 0.014, 0.07]} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }
-
 // ————— The pick —————
 
 /** Piecewise swing: wind up, strike hard, recover soft. Radians about X. */
@@ -1542,7 +1792,76 @@ function Pickaxe() {
   const camera = useThree((s) => s.camera);
   const root = useRef<Group>(null);
   const pivot = useRef<Group>(null);
+  const pickHead = useRef<Group>(null);
+  const drillHead = useRef<Group>(null);
+  const scannerHead = useRef<Group>(null);
+  const sampleHead = useRef<Group>(null);
+  const scannerMat = useRef<MeshStandardNodeMaterial | null>(null);
   const lag = useRef({ yaw: 0, pitch: 0, x: 0, y: 0 });
+
+  const bodyGeometry = useSurfaceViewmodelPart(
+    'field-tool-body',
+    [-0.06, -0.02, -0.055],
+    [0.06, 0.47, 0.055],
+  );
+  const pickGeometry = useSurfaceViewmodelPart(
+    'field-head-pick',
+    [-0.08, -0.04, -0.24],
+    [0.08, 0.065, 0.23],
+  );
+  const drillGeometry = useSurfaceViewmodelPart(
+    'field-head-drill',
+    [-0.085, -0.045, -0.27],
+    [0.085, 0.075, 0.17],
+  );
+  const scannerGeometry = useSurfaceViewmodelPart(
+    'field-head-scanner',
+    [-0.105, -0.035, -0.18],
+    [0.105, 0.055, 0.13],
+  );
+  const scannerEmitterGeometry = useSurfaceViewmodelPart(
+    'field-scanner-emitter',
+    [-0.075, 0.012, -0.1],
+    [0.075, 0.03, 0.06],
+  );
+  const sampleGeometry = useSurfaceViewmodelPart(
+    'field-head-sample',
+    [-0.09, -0.045, -0.23],
+    [0.09, 0.065, 0.16],
+  );
+  const leftHandGeometry = useSurfaceViewmodelPart(
+    'field-hand-left',
+    [-0.12, 0.18, -0.02],
+    [0.045, 0.38, 0.09],
+  );
+  const rightHandGeometry = useSurfaceViewmodelPart(
+    'field-hand-right',
+    [-0.035, -0.09, -0.02],
+    [0.14, 0.14, 0.09],
+  );
+  const authored = Boolean(
+    bodyGeometry
+      && pickGeometry
+      && drillGeometry
+      && scannerGeometry
+      && scannerEmitterGeometry
+      && sampleGeometry
+      && leftHandGeometry
+      && rightHandGeometry,
+  );
+
+  const scannerMaterial = useMemo(() => {
+    const m = new MeshStandardNodeMaterial();
+    m.color = new Color(0x6fe9ff);
+    m.emissive = new Color(0x39cbe8);
+    m.emissiveIntensity = 0.8;
+    m.roughness = 0.18;
+    m.metalness = 0.18;
+    m.depthTest = false;
+    m.depthWrite = false;
+    scannerMat.current = m;
+    return m;
+  }, []);
 
   useFrame((state, dtRaw) => {
     const g = root.current;
@@ -1571,46 +1890,123 @@ function Pickaxe() {
     g.translateY(-0.34 + live.bob * 0.5 + l.y * 0.4 - live.kick * 0.02);
     g.translateZ(-0.52);
 
-    const ang = swingAngle(live.swing);
+    // Scanning lifts the same tool into a steady reading pose; every mining
+    // verb otherwise keeps the established strike cadence and impact frame.
+    const ang = live.scanning ? -0.42 : swingAngle(live.swing);
     p.rotation.set(ang, -0.3 + ang * 0.08 + l.x, -0.22 + ang * 0.05);
-    void state;
+
+    const verb = MINING_VERBS[live.verbIdx] ?? 'break';
+    const scanning = live.scanning;
+    if (pickHead.current) pickHead.current.visible = !scanning && verb === 'break';
+    if (drillHead.current) {
+      drillHead.current.visible = !scanning && verb === 'core';
+      drillHead.current.rotation.z += dt * (live.swinging ? 22 : 1.4);
+    }
+    if (scannerHead.current) scannerHead.current.visible = scanning;
+    if (sampleHead.current) {
+      sampleHead.current.visible = !scanning && (verb === 'prospect' || verb === 'preserve');
+      const bite = live.swinging ? 0.92 + Math.sin(live.swing * Math.PI) * 0.08 : 1;
+      sampleHead.current.scale.set(bite, 1, 1);
+    }
+    if (scannerMat.current) {
+      scannerMat.current.emissiveIntensity =
+        0.5 + live.scanCharge * 1.5 + Math.sin(state.clock.elapsedTime * 5.4) * 0.16;
+    }
   });
 
-  // A viewmodel is its own worst lighting rig — the camera side is always the
-  // shadow side — so the metals carry a faint self-light to stay legible
-  // against bright ground.
+  // The original primitives remain the low-quality and in-flight fallback.
   const steel = { color: 0xb8c2ce, emissive: 0x2a323d, emissiveIntensity: 0.7, roughness: 0.35, metalness: 0.85, depthTest: false } as const;
   const haft = { color: 0x6a5138, emissive: 0x1e150b, emissiveIntensity: 0.6, roughness: 0.8, metalness: 0.05, depthTest: false } as const;
   return (
     <group ref={root} visible={false}>
-      <group ref={pivot} position={[0, -0.06, 0]} rotation={[-0.66, -0.3, -0.22]} scale={0.72}>
-        {/* Haft, grip wrap, and the head assembly at the top. */}
-        <mesh position={[0, 0.22, 0]} renderOrder={520}>
-          <cylinderGeometry args={[0.016, 0.02, 0.5, 8]} />
-          <meshStandardMaterial {...haft} />
-        </mesh>
-        <mesh position={[0, 0.03, 0]} renderOrder={520}>
-          <cylinderGeometry args={[0.021, 0.022, 0.13, 8]} />
-          <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
-        </mesh>
-        <mesh position={[0, 0.47, 0]} renderOrder={521}>
-          <boxGeometry args={[0.045, 0.05, 0.2]} />
-          <meshStandardMaterial {...steel} />
-        </mesh>
-        {/* The business end: a spike forward, a chisel back. */}
-        <mesh position={[0, 0.47, -0.2]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={521}>
-          <coneGeometry args={[0.026, 0.22, 6]} />
-          <meshStandardMaterial {...steel} />
-        </mesh>
-        <mesh position={[0, 0.47, 0.14]} renderOrder={521}>
-          <boxGeometry args={[0.06, 0.028, 0.1]} />
-          <meshStandardMaterial {...steel} />
-        </mesh>
+      <group ref={pivot} position={[0, -0.06, 0]} rotation={[-0.66, -0.3, -0.22]}>
+        {authored ? (
+          <>
+            <mesh
+              geometry={bodyGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={520}
+              frustumCulled={false}
+            />
+            <mesh
+              geometry={leftHandGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={522}
+              frustumCulled={false}
+            />
+            <mesh
+              geometry={rightHandGeometry!}
+              material={surfaceViewmodelMaterial()}
+              renderOrder={522}
+              frustumCulled={false}
+            />
+            <group ref={pickHead} position={[0, 0.46, 0]}>
+              <mesh
+                geometry={pickGeometry!}
+                material={surfaceViewmodelMaterial()}
+                renderOrder={521}
+                frustumCulled={false}
+              />
+            </group>
+            <group ref={drillHead} position={[0, 0.46, 0]} visible={false}>
+              <mesh
+                geometry={drillGeometry!}
+                material={surfaceViewmodelMaterial()}
+                renderOrder={521}
+                frustumCulled={false}
+              />
+            </group>
+            <group ref={scannerHead} position={[0, 0.46, 0]} visible={false}>
+              <mesh
+                geometry={scannerGeometry!}
+                material={surfaceViewmodelMaterial()}
+                renderOrder={521}
+                frustumCulled={false}
+              />
+              <mesh
+                geometry={scannerEmitterGeometry!}
+                material={scannerMaterial}
+                renderOrder={523}
+                frustumCulled={false}
+              />
+            </group>
+            <group ref={sampleHead} position={[0, 0.46, 0]} visible={false}>
+              <mesh
+                geometry={sampleGeometry!}
+                material={surfaceViewmodelMaterial()}
+                renderOrder={521}
+                frustumCulled={false}
+              />
+            </group>
+          </>
+        ) : (
+          <group scale={0.72}>
+            <mesh position={[0, 0.22, 0]} renderOrder={520}>
+              <cylinderGeometry args={[0.016, 0.02, 0.5, 8]} />
+              <meshStandardMaterial {...haft} />
+            </mesh>
+            <mesh position={[0, 0.03, 0]} renderOrder={520}>
+              <cylinderGeometry args={[0.021, 0.022, 0.13, 8]} />
+              <meshStandardMaterial color={0x3a332b} emissive={0x120e09} emissiveIntensity={0.6} roughness={0.9} metalness={0} depthTest={false} />
+            </mesh>
+            <mesh position={[0, 0.47, 0]} renderOrder={521}>
+              <boxGeometry args={[0.045, 0.05, 0.2]} />
+              <meshStandardMaterial {...steel} />
+            </mesh>
+            <mesh position={[0, 0.47, -0.2]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={521}>
+              <coneGeometry args={[0.026, 0.22, 6]} />
+              <meshStandardMaterial {...steel} />
+            </mesh>
+            <mesh position={[0, 0.47, 0.14]} renderOrder={521}>
+              <boxGeometry args={[0.06, 0.028, 0.1]} />
+              <meshStandardMaterial {...steel} />
+            </mesh>
+          </group>
+        )}
       </group>
     </group>
   );
 }
-
 // ————— Impact shards —————
 
 const SHARD_MAX = 48;
