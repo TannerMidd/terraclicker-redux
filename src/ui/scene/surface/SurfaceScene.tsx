@@ -470,6 +470,9 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
   const stakesShown = useRef(-1);
 
   // ————— The frame loop: step the state machine, drive every uniform —————
+  // Run before ordinary scene subscribers. This callback owns the atmospheric
+  // camera pose, and camera-mounted cockpit/viewmodel callbacks must observe
+  // that final pose in the same frame rather than lagging one frame behind.
   useFrame((state, dtRaw) => {
     const dt = Math.min(dtRaw, 0.1);
     const t = state.clock.elapsedTime;
@@ -831,7 +834,7 @@ function SurfaceSceneInner({ session }: { session: GroundfallSession }) {
       const mat = beacon?.material as MeshBasicMaterial | undefined;
       if (mat) mat.opacity = 0.55 + Math.sin(t * 2.6) * 0.45;
     }
-  });
+  }, -100);
 
   const detailDeposits = useMemo<DepositVisualSpec[]>(() => {
     void detailRevision;
